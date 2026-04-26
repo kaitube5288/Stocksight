@@ -102,96 +102,66 @@ export type StockFundamentals = {
   market: 'KOSPI' | 'KOSDAQ' | null
 }
 
-const NAVER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-  'Referer': 'https://m.stock.naver.com/',
-  'Accept': 'application/json, text/plain, */*',
+const HTML_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'ko-KR,ko;q=0.9',
 }
 
-function parseNum(v: unknown): number | null {
-  if (v == null || v === '-' || v === '') return null
-  const n = parseFloat(String(v).replace(/,/g, ''))
-  return isNaN(n) ? null : Math.round(n * 100) / 100
-}
-
-// Yahoo Finance v7 quote → PER, PBR 포함
-async function fetchYahooV7(symbol: string): Promise<{ per: number|null; pbr: number|null } | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`
-    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 8000 })
-    const q = res.data?.quoteResponse?.result?.[0]
-    if (!q?.regularMarketPrice) return null
-    return {
-      per: parseNum(q.trailingPE),
-      pbr: parseNum(q.priceToBook),
+function pickNum(html: string, label: string): number | null {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const patterns = [
+    new RegExp(`${esc}[\\s\\S]{1,120}?<em>(-?[\\d,]+\\.?\\d*)<\\/em>`),
+    new RegExp(`${esc}[\\s\\S]{1,120}?(-?[\\d,]+\\.?\\d*)\\s*배`),
+    new RegExp(`${esc}[\\s\\S]{1,120}?(-?[\\d,]+\\.?\\d*)\\s*%`),
+    new RegExp(`${esc}[\\s\\S]{1,120}?<td[^>]*>\\s*(-?[\\d,]+\\.?\\d*)\\s*<`),
+  ]
+  for (const p of patterns) {
+    const m = html.match(p)
+    if (m) {
+      const n = parseFloat(m[1].replace(/,/g, ''))
+      if (!isNaN(n)) return Math.round(n * 100) / 100
     }
-  } catch { return null }
+  }
+  return null
 }
 
-// Naver 모바일 API → PER, PBR, ROE, 시장구분
-async function fetchNaverBasic(code: string): Promise<{
-  per: number|null; pbr: number|null; roe: number|null; market: 'KOSPI'|'KOSDAQ'|null
-} | null> {
+async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
-      `https://m.stock.naver.com/api/stock/${code}/basic`,
-      { headers: NAVER_HEADERS, timeout: 8000 }
+      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=invest`,
+      { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
-    const d = res.data
-    if (!d) return null
-    const marketRaw = String(d.marketName ?? d.stockExchangeType?.name ?? '')
-    const market: 'KOSPI' | 'KOSDAQ' | null =
-      marketRaw.includes('코스피') ? 'KOSPI' :
-      marketRaw.includes('코스닥') ? 'KOSDAQ' : null
-    return {
-      per: parseNum(d.per),
-      pbr: parseNum(d.pbr),
-      roe: parseNum(d.roe),
-      market,
-    }
-  } catch { return null }
+    const html: string = res.data
+    return { per: pickNum(html, 'PER'), pbr: pickNum(html, 'PBR') }
+  } catch { return { per: null, pbr: null } }
 }
 
-// Yahoo quoteSummary → ROE 전용
-async function fetchYahooROE(symbol: string): Promise<number | null> {
+async function scrapeNaverROE(code: string): Promise<number | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=financialData`
-    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 6000 })
-    const raw = res.data?.quoteSummary?.result?.[0]?.financialData?.returnOnEquity?.raw
-    if (typeof raw === 'number') return Math.round(raw * 1000) / 10
-    return null
+    const res = await axios.get(
+      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=finsum_Y`,
+      { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
+    )
+    return pickNum(res.data as string, 'ROE')
   } catch { return null }
 }
 
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
-  const empty: StockFundamentals = { per: null, pbr: null, roe: null, market: null }
 
-  // 세 소스 병렬 조회
-  const [ksData, kqData, naverData] = await Promise.all([
-    fetchYahooV7(`${code}.KS`),
-    fetchYahooV7(`${code}.KQ`),
-    fetchNaverBasic(code),
+  // 시장 구분: Yahoo v8 chart(.KS/.KQ) — 이미 동작 확인된 엔드포인트
+  // PER/PBR/ROE: Naver Finance HTML 스크래핑
+  const [ks, kq, investData, roe] = await Promise.all([
+    fetchYahooQuote(`${code}.KS`),
+    fetchYahooQuote(`${code}.KQ`),
+    scrapeNaverInvest(code),
+    scrapeNaverROE(code),
   ])
 
-  // 시장 구분: .KS 성공 → KOSPI, .KQ 성공 → KOSDAQ, Naver 보완
-  const market: 'KOSPI' | 'KOSDAQ' | null =
-    naverData?.market ??
-    (ksData ? 'KOSPI' : kqData ? 'KOSDAQ' : null)
+  const market: 'KOSPI' | 'KOSDAQ' | null = ks ? 'KOSPI' : kq ? 'KOSDAQ' : null
 
-  const yahooData = ksData ?? kqData
-  const per = yahooData?.per ?? naverData?.per ?? null
-  const pbr = yahooData?.pbr ?? naverData?.pbr ?? null
-  let roe = naverData?.roe ?? null
-
-  // ROE 없으면 Yahoo quoteSummary 시도
-  if (roe === null) {
-    const suffix = market === 'KOSPI' ? '.KS' : '.KQ'
-    roe = await fetchYahooROE(`${code}${suffix}`)
-  }
-
-  if (per === null && pbr === null && roe === null && market === null) return empty
-  return { per, pbr, roe, market }
+  return { per: investData.per, pbr: investData.pbr, roe, market }
 }
 
 export async function getFundamentalsMap(
