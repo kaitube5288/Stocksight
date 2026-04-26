@@ -82,6 +82,12 @@ export default function Home() {
     setShowPwModal(true)
   }
 
+  const handlePwCancel = () => {
+    setShowPwModal(false)
+    setPwInput('')
+    setPwError(false)
+  }
+
   const handlePwConfirm = async () => {
     if (pwInput !== 'stocksight') {
       setPwError(true)
@@ -108,59 +114,6 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 py-6 md:px-8 max-w-7xl mx-auto">
 
-      {/* 비밀번호 모달 */}
-      {showPwModal && (
-        <div className="modal-overlay" onClick={() => setShowPwModal(false)}>
-          <div
-            className="glass rounded-2xl p-8 w-full max-w-sm flex flex-col gap-5"
-            style={{ border: '1px solid rgba(77,166,255,0.3)', boxShadow: '0 0 40px rgba(77,166,255,0.1)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div>
-              <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                🔒 분석 실행 인증
-              </h2>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                비밀번호를 입력하세요
-              </p>
-            </div>
-            <input
-              type="password"
-              value={pwInput}
-              onChange={e => { setPwInput(e.target.value); setPwError(false) }}
-              onKeyDown={e => e.key === 'Enter' && handlePwConfirm()}
-              placeholder="비밀번호"
-              autoFocus
-              className="w-full px-4 py-3 rounded-xl text-sm mono outline-none"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: pwError ? '1px solid var(--accent-red)' : '1px solid rgba(255,255,255,0.12)',
-                color: 'var(--text-primary)',
-              }}
-            />
-            {pwError && (
-              <p className="text-xs" style={{ color: 'var(--accent-red)', marginTop: '-8px' }}>
-                비밀번호가 올바르지 않습니다
-              </p>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowPwModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-              >
-                취소
-              </button>
-              <button
-                onClick={handlePwConfirm}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold btn-primary"
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* 헤더 */}
       <header className="mb-6 flex items-start justify-between">
         <div>
@@ -216,31 +169,73 @@ export default function Home() {
         <MarketBar />
       </div>
 
-      {/* 분석 실행 버튼 */}
-      <div className="mb-6 flex items-center gap-3">
-        <button
-          onClick={handleAnalysisClick}
-          disabled={analyzing}
-          className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
-          style={{ cursor: analyzing ? 'not-allowed' : 'pointer' }}
-        >
-          {analyzing ? (
-            <span className="flex items-center gap-2">
-              <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
-            </span>
-          ) : (
-            '▶ AI 분석 실행'
-          )}
-        </button>
-        {analyzing && (
-          <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>
-            뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
-          </span>
-        )}
-        {error && (
-          <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)' }}>
-            {error}
-          </span>
+      {/* 분석 실행 버튼 / 인라인 비밀번호 입력 */}
+      <div className="mb-6">
+        {showPwModal ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={pwInput}
+                onChange={e => { setPwInput(e.target.value); setPwError(false) }}
+                onKeyDown={e => e.key === 'Enter' && handlePwConfirm()}
+                placeholder="비밀번호"
+                autoFocus
+                className="px-4 py-2.5 rounded-xl text-sm mono outline-none"
+                style={{
+                  width: '160px',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: pwError ? '1px solid var(--accent-red)' : '1px solid rgba(255,255,255,0.18)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+              <button
+                onClick={handlePwConfirm}
+                className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold"
+              >
+                확인
+              </button>
+              <button
+                onClick={handlePwCancel}
+                className="px-4 py-2.5 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+              >
+                ▶ 취소
+              </button>
+            </div>
+            {pwError && (
+              <span className="text-xs" style={{ color: 'var(--accent-red)', paddingLeft: '4px' }}>
+                비밀번호가 올바르지 않습니다
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleAnalysisClick}
+              disabled={analyzing}
+              className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
+              style={{ cursor: analyzing ? 'not-allowed' : 'pointer' }}
+            >
+              {analyzing ? (
+                <span className="flex items-center gap-2">
+                  <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
+                </span>
+              ) : (
+                '▶ AI 분석 실행'
+              )}
+            </button>
+            {analyzing && (
+              <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>
+                뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
+              </span>
+            )}
+            {error && (
+              <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)' }}>
+                {error}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
