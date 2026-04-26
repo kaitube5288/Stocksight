@@ -49,6 +49,17 @@ export async function POST() {
       date: today,
     })
 
+    // trade_type 정규화 (Gemini가 다른 문자열 반환할 경우 대비)
+    const TRADE_TYPES = ['단타', '스윙', '중기'] as const
+    const HOLD_PERIODS: Record<string, string> = { '단타': '1일 목표', '스윙': '3~5일 목표', '중기': '2~4주 목표' }
+    result.recommendations = result.recommendations.map((r, i) => {
+      let trade_type = r.trade_type
+      if (!TRADE_TYPES.includes(trade_type as typeof TRADE_TYPES[number])) {
+        trade_type = TRADE_TYPES[Math.floor(i / 3) % 3]
+      }
+      return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
+    })
+
     // 실제 현재가로 매수가/목표가 보정
     const tickers = result.recommendations.map(r => r.ticker)
     const realPrices = await getRealPrices(tickers)
