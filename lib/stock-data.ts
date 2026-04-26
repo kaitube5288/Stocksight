@@ -108,32 +108,25 @@ const HTML_HEADERS = {
   'Accept-Language': 'ko-KR,ko;q=0.9',
 }
 
-function pickNum(html: string, label: string): number | null {
-  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const patterns = [
-    new RegExp(`${esc}[\\s\\S]{1,120}?<em>(-?[\\d,]+\\.?\\d*)<\\/em>`),
-    new RegExp(`${esc}[\\s\\S]{1,120}?(-?[\\d,]+\\.?\\d*)\\s*배`),
-    new RegExp(`${esc}[\\s\\S]{1,120}?(-?[\\d,]+\\.?\\d*)\\s*%`),
-    new RegExp(`${esc}[\\s\\S]{1,120}?<td[^>]*>\\s*(-?[\\d,]+\\.?\\d*)\\s*<`),
-  ]
-  for (const p of patterns) {
-    const m = html.match(p)
-    if (m) {
-      const n = parseFloat(m[1].replace(/,/g, ''))
-      if (!isNaN(n)) return Math.round(n * 100) / 100
-    }
-  }
-  return null
+function parseN(s: string): number | null {
+  const n = parseFloat(s.replace(/,/g, ''))
+  return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
+// Naver 메인 페이지: id="per", id="pbr" 엘리먼트 (가장 안정적)
+async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
-      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=invest`,
-      { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
+      `https://finance.naver.com/item/main.naver?code=${code}`,
+      { headers: { ...HTML_HEADERS, Referer: 'https://finance.naver.com/' }, timeout: 10000, responseType: 'text' }
     )
     const html: string = res.data
-    return { per: pickNum(html, 'PER'), pbr: pickNum(html, 'PBR') }
+    const mPer = html.match(/id="per"[^>]*>\s*([\d,.]+)/) ?? html.match(/PER[\s\S]{1,500}?<em>([\d,.]+)<\/em>/)
+    const mPbr = html.match(/id="pbr"[^>]*>\s*([\d,.]+)/) ?? html.match(/PBR[\s\S]{1,500}?<em>([\d,.]+)<\/em>/)
+    return {
+      per: mPer ? parseN(mPer[1]) : null,
+      pbr: mPbr ? parseN(mPbr[1]) : null,
+    }
   } catch { return { per: null, pbr: null } }
 }
 
@@ -143,25 +136,40 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
       `https://finance.naver.com/item/coinfo.naver?code=${code}&target=finsum_Y`,
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
-    return pickNum(res.data as string, 'ROE')
+    const html = res.data as string
+    // ROE(%) 행: </th> 직후 <td> 값 추출 (다중 패턴 시도)
+    const patterns = [
+      /ROE\(%\)[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*</,
+      /ROE[\s\S]{1,300}?<td[^>]*>(?:<[^>]+>)*\s*(-?[\d,]+\.?\d*)\s*</,
+      /ROE[\s\S]{1,1500}?(-?[\d,]+\.?\d*)\s*%/,
+    ]
+    for (const p of patterns) {
+      const m = html.match(p)
+      if (m) {
+        const n = parseN(m[1])
+        if (n !== null && Math.abs(n) < 300) return n
+      }
+    }
+    return null
   } catch { return null }
 }
 
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  // 시장 구분: Yahoo v8 chart(.KS/.KQ) — 이미 동작 확인된 엔드포인트
-  // PER/PBR/ROE: Naver Finance HTML 스크래핑
-  const [ks, kq, investData, roe] = await Promise.all([
+  // 시장 구분: Yahoo v8 chart(.KS/.KQ)
+  // PER/PBR: Naver 메인 페이지 (id="per"/id="pbr" 엘리먼트)
+  // ROE: Naver finsum_Y 연간 재무 테이블
+  const [ks, kq, mainData, roe] = await Promise.all([
     fetchYahooQuote(`${code}.KS`),
     fetchYahooQuote(`${code}.KQ`),
-    scrapeNaverInvest(code),
+    scrapeNaverMain(code),
     scrapeNaverROE(code),
   ])
 
   const market: 'KOSPI' | 'KOSDAQ' | null = ks ? 'KOSPI' : kq ? 'KOSDAQ' : null
 
-  return { per: investData.per, pbr: investData.pbr, roe, market }
+  return { per: mainData.per, pbr: mainData.pbr, roe, market }
 }
 
 export async function getFundamentalsMap(
