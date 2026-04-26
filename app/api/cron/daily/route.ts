@@ -4,6 +4,7 @@ import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
+import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 
 export const maxDuration = 300
 
@@ -31,10 +32,8 @@ async function runDailyAnalysis() {
 
   try {
     const now = new Date()
-    const todayDate = now.toISOString().slice(0, 10)
-    const today = now.toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
-    })
+    const todayDate = getKSTDate()
+    const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
     // 1. 전날 09:00 ~ 당일 08:40 뉴스 읽기
     const cutoff = new Date(now)

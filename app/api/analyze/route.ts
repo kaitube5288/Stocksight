@@ -4,10 +4,11 @@ import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { fetchOvernightNews, formatNewsForPrompt } from '@/lib/news'
 import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap } from '@/lib/stock-data'
 import { supabaseAdmin } from '@/lib/supabase'
+import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 
 export async function POST() {
   try {
-    const todayDate = new Date().toISOString().slice(0, 10)
+    const todayDate = getKSTDate()
 
     // 오늘 분석이 이미 있으면 재사용 (Gemini 재호출 없이 동일 결과 반환)
     const { data: existing } = await supabaseAdmin
@@ -23,9 +24,7 @@ export async function POST() {
       return NextResponse.json({ success: true, data: existing, cached: true })
     }
 
-    const today = new Date().toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
-    })
+    const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
     // 병렬로 데이터 수집
     const [news, disclosures, { kospi, kosdaq }, usdkrw] = await Promise.all([

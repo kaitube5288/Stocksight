@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { getKSTDate } from '@/lib/date'
 
 export async function GET() {
   try {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = getKSTDate()
 
     const { data, error } = await supabase
       .from('recommendations')

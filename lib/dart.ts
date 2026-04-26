@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { getKSTDate } from './date'
 
 const DART_BASE_URL = 'https://opendart.fss.or.kr/api'
 const DART_API_KEY = process.env.DART_API_KEY
@@ -12,8 +13,7 @@ export type DartDisclosure = {
 }
 
 export async function getTodayDisclosures(): Promise<DartDisclosure[]> {
-  const today = new Date()
-  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '')
+  const dateStr = getKSTDate().replace(/-/g, '')
 
   try {
     const res = await axios.get(`${DART_BASE_URL}/list.json`, {
