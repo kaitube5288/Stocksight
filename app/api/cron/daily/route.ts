@@ -1,0 +1,136 @@
+import { NextResponse } from 'next/server'
+import { generateRecommendations } from '@/lib/gemini'
+import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
+import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext } from '@/lib/stock-data'
+import { sendTelegramAlert } from '@/lib/telegram'
+import { getSupabaseAdmin } from '@/lib/supabase'
+
+export const maxDuration = 300
+
+// Vercel Cron 또는 수동 호출 (GET)
+export async function GET(request: Request) {
+  // Vercel Cron 보안 헤더 검증
+  const authHeader = request.headers.get('authorization')
+  if (
+    process.env.NODE_ENV === 'production' &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  return runDailyAnalysis()
+}
+
+// Admin 페이지에서 수동 트리거 (POST)
+export async function POST() {
+  return runDailyAnalysis()
+}
+
+async function runDailyAnalysis() {
+  const supabaseAdmin = getSupabaseAdmin()
+
+  try {
+    const now = new Date()
+    const todayDate = now.toISOString().slice(0, 10)
+    const today = now.toLocaleDateString('ko-KR', {
+      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
+    })
+
+    // 1. 전날 09:00 ~ 당일 08:40 뉴스 읽기
+    const cutoff = new Date(now)
+    cutoff.setDate(cutoff.getDate() - 1)
+    cutoff.setHours(9, 0, 0, 0) // 전날 09:00 KST
+
+    const { data: newsCacheRows } = await supabaseAdmin
+      .from('news_cache')
+      .select('news, fetched_at')
+      .gte('fetched_at', cutoff.toISOString())
+      .order('fetched_at', { ascending: true })
+
+    const allNews = (newsCacheRows ?? []).flatMap(row =>
+      Array.isArray(row.news) ? row.news : []
+    )
+
+    // 중복 제거
+    const seen = new Set<string>()
+    const uniqueNews = allNews.filter(n => {
+      if (seen.has(n.title)) return false
+      seen.add(n.title)
+      return true
+    })
+
+    const newsText = uniqueNews.length
+      ? uniqueNews.slice(0, 30).map(n => `- [${n.source}] ${n.title} (${n.pubDate})`).join('\n')
+      : '수집된 뉴스 없음'
+
+    // 2. DART 공시 + 시장 지표 병렬 수집
+    const [disclosures, { kospi, kosdaq }, usdkrw] = await Promise.all([
+      getTodayDisclosures(),
+      getMarketIndex(),
+      getUSDKRW(),
+    ])
+
+    const dartText = formatDisclosuresForPrompt(disclosures)
+    const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
+
+    // 3. 과거 유사 패턴 조회
+    const keywords = extractKeywords(newsText)
+    const historicalPatterns = await getSimilarHistoricalPatterns(keywords)
+
+    // 4. Gemini 분석
+    const result = await generateRecommendations({
+      todayNews: newsText,
+      dartDisclosures: dartText,
+      historicalPatterns,
+      marketContext: marketText,
+      date: today,
+    })
+
+    // 5. Supabase 저장
+    await supabaseAdmin.from('recommendations').delete().eq('date', todayDate)
+    const { data, error } = await supabaseAdmin
+      .from('recommendations')
+      .insert({
+        date: todayDate,
+        stocks: result.recommendations,
+        market_outlook: result.market_outlook,
+        risk_factors: result.risk_factors,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    // 6. 텔레그램 알림
+    await sendTelegramAlert({
+      stocks: result.recommendations,
+      marketOutlook: result.market_outlook,
+      date: todayDate,
+    })
+
+    // 7. 오래된 뉴스 캐시 정리 (7일 초과)
+    const cleanupDate = new Date()
+    cleanupDate.setDate(cleanupDate.getDate() - 7)
+    await supabaseAdmin
+      .from('news_cache')
+      .delete()
+      .lt('fetched_at', cleanupDate.toISOString())
+
+    return NextResponse.json({
+      success: true,
+      date: todayDate,
+      newsCount: uniqueNews.length,
+      telegramSent: !!process.env.TELEGRAM_BOT_TOKEN,
+      data,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : JSON.stringify(error)
+    console.error('Daily cron 오류:', message)
+    return NextResponse.json({ success: false, error: message }, { status: 500 })
+  }
+}
+
+function extractKeywords(text: string): string[] {
+  const keywords = ['반도체', 'AI', '2차전지', '바이오', '자동차', '철강', '화학', '금융', '부동산', '원자력', '방산', '인터넷', '게임', '조선', '로봇']
+  return keywords.filter(k => text.includes(k))
+}
