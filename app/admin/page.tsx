@@ -1,6 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+const YEAR_OPTIONS = [
+  { year: 2015, label: '2015', time: '~3분', once: true },
+  { year: 2018, label: '2018', time: '~2분', once: true },
+  { year: 2020, label: '2020', time: '~1.5분', once: true },
+  { year: 2022, label: '2022', time: '~1분', once: true },
+  { year: 2023, label: '2023', time: '~45초', once: true },
+  { year: 2024, label: '2024', time: '~30초', once: true },
+  { year: 2025, label: '2025', time: '~20초', once: true },
+  { year: 2026, label: '2026', time: '~10초', once: false },
+]
 
 export default function AdminPage() {
   const [collecting, setCollecting] = useState(false)
@@ -9,6 +20,20 @@ export default function AdminPage() {
   const [analyzeLog, setAnalyzeLog] = useState<string[]>([])
   const [startYear, setStartYear] = useState(2020)
   const [chatIdResult, setChatIdResult] = useState('')
+  const [collectedRange, setCollectedRange] = useState<{ minYear: number | null; maxYear: number | null }>({ minYear: null, maxYear: null })
+
+  useEffect(() => {
+    fetch('/api/collect-history')
+      .then(r => r.json())
+      .then(d => setCollectedRange({ minYear: d.minYear, maxYear: d.maxYear }))
+      .catch(() => {})
+  }, [])
+
+  const isCollected = (year: number) => {
+    const { minYear, maxYear } = collectedRange
+    if (!minYear || !maxYear) return false
+    return year >= minYear && year <= maxYear
+  }
 
   const runCollection = async () => {
     setCollecting(true)
@@ -26,6 +51,11 @@ export default function AdminPage() {
           ? `[${now()}] ✅ ${data.message}`
           : `[${now()}] ❌ 오류: ${data.error}`,
       ])
+      if (data.success) {
+        const r = await fetch('/api/collect-history')
+        const d = await r.json()
+        setCollectedRange({ minYear: d.minYear, maxYear: d.maxYear })
+      }
     } catch (e) {
       setCollectLog(prev => [...prev, `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`])
     } finally {
@@ -79,33 +109,66 @@ export default function AdminPage() {
 
       {/* 섹션 1: 히스토리컬 수집 */}
       <Section title="① 히스토리컬 데이터 수집">
-        <div className="flex items-center gap-4 mb-4">
-          <div>
-            <label className="text-xs mb-1 block" style={{ color: 'rgba(255,255,255,0.35)' }}>시작 연도</label>
-            <select
-              value={startYear}
-              onChange={e => setStartYear(Number(e.target.value))}
-              disabled={collecting}
-              className="mono text-sm px-3 py-1.5 rounded-lg"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)' }}
-            >
-              <option value={2015}>2015년 (~3분)</option>
-              <option value={2018}>2018년 (~2분)</option>
-              <option value={2020}>2020년 (~1.5분)</option>
-              <option value={2022}>2022년 (~1분)</option>
-              <option value={2023}>2023년 (~45초)</option>
-              <option value={2024}>2024년 (~30초)</option>
-              <option value={2025}>2025년 (~20초)</option>
-              <option value={2026}>2026년 (~10초)</option>
-            </select>
+        <div className="mb-3">
+          <label className="text-xs mb-2 block" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            시작 연도 선택
+          </label>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {YEAR_OPTIONS.map(({ year, label, time, once }) => {
+              const collected = isCollected(year)
+              const selected = startYear === year
+              return (
+                <button
+                  key={year}
+                  onClick={() => !collecting && setStartYear(year)}
+                  disabled={collecting}
+                  className="relative px-3 py-2 rounded-xl text-xs mono transition-all"
+                  style={{
+                    background: selected
+                      ? 'rgba(255,255,255,0.12)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: selected
+                      ? '1px solid rgba(255,255,255,0.3)'
+                      : collected
+                      ? '1px solid rgba(100,255,150,0.25)'
+                      : '1px solid rgba(255,255,255,0.08)',
+                    color: selected
+                      ? 'rgba(255,255,255,0.9)'
+                      : collected
+                      ? 'rgba(150,255,180,0.8)'
+                      : 'rgba(255,255,255,0.45)',
+                    cursor: collecting ? 'not-allowed' : 'pointer',
+                    minWidth: '72px',
+                  }}
+                >
+                  <div className="font-medium">{label}년</div>
+                  <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '1px' }}>
+                    {collected && once ? '✓ 완료' : time}
+                  </div>
+                  {!once && (
+                    <div style={{ fontSize: '9px', color: 'rgba(255,200,100,0.7)', marginTop: '1px' }}>
+                      갱신 권장
+                    </div>
+                  )}
+                </button>
+              )
+            })}
           </div>
-          <div className="flex-1" />
-          <Btn onClick={runCollection} loading={collecting} label="▶ 수집 시작" />
         </div>
+
+        <div className="flex items-center gap-4 mb-4">
+          <div className="flex-1 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            {collectedRange.minYear
+              ? `현재 수집 범위: ${collectedRange.minYear}년 ~ ${collectedRange.maxYear}년`
+              : '수집된 데이터 없음'}
+          </div>
+          <Btn onClick={runCollection} loading={collecting} label={`▶ ${startYear}년부터 수집`} />
+        </div>
+
         <InfoBox lines={[
           '주요 KOSPI/KOSDAQ 52개 종목 × 선택 기간 히스토리',
+          '✓ 완료 표시된 연도는 재수집 불필요 (2026년만 주기적 갱신)',
           '날짜별 상위 5 상승 종목 → historical_patterns 저장',
-          '주요 역사적 사건 12건 → market_events 저장',
           'Gemini/Google API 사용 없음 (Yahoo Finance만 사용)',
         ]} />
         <Log entries={collectLog} />
@@ -115,7 +178,7 @@ export default function AdminPage() {
       <Section title="② 일일 분석 수동 실행 (매일 08:40 자동)">
         <div className="flex items-center gap-4 mb-4">
           <p className="text-xs flex-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            전날 09:00 ~ 당일 08:40 뉴스 분석 → 추천 5종목 생성 → 텔레그램 알림
+            전날 09:00 ~ 당일 08:40 뉴스 분석 → 추천 3종목 생성 → 텔레그램 알림
           </p>
           <Btn onClick={runDailyAnalysis} loading={analyzing} label="▶ 지금 실행" />
         </div>

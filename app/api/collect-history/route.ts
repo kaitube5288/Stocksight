@@ -51,6 +51,30 @@ async function fetchStockHistory(ticker: string): Promise<DailyPrice[]> {
   }
 }
 
+export async function GET() {
+  const supabaseAdmin = getSupabaseAdmin()
+  try {
+    const { data } = await supabaseAdmin
+      .from('historical_patterns')
+      .select('trade_date')
+      .order('trade_date', { ascending: true })
+      .limit(1)
+
+    const { data: latest } = await supabaseAdmin
+      .from('historical_patterns')
+      .select('trade_date')
+      .order('trade_date', { ascending: false })
+      .limit(1)
+
+    const minYear = data?.[0]?.trade_date ? new Date(data[0].trade_date).getFullYear() : null
+    const maxYear = latest?.[0]?.trade_date ? new Date(latest[0].trade_date).getFullYear() : null
+
+    return NextResponse.json({ minYear, maxYear })
+  } catch {
+    return NextResponse.json({ minYear: null, maxYear: null })
+  }
+}
+
 export async function POST(req: NextRequest) {
   const { startYear = 2015 } = await req.json().catch(() => ({}))
   const supabaseAdmin = getSupabaseAdmin()
