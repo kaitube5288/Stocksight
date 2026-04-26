@@ -58,10 +58,12 @@ export default function Home() {
       setRecommendation(data.data)
       setIsToday(data.isToday)
       if (showNotify && data.data && data.data.date !== prevDateRef.current) {
-        const top = data.data.stocks?.[0]
+        const daytrading = data.data.stocks?.find((s: { trade_type: string }) => s.trade_type === '단타')
         notify(
           '📊 StockSight 오늘의 추천 도착',
-          top ? `1위: ${top.name} (${top.ticker}) +${top.expected_return?.toFixed(1)}% 예상` : '새로운 추천 종목이 생성되었습니다.',
+          daytrading
+            ? `단타 1위: ${daytrading.name} (${daytrading.ticker}) +${daytrading.expected_return?.toFixed(1)}% 예상`
+            : '새로운 추천 종목이 생성되었습니다.',
         )
       }
       prevDateRef.current = data.data?.date ?? null
@@ -262,7 +264,7 @@ export default function Home() {
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[...Array(4)].map((_, i) => (
+              {[...Array(6)].map((_, i) => (
                 <div
                   key={i}
                   className="glass rounded-2xl h-64 animate-pulse"
@@ -284,16 +286,43 @@ export default function Home() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                {recommendation.stocks.map((stock, i) => (
-                  <RecommendationCard
-                    key={stock.ticker}
-                    stock={stock}
-                    rank={i + 1}
-                    animate
-                  />
-                ))}
-              </div>
+              {([
+                { type: '단타', label: '단타', period: '1일 목표', color: 'var(--accent-red)', border: 'rgba(255,92,92,0.3)' },
+                { type: '스윙', label: '스윙', period: '3~5일 목표', color: 'var(--accent-blue)', border: 'rgba(77,166,255,0.3)' },
+                { type: '중기', label: '중기', period: '2~4주 목표', color: 'var(--accent-green)', border: 'rgba(0,229,170,0.3)' },
+              ] as const).map(({ type, label, period, color, border }) => {
+                const group = recommendation.stocks.filter(s => s.trade_type === type)
+                return (
+                  <div key={type} className="mb-6">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className="text-xs font-bold px-2.5 py-1 rounded-lg"
+                        style={{ background: `${border.replace('0.3', '0.1')}`, color, border: `1px solid ${border}` }}
+                      >
+                        {label}
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{period}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {group.length > 0 ? group.map((stock, i) => (
+                        <RecommendationCard
+                          key={stock.ticker}
+                          stock={stock}
+                          rank={i + 1}
+                          animate
+                        />
+                      )) : (
+                        <div
+                          className="col-span-full py-6 text-center rounded-2xl"
+                          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontSize: '12px' }}
+                        >
+                          해당 유형 추천 종목 없음
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
 
               {/* 시장 전망 + 위험 요소 */}
               <div className="glass glow-white rounded-2xl p-5">

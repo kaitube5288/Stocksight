@@ -49,6 +49,8 @@ export type GeminiRecommendation = {
   probability: number
   reasoning: string
   key_catalyst: string
+  trade_type: '단타' | '스윙' | '중기'
+  hold_period: string
 }
 
 export type GeminiAnalysisResult = {
@@ -64,7 +66,7 @@ export async function generateRecommendations(params: {
   marketContext: string
   date: string
 }): Promise<GeminiAnalysisResult> {
-  const prompt = `당신은 10년 경력의 한국 주식 퀀트 애널리스트입니다. 아래 데이터를 정밀 분석하여 오늘 상승 확률 90% 이상인 종목만 추천하세요.
+  const prompt = `당신은 10년 경력의 한국 주식 퀀트 애널리스트입니다. 아래 데이터를 분석하여 3가지 투자 유형별로 각 3종목씩, 총 9종목을 추천하세요.
 
 ## 오늘 날짜
 ${params.date}
@@ -81,29 +83,32 @@ ${params.historicalPatterns}
 ## 현재 시장 지표
 ${params.marketContext}
 
-## 확률 산정 기준 (합산 점수 → 확률 변환)
-각 종목에 대해 아래 5가지 신호를 독립적으로 평가하고 점수를 합산하세요:
+## 투자 유형 정의
+- 단타 (trade_type: "단타", hold_period: "1일 목표"): 당일 장중 매수 → 당일 고점 매도. 당일 상승 모멘텀이 강한 종목.
+- 스윙 (trade_type: "스윙", hold_period: "3~5일 목표"): 전일 종가 매수 → 3~5 영업일 내 목표가 달성. 단기 추세가 형성 중인 종목.
+- 중기 (trade_type: "중기", hold_period: "2~4주 목표"): 전일 종가 매수 → 2~4주 내 목표가 달성. 펀더멘털 이벤트(실적, 수주) 기반 종목.
+
+## 확률 산정 기준 (합산 점수 = probability)
+각 종목을 투자 유형의 기간에 맞춰 아래 5가지 신호로 평가하세요:
 1. 뉴스 직접 언급 및 긍정적 내용: 0~25점
 2. DART 공시 호재(실적, 수주, 계약 등): 0~25점
 3. 과거 동일 패턴에서 상승 기록: 0~20점
 4. 섹터/테마 강세 모멘텀: 0~15점
 5. 시장 지표 우호적(코스피 상승, 환율 안정): 0~15점
 
-합산 점수를 probability 값으로 사용하세요.
-- 90점 이상 종목이 있으면 우선 추천 (최대 5개)
-- 90점 이상이 3개 미만이면, 75점 이상 종목으로 채워서 총 3개를 맞추세요
-- 75점 이상도 3개 미만이면 가능한 만큼만 추천하세요
-- 어떤 경우에도 최소 1개는 반드시 추천해야 합니다 (데이터가 있는 한)
+각 유형별로 점수 높은 순으로 3종목씩 반드시 채우세요. 동일 종목이 여러 유형에 중복되지 않도록 하세요.
 
-## 추가 규칙
-- 동일한 데이터 입력 시 항상 동일한 결과를 출력하세요
-- 매수가: 전일 종가 기준, 목표가: 당일 예상 고점
-- 모든 추천에는 구체적 수치 근거 필수
+## 가격 기준
+- 단타: 매수가 = 당일 시가 예상, 목표가 = 당일 예상 고점
+- 스윙: 매수가 = 전일 종가, 목표가 = 3~5일 내 예상 고점
+- 중기: 매수가 = 전일 종가, 목표가 = 2~4주 내 목표가
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {
   "recommendations": [
     {
+      "trade_type": "단타",
+      "hold_period": "1일 목표",
       "name": "종목명",
       "ticker": "6자리 종목코드",
       "buy_price": 매수가격(숫자),

@@ -11,6 +11,12 @@ interface Props {
 const RANK_LABELS = ['', '🥇', '🥈', '🥉']
 const RANK_COLORS = ['', 'var(--accent-gold)', 'var(--accent-blue)', 'var(--accent-green)']
 
+const TRADE_TYPE_STYLE: Record<string, { bg: string; color: string }> = {
+  '단타': { bg: 'rgba(255,92,92,0.12)', color: 'var(--accent-red)' },
+  '스윙': { bg: 'rgba(77,166,255,0.12)', color: 'var(--accent-blue)' },
+  '중기': { bg: 'rgba(0,229,170,0.12)', color: 'var(--accent-green)' },
+}
+
 function ProbBar({ value, rank }: { value: number; rank: number }) {
   const color =
     value >= 90 ? 'linear-gradient(90deg, #00e5aa, #4dffce)' :
@@ -50,6 +56,19 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
 
       {/* 종목명 + 코드 */}
       <div>
+        {stock.trade_type && (
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-md"
+              style={TRADE_TYPE_STYLE[stock.trade_type] ?? { bg: 'transparent', color: 'var(--text-muted)' }}
+            >
+              {stock.trade_type}
+            </span>
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              {stock.hold_period}
+            </span>
+          </div>
+        )}
         <div className="flex items-center gap-2 mb-2">
           <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
             {stock.name}

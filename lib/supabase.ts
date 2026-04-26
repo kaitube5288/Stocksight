@@ -36,6 +36,8 @@ export const supabaseAdmin = new Proxy({} as SupabaseClient, {
   },
 })
 
+export type TradeType = '단타' | '스윙' | '중기'
+
 export type StockRecommendation = {
   name: string
   ticker: string
@@ -45,6 +47,8 @@ export type StockRecommendation = {
   probability: number
   reasoning: string
   key_catalyst: string
+  trade_type: TradeType
+  hold_period: string
 }
 
 export type DailyRecommendation = {
