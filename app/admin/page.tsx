@@ -20,20 +20,18 @@ export default function AdminPage() {
   const [analyzeLog, setAnalyzeLog] = useState<string[]>([])
   const [startYear, setStartYear] = useState(2020)
   const [chatIdResult, setChatIdResult] = useState('')
-  const [collectedRange, setCollectedRange] = useState<{ minYear: number | null; maxYear: number | null }>({ minYear: null, maxYear: null })
+  const [collectedYears, setCollectedYears] = useState<number[]>([])
 
-  useEffect(() => {
+  const loadCollectedYears = async () => {
     fetch('/api/collect-history')
       .then(r => r.json())
-      .then(d => setCollectedRange({ minYear: d.minYear, maxYear: d.maxYear }))
+      .then(d => setCollectedYears(d.collectedYears ?? []))
       .catch(() => {})
-  }, [])
-
-  const isCollected = (year: number) => {
-    const { minYear, maxYear } = collectedRange
-    if (!minYear || !maxYear) return false
-    return year >= minYear && year <= maxYear
   }
+
+  useEffect(() => { loadCollectedYears() }, [])
+
+  const isCollected = (year: number) => collectedYears.includes(year)
 
   const runCollection = async () => {
     setCollecting(true)
@@ -52,9 +50,7 @@ export default function AdminPage() {
           : `[${now()}] ❌ 오류: ${data.error}`,
       ])
       if (data.success) {
-        const r = await fetch('/api/collect-history')
-        const d = await r.json()
-        setCollectedRange({ minYear: d.minYear, maxYear: d.maxYear })
+        await loadCollectedYears()
       }
     } catch (e) {
       setCollectLog(prev => [...prev, `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`])
@@ -158,8 +154,8 @@ export default function AdminPage() {
 
         <div className="flex items-center gap-4 mb-4">
           <div className="flex-1 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            {collectedRange.minYear
-              ? `현재 수집 범위: ${collectedRange.minYear}년 ~ ${collectedRange.maxYear}년`
+            {collectedYears.length > 0
+              ? `수집 완료: ${collectedYears.filter(y => y !== 2026).join(', ')}년`
               : '수집된 데이터 없음'}
           </div>
           <Btn onClick={runCollection} loading={collecting} label={`▶ ${startYear}년부터 수집`} />

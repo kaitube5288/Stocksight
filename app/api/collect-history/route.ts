@@ -51,27 +51,30 @@ async function fetchStockHistory(ticker: string): Promise<DailyPrice[]> {
   }
 }
 
+const CHECK_YEARS = [2015, 2018, 2020, 2022, 2023, 2024, 2025, 2026]
+
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin()
   try {
-    const { data } = await supabaseAdmin
-      .from('historical_patterns')
-      .select('trade_date')
-      .order('trade_date', { ascending: true })
-      .limit(1)
+    // 연도별로 실제 데이터 건수 확인
+    const results = await Promise.all(
+      CHECK_YEARS.map(async year => {
+        const { count } = await supabaseAdmin
+          .from('historical_patterns')
+          .select('*', { count: 'exact', head: true })
+          .gte('trade_date', `${year}-01-01`)
+          .lte('trade_date', `${year}-12-31`)
+        return { year, count: count ?? 0 }
+      })
+    )
+    // 해당 연도에 50일 이상 데이터 있으면 수집 완료로 판단
+    const collectedYears = results
+      .filter(r => r.count >= 50)
+      .map(r => r.year)
 
-    const { data: latest } = await supabaseAdmin
-      .from('historical_patterns')
-      .select('trade_date')
-      .order('trade_date', { ascending: false })
-      .limit(1)
-
-    const minYear = data?.[0]?.trade_date ? new Date(data[0].trade_date).getFullYear() : null
-    const maxYear = latest?.[0]?.trade_date ? new Date(latest[0].trade_date).getFullYear() : null
-
-    return NextResponse.json({ minYear, maxYear })
+    return NextResponse.json({ collectedYears })
   } catch {
-    return NextResponse.json({ minYear: null, maxYear: null })
+    return NextResponse.json({ collectedYears: [] })
   }
 }
 
