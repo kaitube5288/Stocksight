@@ -82,28 +82,40 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
             {stock.name}
           </span>
         </div>
-        <span className="badge">{stock.ticker}</span>
+        <div className="flex items-center gap-2">
+          <span className="badge">{stock.ticker}</span>
+          {stock.market && (
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+              style={{
+                background: stock.market === 'KOSPI' ? 'rgba(255,201,77,0.15)' : 'rgba(77,166,255,0.15)',
+                color: stock.market === 'KOSPI' ? 'var(--accent-gold)' : 'var(--accent-blue)',
+                border: `1px solid ${stock.market === 'KOSPI' ? 'rgba(255,201,77,0.3)' : 'rgba(77,166,255,0.3)'}`,
+              }}
+            >
+              {stock.market}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* 가격 정보: 매수가/목표가 2열 + 예상수익 전체폭 */}
+      {/* 가격 정보: 매수가/예상수익 2열 + 목표가 전체폭 */}
       <div className="flex flex-col gap-2">
         <div className="grid grid-cols-2 gap-2">
           <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
             <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>매수가</div>
-            <div className="mono text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+            <div className="mono text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
               ₩{stock.buy_price.toLocaleString()}
             </div>
           </div>
           <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
-            <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>목표가</div>
-            <div className="mono text-xs font-semibold up">
-              ₩{stock.sell_price.toLocaleString()}
-            </div>
+            <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>예상 수익</div>
+            <div className="mono text-lg font-bold up">+{stock.expected_return.toFixed(1)}%</div>
           </div>
         </div>
-        <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
-          <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>예상 수익</div>
-          <div className="mono text-base font-bold up">+{stock.expected_return.toFixed(1)}%</div>
+        <div className="text-center p-2.5 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
+          <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>목표가</div>
+          <div className="mono text-base font-bold up">₩{stock.sell_price.toLocaleString()}</div>
         </div>
       </div>
 

@@ -115,6 +115,7 @@ async function runDailyAnalysis() {
         per: fund?.per ?? null,
         pbr: fund?.pbr ?? null,
         roe: fund?.roe ?? null,
+        market: fund?.market ?? null,
       }
     })
 

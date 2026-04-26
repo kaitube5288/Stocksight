@@ -52,6 +52,7 @@ export type StockRecommendation = {
   per?: number | null
   pbr?: number | null
   roe?: number | null
+  market?: 'KOSPI' | 'KOSDAQ' | null
 }
 
 export type DailyRecommendation = {
