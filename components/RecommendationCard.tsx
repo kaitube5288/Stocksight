@@ -11,18 +11,20 @@ interface Props {
 const RANK_LABELS = ['', '🥇', '🥈', '🥉']
 const RANK_COLORS = ['', 'var(--accent-gold)', 'var(--accent-blue)', 'var(--accent-green)']
 
-function ProbBar({ value }: { value: number }) {
+function ProbBar({ value, rank }: { value: number; rank: number }) {
   const color =
     value >= 90 ? 'linear-gradient(90deg, #00e5aa, #4dffce)' :
     value >= 75 ? 'linear-gradient(90deg, #4da6ff, #00e5aa)' :
     value >= 60 ? 'linear-gradient(90deg, #ffc94d, #4da6ff)' :
                   'linear-gradient(90deg, #ff5c5c, #ffc94d)'
 
+  const rankColor = rank >= 1 && rank <= 3 ? RANK_COLORS[rank] : 'var(--accent-green)'
+
   return (
     <div>
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>상승 확률</span>
-        <span className="mono text-sm font-semibold" style={{ color: RANK_COLORS[Math.min(rank, 3)] || 'var(--accent-green)' }}>
+        <span className="mono text-sm font-bold" style={{ color: rankColor }}>
           {value}%
         </span>
       </div>
@@ -33,7 +35,6 @@ function ProbBar({ value }: { value: number }) {
   )
 }
 
-// rank를 Props에서 받아야 하므로 ProbBar를 외부에서 rank 접근 가능하게 분리
 export default function RecommendationCard({ stock, rank, animate }: Props) {
   const rankClass = rank <= 3 ? `rank-${rank}` : ''
 
@@ -43,7 +44,9 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
       style={{ animationDelay: `${rank * 100}ms` }}
     >
       {/* 순위 뱃지 */}
-      <div className="absolute top-4 right-4 text-lg">{RANK_LABELS[rank] || `#${rank}`}</div>
+      <div className="absolute top-4 right-4 text-lg">
+        {rank <= 3 ? RANK_LABELS[rank] : `#${rank}`}
+      </div>
 
       {/* 종목명 + 코드 */}
       <div>
@@ -80,10 +83,13 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
       <hr className="separator" />
 
       {/* 확률 바 */}
-      <ProbBarWithRank value={stock.probability} rank={rank} />
+      <ProbBar value={stock.probability} rank={rank} />
 
       {/* 핵심 촉매 */}
-      <div className="flex items-start gap-2 p-3 rounded-xl" style={{ background: 'rgba(77,166,255,0.07)', border: '1px solid rgba(77,166,255,0.15)' }}>
+      <div
+        className="flex items-start gap-2 p-3 rounded-xl"
+        style={{ background: 'rgba(77,166,255,0.07)', border: '1px solid rgba(77,166,255,0.15)' }}
+      >
         <span style={{ color: 'var(--accent-blue)' }}>⚡</span>
         <span className="text-xs leading-relaxed font-medium" style={{ color: 'var(--text-secondary)' }}>
           {stock.key_catalyst}
@@ -91,32 +97,11 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
       </div>
 
       {/* 추천 이유 */}
-      <div className="text-xs leading-relaxed p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div
+        className="text-xs leading-relaxed p-3 rounded-xl"
+        style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--text-muted)', border: '1px solid rgba(255,255,255,0.06)' }}
+      >
         {stock.reasoning}
-      </div>
-    </div>
-  )
-}
-
-function ProbBarWithRank({ value, rank }: { value: number; rank: number }) {
-  const color =
-    value >= 90 ? 'linear-gradient(90deg, #00e5aa, #4dffce)' :
-    value >= 75 ? 'linear-gradient(90deg, #4da6ff, #00e5aa)' :
-    value >= 60 ? 'linear-gradient(90deg, #ffc94d, #4da6ff)' :
-                  'linear-gradient(90deg, #ff5c5c, #ffc94d)'
-
-  const rankColor = rank <= 3 ? RANK_COLORS[rank] : 'var(--accent-green)'
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>상승 확률</span>
-        <span className="mono text-sm font-bold" style={{ color: rankColor }}>
-          {value}%
-        </span>
-      </div>
-      <div className="prob-bar">
-        <div className="prob-bar-fill" style={{ width: `${value}%`, background: color }} />
       </div>
     </div>
   )
