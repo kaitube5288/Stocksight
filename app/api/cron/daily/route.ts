@@ -86,14 +86,11 @@ async function runDailyAnalysis() {
       date: today,
     })
 
-    // 4-1. trade_type 정규화
+    // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
     const TRADE_TYPES = ['단타', '스윙', '중기'] as const
     const HOLD_PERIODS: Record<string, string> = { '단타': '1일 목표', '스윙': '3~5일 목표', '중기': '2~4주 목표' }
     result.recommendations = result.recommendations.map((r, i) => {
-      let trade_type = r.trade_type
-      if (!TRADE_TYPES.includes(trade_type as typeof TRADE_TYPES[number])) {
-        trade_type = TRADE_TYPES[Math.floor(i / 3) % 3]
-      }
+      const trade_type = TRADE_TYPES[Math.floor(i / 3) % 3]
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 

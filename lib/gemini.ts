@@ -104,11 +104,10 @@ ${params.marketContext}
 - 중기: 매수가 = 전일 종가, 목표가 = 2~4주 내 목표가
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+- recommendations 배열은 반드시 9개 항목: 인덱스 0~2는 단타 종목, 3~5는 스윙 종목, 6~8은 중기 종목 순서로 작성
 {
   "recommendations": [
     {
-      "trade_type": "단타",
-      "hold_period": "1일 목표",
       "name": "종목명",
       "ticker": "6자리 종목코드",
       "buy_price": 매수가격(숫자),
