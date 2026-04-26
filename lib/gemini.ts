@@ -115,7 +115,6 @@ ${params.marketContext}
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 - recommendations 배열은 반드시 9개 항목: 인덱스 0~2는 단타 종목, 3~5는 스윙 종목, 6~8은 중기 종목 순서로 작성
-- per, pbr, roe는 해당 종목의 최신 알려진 수치를 입력 (모를 경우 null)
 {
   "recommendations": [
     {
@@ -126,10 +125,7 @@ ${params.marketContext}
       "expected_return": 예상수익률(숫자, % 단위),
       "probability": 상승확률(0-100 숫자),
       "reasoning": "추천 이유 (2-3문장, 구체적 근거 포함)",
-      "key_catalyst": "핵심 상승 촉매 (한 줄)",
-      "per": PER수치(숫자 또는 null),
-      "pbr": PBR수치(숫자 또는 null),
-      "roe": ROE수치(숫자, % 단위 또는 null)
+      "key_catalyst": "핵심 상승 촉매 (한 줄)"
     }
   ],
   "market_outlook": "전반적 시장 전망 (2-3문장)",

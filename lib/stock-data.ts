@@ -95,6 +95,73 @@ export async function getUSDKRW(): Promise<number | null> {
   }
 }
 
+export type StockFundamentals = {
+  per: number | null
+  pbr: number | null
+  roe: number | null
+}
+
+async function fetchYahooFundamentals(symbol: string): Promise<StockFundamentals | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d&includePrePost=false`
+    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 8000 })
+    const meta = res.data?.chart?.result?.[0]?.meta
+    if (!meta) return null
+    // chart API에는 fundamentals 없음, quoteSummary 사용
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function fetchYahooQuoteSummary(symbol: string): Promise<StockFundamentals | null> {
+  try {
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=defaultKeyStatistics%2CfinancialData`
+    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 8000 })
+    const stats = res.data?.quoteSummary?.result?.[0]
+    if (!stats) return null
+
+    const keyStats = stats.defaultKeyStatistics
+    const finData = stats.financialData
+
+    const per = keyStats?.trailingEps?.raw && keyStats?.priceToBook?.raw
+      ? null
+      : keyStats?.forwardPE?.raw ?? null
+    const trailingPE = keyStats?.trailingPE?.raw ?? null
+    const pbr = keyStats?.priceToBook?.raw ?? null
+    const roeRaw = finData?.returnOnEquity?.raw ?? null
+    const roe = roeRaw != null ? Math.round(roeRaw * 1000) / 10 : null
+
+    return {
+      per: trailingPE ?? per,
+      pbr,
+      roe,
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
+  const empty: StockFundamentals = { per: null, pbr: null, roe: null }
+  if (ticker.includes('.')) {
+    return (await fetchYahooQuoteSummary(ticker)) ?? empty
+  }
+  const ks = await fetchYahooQuoteSummary(`${ticker}.KS`)
+  if (ks && (ks.per != null || ks.pbr != null || ks.roe != null)) return ks
+  const kq = await fetchYahooQuoteSummary(`${ticker}.KQ`)
+  return kq ?? empty
+}
+
+export async function getFundamentalsMap(
+  tickers: string[]
+): Promise<Record<string, StockFundamentals>> {
+  const results = await Promise.all(tickers.map(t => getKoreanStockFundamentals(t)))
+  const map: Record<string, StockFundamentals> = {}
+  tickers.forEach((t, i) => { map[t] = results[i] })
+  return map
+}
+
 // 과거 유사 패턴 조회 (Supabase)
 export async function getSimilarHistoricalPatterns(keywords: string[]): Promise<string> {
   try {

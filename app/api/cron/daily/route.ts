@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 
@@ -94,15 +94,29 @@ async function runDailyAnalysis() {
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 
-    // 4-2. 실제 현재가로 매수가/목표가 보정
+    // 4-2. 실제 현재가 + 펀더멘털 병렬 조회
     const tickers = result.recommendations.map(r => r.ticker)
-    const realPrices = await getRealPrices(tickers)
+    const [realPrices, fundamentals] = await Promise.all([
+      getRealPrices(tickers),
+      getFundamentalsMap(tickers),
+    ])
     result.recommendations = result.recommendations.map(r => {
       const real = realPrices[r.ticker]
-      if (!real) return r
-      const buyPrice = real.previousClose > 0 ? real.previousClose : real.price
-      const sellPrice = Math.round(buyPrice * (1 + r.expected_return / 100))
-      return { ...r, buy_price: buyPrice, sell_price: sellPrice }
+      const fund = fundamentals[r.ticker]
+      const buyPrice = real
+        ? (real.previousClose > 0 ? real.previousClose : real.price)
+        : r.buy_price
+      const sellPrice = real
+        ? Math.round(buyPrice * (1 + r.expected_return / 100))
+        : r.sell_price
+      return {
+        ...r,
+        buy_price: buyPrice,
+        sell_price: sellPrice,
+        per: fund?.per ?? null,
+        pbr: fund?.pbr ?? null,
+        roe: fund?.roe ?? null,
+      }
     })
 
     // 5. Supabase 저장
