@@ -40,6 +40,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showRisk, setShowRisk] = useState(false)
+  const [showPwModal, setShowPwModal] = useState(false)
+  const [pwInput, setPwInput] = useState('')
+  const [pwError, setPwError] = useState(false)
   const { permission, requestPermission, notify } = usePushNotification()
   const prevDateRef = useRef<string | null>(null)
 
@@ -73,7 +76,18 @@ export default function Home() {
     loadRecommendations()
   }, [loadRecommendations])
 
-  const runAnalysis = async () => {
+  const handleAnalysisClick = () => {
+    setPwInput('')
+    setPwError(false)
+    setShowPwModal(true)
+  }
+
+  const handlePwConfirm = async () => {
+    if (pwInput !== 'stocksight') {
+      setPwError(true)
+      return
+    }
+    setShowPwModal(false)
     setAnalyzing(true)
     setError('')
     try {
@@ -93,6 +107,60 @@ export default function Home() {
 
   return (
     <main className="min-h-screen px-4 py-6 md:px-8 max-w-7xl mx-auto">
+
+      {/* 비밀번호 모달 */}
+      {showPwModal && (
+        <div className="modal-overlay" onClick={() => setShowPwModal(false)}>
+          <div
+            className="glass rounded-2xl p-8 w-full max-w-sm flex flex-col gap-5"
+            style={{ border: '1px solid rgba(77,166,255,0.3)', boxShadow: '0 0 40px rgba(77,166,255,0.1)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div>
+              <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                🔒 분석 실행 인증
+              </h2>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                비밀번호를 입력하세요
+              </p>
+            </div>
+            <input
+              type="password"
+              value={pwInput}
+              onChange={e => { setPwInput(e.target.value); setPwError(false) }}
+              onKeyDown={e => e.key === 'Enter' && handlePwConfirm()}
+              placeholder="비밀번호"
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl text-sm mono outline-none"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: pwError ? '1px solid var(--accent-red)' : '1px solid rgba(255,255,255,0.12)',
+                color: 'var(--text-primary)',
+              }}
+            />
+            {pwError && (
+              <p className="text-xs" style={{ color: 'var(--accent-red)', marginTop: '-8px' }}>
+                비밀번호가 올바르지 않습니다
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPwModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+              >
+                취소
+              </button>
+              <button
+                onClick={handlePwConfirm}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold btn-primary"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 헤더 */}
       <header className="mb-6 flex items-start justify-between">
         <div>
@@ -151,10 +219,10 @@ export default function Home() {
       {/* 분석 실행 버튼 */}
       <div className="mb-6 flex items-center gap-3">
         <button
-          onClick={runAnalysis}
+          onClick={handleAnalysisClick}
           disabled={analyzing}
-          className="glass glass-hover px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 disabled:opacity-40"
-          style={{ color: 'var(--text-primary)', cursor: analyzing ? 'not-allowed' : 'pointer' }}
+          className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
+          style={{ cursor: analyzing ? 'not-allowed' : 'pointer' }}
         >
           {analyzing ? (
             <span className="flex items-center gap-2">
