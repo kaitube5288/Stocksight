@@ -93,6 +93,10 @@ export default function AdminPage() {
               <option value={2018}>2018년 (~2분)</option>
               <option value={2020}>2020년 (~1.5분)</option>
               <option value={2022}>2022년 (~1분)</option>
+              <option value={2023}>2023년 (~45초)</option>
+              <option value={2024}>2024년 (~30초)</option>
+              <option value={2025}>2025년 (~20초)</option>
+              <option value={2026}>2026년 (~10초)</option>
             </select>
           </div>
           <div className="flex-1" />

@@ -20,7 +20,7 @@ async function callGemini(prompt: string): Promise<string> {
     try {
       const genAI = new GoogleGenerativeAI(key)
       const model = genAI.getGenerativeModel(
-        { model: 'gemini-2.5-flash' },
+        { model: 'gemini-2.5-flash', generationConfig: { temperature: 0.1 } },
         { apiVersion: 'v1beta' }
       )
       const result = await model.generateContent(prompt)
@@ -64,12 +64,12 @@ export async function generateRecommendations(params: {
   marketContext: string
   date: string
 }): Promise<GeminiAnalysisResult> {
-  const prompt = `당신은 한국 주식 시장 전문 AI 애널리스트입니다. 다음 데이터를 분석하여 오늘 상승 가능성이 높은 한국 주식 5종목을 추천해주세요.
+  const prompt = `당신은 한국 주식 시장 전문 AI 애널리스트입니다. 다음 데이터를 분석하여 오늘 당일 상승 확률이 가장 높은 한국 주식 3종목을 추천해주세요.
 
 ## 오늘 날짜
 ${params.date}
 
-## 오늘 오전 주요 뉴스 (전날 22:00 ~ 오늘 08:40)
+## 오늘 오전 주요 뉴스 (전날 09:00 ~ 오늘 08:40)
 ${params.todayNews}
 
 ## 오늘 DART 공시
@@ -81,12 +81,12 @@ ${params.historicalPatterns}
 ## 현재 시장 지표
 ${params.marketContext}
 
-## 분석 기준
-- 뉴스의 종목별 영향도를 분석하세요
-- 과거 유사 사건에서 어떤 종목이 얼마나 올랐는지 참고하세요
-- DART 공시가 주가에 미치는 영향을 반영하세요
-- 섹터 모멘텀과 테마를 고려하세요
+## 분석 기준 (반드시 준수)
+- 상승 확률(probability)이 높은 순서로 정렬하여 상위 3종목만 선정하세요
+- 확률 산정: 뉴스 직접 언급(+30%), 과거 유사 패턴 일치(+20%), DART 공시 호재(+20%), 섹터 모멘텀(+15%), 시장 지표 우호(+15%)
+- 동일한 데이터로 분석하면 항상 동일한 종목이 선정되어야 합니다
 - 매수가는 전일 종가 기준, 매도가는 당일 목표가로 설정하세요
+- 근거 없는 종목은 절대 포함하지 마세요
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {

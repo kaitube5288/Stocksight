@@ -15,20 +15,20 @@ export async function sendTelegramAlert(params: {
   const top3 = params.stocks.slice(0, 3)
 
   const lines = [
-    `📊 *StockSight 오늘의 추천 (${params.date})*`,
+    `📊 <b>StockSight 오늘의 추천 (${params.date})</b>`,
     ``,
     ...top3.map((s, i) =>
       [
-        `${['1️⃣','2️⃣','3️⃣'][i]} *${s.name}* (${s.ticker})`,
+        `${['1️⃣','2️⃣','3️⃣'][i]} <b>${s.name}</b> (${s.ticker})`,
         `   매수 ₩${s.buy_price.toLocaleString()} → 목표 ₩${s.sell_price.toLocaleString()}`,
         `   예상 +${s.expected_return.toFixed(1)}% | 확률 ${s.probability}%`,
-        `   _${s.key_catalyst}_`,
+        `   <i>${s.key_catalyst}</i>`,
       ].join('\n')
     ),
     ``,
     `📈 ${params.marketOutlook.slice(0, 100)}...`,
     ``,
-    `🔗 [분석 보기](https://stocksight-791mfi4ex-kaitube5288s-projects.vercel.app)`,
+    `🔗 <a href="https://stocksight-791mfi4ex-kaitube5288s-projects.vercel.app">분석 보기</a>`,
   ]
 
   const text = lines.join('\n')
@@ -39,7 +39,7 @@ export async function sendTelegramAlert(params: {
       {
         chat_id: TELEGRAM_CHAT_ID,
         text,
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
       },
       { timeout: 10000 }

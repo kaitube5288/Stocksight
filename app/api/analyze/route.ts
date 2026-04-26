@@ -7,6 +7,19 @@ import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST() {
   try {
+    const todayDate = new Date().toISOString().slice(0, 10)
+
+    // 오늘 분석이 이미 있으면 재사용 (Gemini 재호출 없이 동일 결과 반환)
+    const { data: existing } = await supabaseAdmin
+      .from('recommendations')
+      .select('*')
+      .eq('date', todayDate)
+      .single()
+
+    if (existing) {
+      return NextResponse.json({ success: true, data: existing, cached: true })
+    }
+
     const today = new Date().toLocaleDateString('ko-KR', {
       year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
     })
@@ -36,8 +49,7 @@ export async function POST() {
       date: today,
     })
 
-    // Supabase에 저장 (오늘 날짜 기존 데이터 삭제 후 새로 삽입)
-    const todayDate = new Date().toISOString().slice(0, 10)
+    // Supabase에 저장
     await supabaseAdmin.from('recommendations').delete().eq('date', todayDate)
 
     const { data, error } = await supabaseAdmin
