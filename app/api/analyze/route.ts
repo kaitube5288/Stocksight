@@ -16,7 +16,10 @@ export async function POST() {
       .eq('date', todayDate)
       .single()
 
-    if (existing && Array.isArray(existing.stocks) && existing.stocks.length > 0) {
+    const hasValidStocks = Array.isArray(existing?.stocks) &&
+      existing.stocks.length > 0 &&
+      existing.stocks.some((s: Record<string, unknown>) => s.trade_type)
+    if (hasValidStocks) {
       return NextResponse.json({ success: true, data: existing, cached: true })
     }
 
