@@ -39,12 +39,35 @@ async function fetchYahooQuote(symbol: string): Promise<StockQuote | null> {
   }
 }
 
-// 한국 주식 시세 조회 (ticker: 005930 → 005930.KS)
+// 한국 주식 시세 조회 (ticker: 005930 → 005930.KS, 실패 시 005930.KQ 시도)
 export async function getKoreanStockQuote(ticker: string): Promise<StockQuote | null> {
-  const symbol = ticker.includes('.') ? ticker : `${ticker}.KS`
-  const result = await fetchYahooQuote(symbol)
-  if (result) result.ticker = ticker
-  return result
+  if (ticker.includes('.')) {
+    const result = await fetchYahooQuote(ticker)
+    if (result) result.ticker = ticker
+    return result
+  }
+  const ks = await fetchYahooQuote(`${ticker}.KS`)
+  if (ks) { ks.ticker = ticker; return ks }
+  const kq = await fetchYahooQuote(`${ticker}.KQ`)
+  if (kq) { kq.ticker = ticker; return kq }
+  return null
+}
+
+// 여러 종목 실제 현재가 일괄 조회
+export async function getRealPrices(
+  tickers: string[]
+): Promise<Record<string, { price: number; previousClose: number }>> {
+  const results = await Promise.all(tickers.map(t => getKoreanStockQuote(t)))
+  const map: Record<string, { price: number; previousClose: number }> = {}
+  results.forEach((q, i) => {
+    if (q && (q.price > 0 || q.previousClose > 0)) {
+      map[tickers[i]] = {
+        price: q.price || q.previousClose,
+        previousClose: q.previousClose || q.price,
+      }
+    }
+  })
+  return map
 }
 
 // KOSPI/KOSDAQ 지수

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { generateRecommendations } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { fetchOvernightNews, formatNewsForPrompt } from '@/lib/news'
-import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices } from '@/lib/stock-data'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST() {
@@ -47,6 +47,17 @@ export async function POST() {
       historicalPatterns,
       marketContext: marketText,
       date: today,
+    })
+
+    // 실제 현재가로 매수가/목표가 보정
+    const tickers = result.recommendations.map(r => r.ticker)
+    const realPrices = await getRealPrices(tickers)
+    result.recommendations = result.recommendations.map(r => {
+      const real = realPrices[r.ticker]
+      if (!real) return r
+      const buyPrice = real.previousClose > 0 ? real.previousClose : real.price
+      const sellPrice = Math.round(buyPrice * (1 + r.expected_return / 100))
+      return { ...r, buy_price: buyPrice, sell_price: sellPrice }
     })
 
     // Supabase에 저장
