@@ -28,7 +28,7 @@ export async function sendTelegramAlert(params: {
     ``,
     `📈 ${params.marketOutlook.slice(0, 100)}...`,
     ``,
-    `🔗 [분석 보기](http://localhost:3000)`,
+    `🔗 [분석 보기](https://stocksight-791mfi4ex-kaitube5288s-projects.vercel.app)`,
   ]
 
   const text = lines.join('\n')
