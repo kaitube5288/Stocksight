@@ -49,6 +49,9 @@ export type StockRecommendation = {
   key_catalyst: string
   trade_type: TradeType
   hold_period: string
+  per?: number | null
+  pbr?: number | null
+  roe?: number | null
 }
 
 export type DailyRecommendation = {

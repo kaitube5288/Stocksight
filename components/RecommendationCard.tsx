@@ -11,10 +11,10 @@ interface Props {
 const RANK_LABELS = ['', '🥇', '🥈', '🥉']
 const RANK_COLORS = ['', 'var(--accent-gold)', 'var(--accent-blue)', 'var(--accent-green)']
 
-const TRADE_TYPE_STYLE: Record<string, { bg: string; color: string }> = {
-  '단타': { bg: 'rgba(255,92,92,0.12)', color: 'var(--accent-red)' },
-  '스윙': { bg: 'rgba(77,166,255,0.12)', color: 'var(--accent-blue)' },
-  '중기': { bg: 'rgba(0,229,170,0.12)', color: 'var(--accent-green)' },
+const TRADE_TYPE_STYLE: Record<string, { background: string; color: string }> = {
+  '단타': { background: 'rgba(255,92,92,0.12)', color: 'var(--accent-red)' },
+  '스윙': { background: 'rgba(77,166,255,0.12)', color: 'var(--accent-blue)' },
+  '중기': { background: 'rgba(0,229,170,0.12)', color: 'var(--accent-green)' },
 }
 
 function ProbBar({ value, rank }: { value: number; rank: number }) {
@@ -23,20 +23,28 @@ function ProbBar({ value, rank }: { value: number; rank: number }) {
     value >= 75 ? 'linear-gradient(90deg, #4da6ff, #00e5aa)' :
     value >= 60 ? 'linear-gradient(90deg, #ffc94d, #4da6ff)' :
                   'linear-gradient(90deg, #ff5c5c, #ffc94d)'
-
   const rankColor = rank >= 1 && rank <= 3 ? RANK_COLORS[rank] : 'var(--accent-green)'
 
   return (
     <div>
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>상승 확률</span>
-        <span className="mono text-sm font-bold" style={{ color: rankColor }}>
-          {value}%
-        </span>
+        <span className="mono text-sm font-bold" style={{ color: rankColor }}>{value}%</span>
       </div>
       <div className="prob-bar">
         <div className="prob-bar-fill" style={{ width: `${value}%`, background: color }} />
       </div>
+    </div>
+  )
+}
+
+function FundamentalBadge({ label, value, unit = '' }: { label: string; value: number | null | undefined; unit?: string }) {
+  return (
+    <div className="flex flex-col items-center py-1.5 px-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <span className="text-[9px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span className="mono text-xs font-semibold" style={{ color: value != null ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+        {value != null ? `${value}${unit}` : 'N/A'}
+      </span>
     </div>
   )
 }
@@ -46,7 +54,7 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
 
   return (
     <div
-      className={`glass glass-hover ${rankClass} relative rounded-2xl p-5 flex flex-col gap-4 transition-all duration-300 ${animate ? 'animate-slide-up' : ''}`}
+      className={`glass glass-hover ${rankClass} relative rounded-2xl p-5 flex flex-col gap-3 transition-all duration-300 ${animate ? 'animate-slide-up' : ''}`}
       style={{ animationDelay: `${rank * 100}ms` }}
     >
       {/* 순위 뱃지 */}
@@ -54,13 +62,13 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
         {rank <= 3 ? RANK_LABELS[rank] : `#${rank}`}
       </div>
 
-      {/* 종목명 + 코드 */}
+      {/* 투자유형 + 종목명 + 코드 */}
       <div>
         {stock.trade_type && (
           <div className="flex items-center gap-2 mb-2">
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-md"
-              style={TRADE_TYPE_STYLE[stock.trade_type] ?? { bg: 'transparent', color: 'var(--text-muted)' }}
+              style={TRADE_TYPE_STYLE[stock.trade_type]}
             >
               {stock.trade_type}
             </span>
@@ -69,34 +77,41 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
             </span>
           </div>
         )}
-        <div className="flex items-center gap-2 mb-2">
-          <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
+        <div className="flex items-center gap-2 mb-2 pr-8">
+          <span className="font-bold text-lg leading-tight" style={{ color: 'var(--text-primary)' }}>
             {stock.name}
           </span>
         </div>
         <span className="badge">{stock.ticker}</span>
       </div>
 
-      {/* 가격 정보 */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-          <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>매수가</div>
-          <div className="mono text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-            ₩{stock.buy_price.toLocaleString()}
+      {/* 가격 정보: 매수가/목표가 2열 + 예상수익 전체폭 */}
+      <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>매수가</div>
+            <div className="mono text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+              ₩{stock.buy_price.toLocaleString()}
+            </div>
+          </div>
+          <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
+            <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>목표가</div>
+            <div className="mono text-xs font-semibold up">
+              ₩{stock.sell_price.toLocaleString()}
+            </div>
           </div>
         </div>
         <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
-          <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>목표가</div>
-          <div className="mono text-sm font-semibold up">
-            ₩{stock.sell_price.toLocaleString()}
-          </div>
+          <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>예상 수익</div>
+          <div className="mono text-base font-bold up">+{stock.expected_return.toFixed(1)}%</div>
         </div>
-        <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(0,229,170,0.07)', border: '1px solid rgba(0,229,170,0.15)' }}>
-          <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>예상수익</div>
-          <div className="mono text-base font-bold up">
-            +{stock.expected_return.toFixed(1)}%
-          </div>
-        </div>
+      </div>
+
+      {/* PER / PBR / ROE */}
+      <div className="grid grid-cols-3 gap-2">
+        <FundamentalBadge label="PER" value={stock.per} />
+        <FundamentalBadge label="PBR" value={stock.pbr} />
+        <FundamentalBadge label="ROE" value={stock.roe} unit="%" />
       </div>
 
       <hr className="separator" />

@@ -91,7 +91,7 @@ export default function Home() {
   }
 
   const handlePwConfirm = async () => {
-    if (pwInput !== 'stocksight') {
+    if (pwInput !== '1214') {
       setPwError(true)
       return
     }
