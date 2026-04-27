@@ -340,6 +340,12 @@ export default function Home() {
                 </div>
                 {showRisk && (
                   <div className="flex flex-col gap-3 animate-fade-in">
+                    {recommendation.market_outlook?.startsWith('[하락장 위험]') && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'rgba(220,38,38,0.18)', border: '2px solid rgba(255,80,80,0.5)' }}>
+                        <span style={{ fontSize: '16px' }}>⚠️</span>
+                        <span className="text-xs font-bold" style={{ color: '#ff6b6b' }}>하락장 위험 — 오늘 투자 자제 권고</span>
+                      </div>
+                    )}
                     <div>
                       <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>전망</div>
                       <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
