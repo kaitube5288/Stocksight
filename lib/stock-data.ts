@@ -134,28 +134,21 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// invest 페이지: >LABEL< 위치 이후 첫 번째 <em> 값 추출
-// >PER< 는 단독 PER 레이블만 매칭 (>업종PER<은 한국어가 앞에 있어 >PER< 로 안 잡힘)
-// 첫 번째 <em>이 항상 해당 레이블의 값 셀 — 업종PER보다 먼저 나옴
-async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
+// 네이버 금융 메인 페이지에서 id="_per", id="_pbr" 로 PER/PBR 추출
+// invest 서브페이지는 JavaScript로 값을 채우므로 axios로는 N/A만 읽힘
+async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
-      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=invest`,
-      { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
+      `https://finance.naver.com/item/main.naver?code=${code}`,
+      { headers: { ...HTML_HEADERS, Referer: 'https://finance.naver.com/' }, timeout: 12000, responseType: 'text' }
     )
     const html: string = res.data
-
-    const extractVal = (label: string): number | null => {
-      const idx = html.indexOf(`>${label}`)
-      if (idx === -1) return null
-      const m = html.slice(idx, idx + 600).match(/<em>([^<]+)<\/em>/)
-      if (!m) return null
-      const val = m[1].trim()
-      if (!val || val === '-') return null
-      return parseN(val)
+    const mPer = html.match(/id="_per"[^>]*>([\d,.]+)</)
+    const mPbr = html.match(/id="_pbr"[^>]*>([\d,.]+)</)
+    return {
+      per: mPer ? parseN(mPer[1]) : null,
+      pbr: mPbr ? parseN(mPbr[1]) : null,
     }
-
-    return { per: extractVal('PER'), pbr: extractVal('PBR') }
   } catch { return { per: null, pbr: null } }
 }
 
@@ -192,7 +185,7 @@ export async function getKoreanStockFundamentals(ticker: string): Promise<StockF
   const [ks, kq, investData, roe, naverMarket] = await Promise.all([
     fetchYahooQuote(`${code}.KS`),
     fetchYahooQuote(`${code}.KQ`),
-    scrapeNaverInvest(code),
+    scrapeNaverMain(code),
     scrapeNaverROE(code),
     fetchNaverMarket(code),
   ])
