@@ -65,11 +65,15 @@ export async function POST() {
       getRealPrices(tickers),
       getFundamentalsMap(tickers),
     ])
+    // 거래중단/상폐 종목 제거 (Yahoo에서 유효한 가격 없음 = realPrices에 항목 없음)
+    result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
+
     result.recommendations = result.recommendations.map(r => {
       const real = realPrices[r.ticker]
       const fund = fundamentals[r.ticker]
+      // 현재가(real.price)를 매수가 기준으로 사용해 카드 현재가와 괴리 방지
       const buyPrice = real
-        ? (real.previousClose > 0 ? real.previousClose : real.price)
+        ? (real.price > 0 ? real.price : real.previousClose)
         : r.buy_price
       const sellPrice = real
         ? Math.round(buyPrice * (1 + r.expected_return / 100))
