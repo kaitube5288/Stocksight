@@ -41,7 +41,7 @@ async function runDailyAnalysis() {
     // 1. 전날 09:00 ~ 당일 08:40 뉴스 읽기
     const cutoff = new Date(now)
     cutoff.setDate(cutoff.getDate() - 1)
-    cutoff.setHours(9, 0, 0, 0) // 전날 09:00 KST
+    cutoff.setHours(0, 0, 0, 0) // 전날 09:00 KST = 00:00 UTC (Vercel 서버는 UTC)
 
     const { data: newsCacheRows } = await supabaseAdmin
       .from('news_cache')
