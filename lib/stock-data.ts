@@ -9,6 +9,7 @@ export type StockQuote = {
   changePercent: number
   volume: number
   previousClose: number
+  exchangeName?: string  // "KSC"=KOSPI, "KOE"/"KOQ"=KOSDAQ
 }
 
 const YF_HEADERS = {
@@ -33,6 +34,7 @@ async function fetchYahooQuote(symbol: string): Promise<StockQuote | null> {
         : 0,
       volume: meta.regularMarketVolume || 0,
       previousClose: meta.previousClose || 0,
+      exchangeName: meta.exchangeName,
     }
   } catch {
     return null
@@ -113,7 +115,20 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// invest 페이지: >PER< / >PBR< 태그 정확 매칭 (업종PER 오매칭 방지)
+// <th>LABEL</th> 바로 다음 <td> 셀에서 숫자 추출 (업종PER 오매칭 완전 차단)
+function extractCellAfterHeader(html: string, label: string): number | null {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // header 셀(</th>) 이후 80자 이내 첫 번째 td의 내용 추출
+  const m = html.match(new RegExp(`>${esc}<\\/th>[\\s\\S]{1,80}?<td[^>]*>([\\s\\S]{1,200}?)<\\/td>`))
+  if (!m) return null
+  // 셀 내용에서 HTML 태그 제거 후 첫 번째 숫자 추출
+  const text = m[1].replace(/<[^>]+>/g, ' ')
+  const num = text.match(/(-?[\d,]+\.?\d*)/)
+  if (!num) return null
+  return parseN(num[1])
+}
+
+// invest 페이지: PER/PBR 추출 (셀 기반 파싱 → em/span/td 등 모든 구조 대응)
 async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
@@ -121,12 +136,9 @@ async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr:
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html: string = res.data
-    // >PER< 는 stock PER만 매칭 (업종PER은 한국어 앞글자가 있어 >PER< 로 안 잡힘)
-    const perM = html.match(/>PER<[\s\S]{1,400}?<em>(-?[\d,]+\.?\d*|-)<\/em>/)
-    const pbrM = html.match(/>PBR<[\s\S]{1,400}?<em>(-?[\d,]+\.?\d*|-)<\/em>/)
     return {
-      per: (perM && perM[1] !== '-') ? parseN(perM[1]) : null,
-      pbr: (pbrM && pbrM[1] !== '-') ? parseN(pbrM[1]) : null,
+      per: extractCellAfterHeader(html, 'PER'),
+      pbr: extractCellAfterHeader(html, 'PBR'),
     }
   } catch { return { per: null, pbr: null } }
 }
@@ -165,10 +177,19 @@ export async function getKoreanStockFundamentals(ticker: string): Promise<StockF
     scrapeNaverROE(code),
   ])
 
-  // price > 0 체크: Yahoo가 price=0 데이터를 반환해도 잘못된 시장으로 분류하지 않도록
-  const validKS = ks !== null && (ks.price > 0 || ks.previousClose > 0)
-  const validKQ = kq !== null && (kq.price > 0 || kq.previousClose > 0)
-  const market: 'KOSPI' | 'KOSDAQ' | null = validKS ? 'KOSPI' : validKQ ? 'KOSDAQ' : null
+  // exchangeName으로 정확한 시장 판별: "KSC"=KOSPI, "KOE"/"KOQ"=KOSDAQ
+  // Yahoo가 KOSDAQ 종목에도 .KS 심볼 데이터를 반환하는 경우를 차단
+  function quoteMarket(q: StockQuote | null): 'KOSPI' | 'KOSDAQ' | null {
+    if (!q || (q.price <= 0 && q.previousClose <= 0)) return null
+    const ex = (q.exchangeName ?? '').toUpperCase()
+    if (ex === 'KSC') return 'KOSPI'
+    if (ex === 'KOE' || ex === 'KOQ') return 'KOSDAQ'
+    return null
+  }
+  const market: 'KOSPI' | 'KOSDAQ' | null =
+    quoteMarket(ks) ?? quoteMarket(kq) ??
+    (ks && (ks.price > 0 || ks.previousClose > 0) ? 'KOSPI' :
+     kq && (kq.price > 0 || kq.previousClose > 0) ? 'KOSDAQ' : null)
 
   return { per: investData.per, pbr: investData.pbr, roe, market }
 }
