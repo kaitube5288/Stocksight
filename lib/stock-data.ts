@@ -115,20 +115,9 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// <th>LABEL</th> 바로 다음 <td> 셀에서 숫자 추출 (업종PER 오매칭 완전 차단)
-function extractCellAfterHeader(html: string, label: string): number | null {
-  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // header 셀(</th>) 이후 80자 이내 첫 번째 td의 내용 추출
-  const m = html.match(new RegExp(`>${esc}<\\/th>[\\s\\S]{1,80}?<td[^>]*>([\\s\\S]{1,200}?)<\\/td>`))
-  if (!m) return null
-  // 셀 내용에서 HTML 태그 제거 후 첫 번째 숫자 추출
-  const text = m[1].replace(/<[^>]+>/g, ' ')
-  const num = text.match(/(-?[\d,]+\.?\d*)/)
-  if (!num) return null
-  return parseN(num[1])
-}
-
-// invest 페이지: PER/PBR 추출 (셀 기반 파싱 → em/span/td 등 모든 구조 대응)
+// invest 페이지: >LABEL< 위치 이후 첫 번째 <em> 값 추출
+// >PER< 는 단독 PER 레이블만 매칭 (>업종PER<은 한국어가 앞에 있어 >PER< 로 안 잡힘)
+// 첫 번째 <em>이 항상 해당 레이블의 값 셀 — 업종PER보다 먼저 나옴
 async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
@@ -136,10 +125,19 @@ async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr:
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html: string = res.data
-    return {
-      per: extractCellAfterHeader(html, 'PER'),
-      pbr: extractCellAfterHeader(html, 'PBR'),
+
+    const extractVal = (label: string): number | null => {
+      const idx = html.indexOf(`>${label}<`)
+      if (idx === -1) return null
+      // 레이블 직후 300자 이내 첫 번째 <em> 값 (업종PER보다 먼저 나오는 자기 값)
+      const m = html.slice(idx, idx + 300).match(/<em>([^<]+)<\/em>/)
+      if (!m) return null
+      const val = m[1].trim()
+      if (!val || val === '-') return null
+      return parseN(val)
     }
+
+    return { per: extractVal('PER'), pbr: extractVal('PBR') }
   } catch { return { per: null, pbr: null } }
 }
 
@@ -150,14 +148,17 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html = res.data as string
+    const idx = html.indexOf('>ROE')
+    if (idx === -1) return null
+    const after = html.slice(idx, idx + 600)
+    // em 태그 → td 직접 숫자 → span 포함 td 순으로 시도
     const patterns = [
-      />ROE\(%\)<[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*<\/td>/,
-      />ROE<[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*<\/td>/,
-      />ROE<[\s\S]{1,300}?<td[^>]*>(?:<[^>]+>)*\s*(-?[\d,]+\.?\d*)\s*</,
-      /ROE[\s\S]{1,1500}?(-?[\d,]+\.?\d*)\s*%/,
+      /<em>(-?[\d,]+\.?\d+)<\/em>/,
+      /<td[^>]*>\s*(-?[\d,]+\.?\d+)\s*<\/td>/,
+      /<td[^>]*>(-?[\d,]+\.?\d+)<span/,
     ]
     for (const p of patterns) {
-      const m = html.match(p)
+      const m = after.match(p)
       if (m) {
         const n = parseN(m[1])
         if (n !== null && Math.abs(n) < 300) return n
