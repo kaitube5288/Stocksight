@@ -41,8 +41,8 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
   throw lastErr
 }
 
-// 모델 우선순위: 2.5-flash → 2.0-flash → 1.5-flash
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+// 모델 우선순위: 2.5-flash → 2.0-flash → 1.5-pro (1.5-flash는 v1beta에서 404 제거됨)
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
 
 async function callGemini(prompt: string): Promise<string> {
   if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
@@ -57,10 +57,12 @@ async function callGemini(prompt: string): Promise<string> {
         const isRetryable =
           err.message.includes('429') ||
           err.message.includes('503') ||
+          err.message.includes('404') ||
           err.message.toLowerCase().includes('quota') ||
           err.message.toLowerCase().includes('too many requests') ||
           err.message.toLowerCase().includes('service unavailable') ||
-          err.message.toLowerCase().includes('high demand')
+          err.message.toLowerCase().includes('high demand') ||
+          err.message.toLowerCase().includes('not found')
         if (isRetryable) continue
         throw err
       }
