@@ -13,31 +13,61 @@ if (API_KEYS.length === 0 && process.env.GEMINI_API_KEY) {
   API_KEYS.push(process.env.GEMINI_API_KEY)
 }
 
-async function callGemini(prompt: string): Promise<string> {
-  if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
-
-  for (const key of API_KEYS) {
+// 503 과부하 시 같은 모델 재시도 (최대 3회, 지수 backoff)
+async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string): Promise<string> {
+  const delays = [4000, 10000, 20000]
+  let lastErr: Error = new Error('unknown')
+  for (let i = 0; i <= delays.length; i++) {
     try {
-      const genAI = new GoogleGenerativeAI(key)
       const model = genAI.getGenerativeModel(
-        { model: 'gemini-2.5-flash', generationConfig: { temperature: 0.1 } },
+        { model: modelName, generationConfig: { temperature: 0.1 } },
         { apiVersion: 'v1beta' }
       )
       const result = await model.generateContent(prompt)
       return result.response.text()
     } catch (e: unknown) {
-      const err = e instanceof Error ? e : new Error(String(e))
-      const isQuota =
-        err.message.includes('429') ||
-        err.message.toLowerCase().includes('quota') ||
-        err.message.toLowerCase().includes('too many requests')
+      lastErr = e instanceof Error ? e : new Error(String(e))
+      const is503 =
+        lastErr.message.includes('503') ||
+        lastErr.message.toLowerCase().includes('service unavailable') ||
+        lastErr.message.toLowerCase().includes('high demand')
+      if (is503 && i < delays.length) {
+        await new Promise(r => setTimeout(r, delays[i]))
+        continue
+      }
+      throw lastErr
+    }
+  }
+  throw lastErr
+}
 
-      if (isQuota) continue
-      throw err
+// 모델 우선순위: 2.5-flash → 2.0-flash → 1.5-flash
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+
+async function callGemini(prompt: string): Promise<string> {
+  if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
+
+  for (const key of API_KEYS) {
+    const genAI = new GoogleGenerativeAI(key)
+    for (const modelName of FALLBACK_MODELS) {
+      try {
+        return await callModel(genAI, modelName, prompt)
+      } catch (e: unknown) {
+        const err = e instanceof Error ? e : new Error(String(e))
+        const isRetryable =
+          err.message.includes('429') ||
+          err.message.includes('503') ||
+          err.message.toLowerCase().includes('quota') ||
+          err.message.toLowerCase().includes('too many requests') ||
+          err.message.toLowerCase().includes('service unavailable') ||
+          err.message.toLowerCase().includes('high demand')
+        if (isRetryable) continue
+        throw err
+      }
     }
   }
 
-  throw new Error(`모든 Gemini API 키의 할당량이 초과되었습니다 (${API_KEYS.length}개 키 시도)`)
+  throw new Error(`모든 Gemini API 키/모델 시도 실패 (키 ${API_KEYS.length}개, 모델 ${FALLBACK_MODELS.length}개)`)
 }
 
 export type GeminiRecommendation = {
