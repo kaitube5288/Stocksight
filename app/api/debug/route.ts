@@ -31,18 +31,22 @@ export async function GET(request: Request) {
       naverApiRaw = r.data
     } catch (e) { naverApiRaw = { error: String(e) } }
 
-    // invest 페이지 HTML 스니펫 확인 (>PBR< 전후 300자)
+    // invest 페이지 HTML 스니펫 확인 (>PBR 전후 1500자)
     let investHtmlSnippet: string | null = null
+    let investEmValues: string[] = []
     try {
       const r = await axios.get(`https://finance.naver.com/item/coinfo.naver?code=${code}&target=invest`, { headers: HTML_HEADERS, timeout: 10000, responseType: 'text' })
       const html: string = r.data
-      const idx = html.indexOf('>PBR<')
+      const idx = html.indexOf('>PBR')
       investHtmlSnippet = idx !== -1
-        ? html.slice(Math.max(0, idx - 20), idx + 300)
-        : `>PBR< NOT FOUND. First 500 chars: ${html.slice(0, 500)}`
+        ? html.slice(Math.max(0, idx - 20), idx + 1500)
+        : `>PBR NOT FOUND. First 1000 chars: ${html.slice(0, 1000)}`
+      // 전체 <em> 태그 값 목록 (앞 50개)
+      const emMatches = [...html.matchAll(/<em>([^<]*)<\/em>/g)].slice(0, 50)
+      investEmValues = emMatches.map(m => m[1].trim()).filter(Boolean)
     } catch (e) { investHtmlSnippet = String(e) }
 
-    return NextResponse.json({ ticker: testTicker, fundamentals: fund, naverApiRaw, investHtmlSnippet })
+    return NextResponse.json({ ticker: testTicker, fundamentals: fund, naverApiRaw, investHtmlSnippet, investEmValues })
   }
 
   const { data, error } = await supabaseAdmin
