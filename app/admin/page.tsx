@@ -43,14 +43,21 @@ export default function AdminPage() {
         body: JSON.stringify({ startYear }),
       })
       const data = await res.json()
-      setCollectLog(prev => [
-        ...prev,
-        data.success
-          ? `[${now()}] ✅ ${data.message}`
-          : `[${now()}] ❌ 오류: ${data.error}`,
-      ])
       if (data.success) {
+        setCollectLog(prev => [...prev, `[${now()}] ✅ ${data.message}`])
         await loadCollectedYears()
+        // 수집 완료 후 수집된 데이터 포함해 AI 재분석 자동 실행
+        setCollectLog(prev => [...prev, `[${now()}] 🔄 수집 데이터 반영 AI 재분석 중... (30~60초)`])
+        const analysisRes = await fetch('/api/cron/daily', { method: 'POST' })
+        const analysisData = await analysisRes.json()
+        setCollectLog(prev => [
+          ...prev,
+          analysisData.success
+            ? `[${now()}] ✅ AI 재분석 완료 — 뉴스 ${analysisData.newsCount}건 분석`
+            : `[${now()}] ❌ AI 분석 오류: ${analysisData.error}`,
+        ])
+      } else {
+        setCollectLog(prev => [...prev, `[${now()}] ❌ 오류: ${data.error}`])
       }
     } catch (e) {
       setCollectLog(prev => [...prev, `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`])

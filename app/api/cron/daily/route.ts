@@ -12,9 +12,12 @@ export const maxDuration = 300
 export async function GET(request: Request) {
   // Vercel Cron 보안 헤더 검증
   const authHeader = request.headers.get('authorization')
+  const cronSecret = process.env.CRON_SECRET
+  // CRON_SECRET 미설정 시 인증 스킵 (설정된 경우에만 검증)
   if (
     process.env.NODE_ENV === 'production' &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+    cronSecret &&
+    authHeader !== `Bearer ${cronSecret}`
   ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

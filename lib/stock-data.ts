@@ -47,9 +47,9 @@ export async function getKoreanStockQuote(ticker: string): Promise<StockQuote | 
     return result
   }
   const ks = await fetchYahooQuote(`${ticker}.KS`)
-  if (ks) { ks.ticker = ticker; return ks }
+  if (ks && (ks.price > 0 || ks.previousClose > 0)) { ks.ticker = ticker; return ks }
   const kq = await fetchYahooQuote(`${ticker}.KQ`)
-  if (kq) { kq.ticker = ticker; return kq }
+  if (kq && (kq.price > 0 || kq.previousClose > 0)) { kq.ticker = ticker; return kq }
   return null
 }
 
@@ -113,19 +113,20 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// Naver 메인 페이지: id="per", id="pbr" 엘리먼트 (가장 안정적)
-async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: number|null }> {
+// invest 페이지: >PER< / >PBR< 태그 정확 매칭 (업종PER 오매칭 방지)
+async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr: number|null }> {
   try {
     const res = await axios.get(
-      `https://finance.naver.com/item/main.naver?code=${code}`,
-      { headers: { ...HTML_HEADERS, Referer: 'https://finance.naver.com/' }, timeout: 10000, responseType: 'text' }
+      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=invest`,
+      { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html: string = res.data
-    const mPer = html.match(/id="per"[^>]*>\s*([\d,.]+)/) ?? html.match(/PER[\s\S]{1,500}?<em>([\d,.]+)<\/em>/)
-    const mPbr = html.match(/id="pbr"[^>]*>\s*([\d,.]+)/) ?? html.match(/PBR[\s\S]{1,500}?<em>([\d,.]+)<\/em>/)
+    // >PER< 는 stock PER만 매칭 (업종PER은 한국어 앞글자가 있어 >PER< 로 안 잡힘)
+    const perM = html.match(/>PER<[\s\S]{1,400}?<em>(-?[\d,]+\.?\d*|-)<\/em>/)
+    const pbrM = html.match(/>PBR<[\s\S]{1,400}?<em>(-?[\d,]+\.?\d*|-)<\/em>/)
     return {
-      per: mPer ? parseN(mPer[1]) : null,
-      pbr: mPbr ? parseN(mPbr[1]) : null,
+      per: (perM && perM[1] !== '-') ? parseN(perM[1]) : null,
+      pbr: (pbrM && pbrM[1] !== '-') ? parseN(pbrM[1]) : null,
     }
   } catch { return { per: null, pbr: null } }
 }
@@ -137,10 +138,10 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html = res.data as string
-    // ROE(%) 행: </th> 직후 <td> 값 추출 (다중 패턴 시도)
     const patterns = [
-      /ROE\(%\)[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*</,
-      /ROE[\s\S]{1,300}?<td[^>]*>(?:<[^>]+>)*\s*(-?[\d,]+\.?\d*)\s*</,
+      />ROE\(%\)<[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*<\/td>/,
+      />ROE<[\s\S]{1,300}?<td[^>]*>\s*(-?[\d,]+\.?\d*)\s*<\/td>/,
+      />ROE<[\s\S]{1,300}?<td[^>]*>(?:<[^>]+>)*\s*(-?[\d,]+\.?\d*)\s*</,
       /ROE[\s\S]{1,1500}?(-?[\d,]+\.?\d*)\s*%/,
     ]
     for (const p of patterns) {
@@ -157,19 +158,19 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  // 시장 구분: Yahoo v8 chart(.KS/.KQ)
-  // PER/PBR: Naver 메인 페이지 (id="per"/id="pbr" 엘리먼트)
-  // ROE: Naver finsum_Y 연간 재무 테이블
-  const [ks, kq, mainData, roe] = await Promise.all([
+  const [ks, kq, investData, roe] = await Promise.all([
     fetchYahooQuote(`${code}.KS`),
     fetchYahooQuote(`${code}.KQ`),
-    scrapeNaverMain(code),
+    scrapeNaverInvest(code),
     scrapeNaverROE(code),
   ])
 
-  const market: 'KOSPI' | 'KOSDAQ' | null = ks ? 'KOSPI' : kq ? 'KOSDAQ' : null
+  // price > 0 체크: Yahoo가 price=0 데이터를 반환해도 잘못된 시장으로 분류하지 않도록
+  const validKS = ks !== null && (ks.price > 0 || ks.previousClose > 0)
+  const validKQ = kq !== null && (kq.price > 0 || kq.previousClose > 0)
+  const market: 'KOSPI' | 'KOSDAQ' | null = validKS ? 'KOSPI' : validKQ ? 'KOSDAQ' : null
 
-  return { per: mainData.per, pbr: mainData.pbr, roe, market }
+  return { per: investData.per, pbr: investData.pbr, roe, market }
 }
 
 export async function getFundamentalsMap(
