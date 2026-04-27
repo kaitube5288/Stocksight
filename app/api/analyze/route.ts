@@ -76,6 +76,7 @@ export async function POST() {
         : r.sell_price
       return {
         ...r,
+        current_price: real?.price ?? buyPrice,
         buy_price: buyPrice,
         sell_price: sellPrice,
         per: fund?.per ?? null,

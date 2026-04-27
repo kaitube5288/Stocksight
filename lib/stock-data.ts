@@ -110,6 +110,25 @@ const HTML_HEADERS = {
   'Accept-Language': 'ko-KR,ko;q=0.9',
 }
 
+const NAVER_API_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+  'Referer': 'https://m.stock.naver.com/',
+  'Accept': 'application/json, text/plain, */*',
+}
+
+async function fetchNaverMarket(code: string): Promise<'KOSPI' | 'KOSDAQ' | null> {
+  try {
+    const res = await axios.get(
+      `https://m.stock.naver.com/api/stock/${code}/basic`,
+      { headers: NAVER_API_HEADERS, timeout: 8000 }
+    )
+    const nameKor: string = res.data?.stockExchangeType?.nameKor ?? ''
+    if (nameKor.includes('코스피')) return 'KOSPI'
+    if (nameKor.includes('코스닥')) return 'KOSDAQ'
+    return null
+  } catch { return null }
+}
+
 function parseN(s: string): number | null {
   const n = parseFloat(s.replace(/,/g, ''))
   return isNaN(n) ? null : Math.round(n * 100) / 100
@@ -127,10 +146,9 @@ async function scrapeNaverInvest(code: string): Promise<{ per: number|null; pbr:
     const html: string = res.data
 
     const extractVal = (label: string): number | null => {
-      const idx = html.indexOf(`>${label}<`)
+      const idx = html.indexOf(`>${label}`)
       if (idx === -1) return null
-      // 레이블 직후 300자 이내 첫 번째 <em> 값 (업종PER보다 먼저 나오는 자기 값)
-      const m = html.slice(idx, idx + 300).match(/<em>([^<]+)<\/em>/)
+      const m = html.slice(idx, idx + 600).match(/<em>([^<]+)<\/em>/)
       if (!m) return null
       const val = m[1].trim()
       if (!val || val === '-') return null
@@ -171,15 +189,16 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  const [ks, kq, investData, roe] = await Promise.all([
+  const [ks, kq, investData, roe, naverMarket] = await Promise.all([
     fetchYahooQuote(`${code}.KS`),
     fetchYahooQuote(`${code}.KQ`),
     scrapeNaverInvest(code),
     scrapeNaverROE(code),
+    fetchNaverMarket(code),
   ])
 
-  // exchangeName으로 정확한 시장 판별: "KSC"=KOSPI, "KOE"/"KOQ"=KOSDAQ
-  // Yahoo가 KOSDAQ 종목에도 .KS 심볼 데이터를 반환하는 경우를 차단
+  // Naver API 시장 정보를 1순위로 사용 (가장 정확)
+  // 실패 시 Yahoo exchangeName → Yahoo 가격 유무 순으로 fallback
   function quoteMarket(q: StockQuote | null): 'KOSPI' | 'KOSDAQ' | null {
     if (!q || (q.price <= 0 && q.previousClose <= 0)) return null
     const ex = (q.exchangeName ?? '').toUpperCase()
@@ -188,6 +207,7 @@ export async function getKoreanStockFundamentals(ticker: string): Promise<StockF
     return null
   }
   const market: 'KOSPI' | 'KOSDAQ' | null =
+    naverMarket ??
     quoteMarket(ks) ?? quoteMarket(kq) ??
     (ks && (ks.price > 0 || ks.previousClose > 0) ? 'KOSPI' :
      kq && (kq.price > 0 || kq.previousClose > 0) ? 'KOSDAQ' : null)
