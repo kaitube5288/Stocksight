@@ -13,13 +13,19 @@ export async function GET(request: Request) {
   // Vercel Cron 보안 헤더 검증
   const authHeader = request.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
-  // CRON_SECRET 미설정 시 인증 스킵 (설정된 경우에만 검증)
   if (
     process.env.NODE_ENV === 'production' &&
     cronSecret &&
     authHeader !== `Bearer ${cronSecret}`
   ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // 토/일 KST 기준 스킵
+  const kstDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const kstDay = kstDate.getDay() // 0=일, 6=토
+  if (kstDay === 0 || kstDay === 6) {
+    return NextResponse.json({ skipped: true, reason: '주말 휴장' })
   }
 
   return runDailyAnalysis()
