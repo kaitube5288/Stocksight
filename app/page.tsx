@@ -43,12 +43,25 @@ export default function Home() {
   const [showPwModal, setShowPwModal] = useState(false)
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
+  const [liveData, setLiveData] = useState<Record<string, { price: number | null; per: number | null; pbr: number | null; roe: number | null }>>({})
   const { permission, requestPermission, notify } = usePushNotification()
   const prevDateRef = useRef<string | null>(null)
 
   const today = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
   })
+
+  const fetchLiveData = useCallback(async (stocks: { ticker: string }[]) => {
+    if (!stocks.length) return
+    try {
+      const tickers = stocks.map(s => s.ticker).join(',')
+      const res = await fetch(`/api/prices?tickers=${tickers}`)
+      const data: { ticker: string; price: number | null; per: number | null; pbr: number | null; roe: number | null }[] = await res.json()
+      const map: typeof liveData = {}
+      data.forEach(d => { map[d.ticker] = { price: d.price, per: d.per, pbr: d.pbr, roe: d.roe } })
+      setLiveData(map)
+    } catch { /* live price 실패 시 저장된 값 유지 */ }
+  }, [])
 
   const loadRecommendations = useCallback(async (showNotify = false) => {
     setLoading(true)
@@ -57,6 +70,7 @@ export default function Home() {
       const data = await res.json()
       setRecommendation(data.data)
       setIsToday(data.isToday)
+      if (data.data?.stocks?.length) fetchLiveData(data.data.stocks)
       if (showNotify && data.data && data.data.date !== prevDateRef.current) {
         const daytrading = data.data.stocks?.find((s: { trade_type: string }) => s.trade_type === '단타')
         notify(
@@ -72,7 +86,7 @@ export default function Home() {
     } finally {
       setLoading(false)
     }
-  }, [notify])
+  }, [notify, fetchLiveData])
 
   useEffect(() => {
     loadRecommendations()
@@ -304,14 +318,24 @@ export default function Home() {
                       <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{period}</span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {group.length > 0 ? group.map((stock, i) => (
-                        <RecommendationCard
-                          key={stock.ticker}
-                          stock={stock}
-                          rank={i + 1}
-                          animate
-                        />
-                      )) : (
+                      {group.length > 0 ? group.map((stock, i) => {
+                        const live = liveData[stock.ticker]
+                        const merged = live ? {
+                          ...stock,
+                          current_price: live.price ?? stock.current_price,
+                          per: live.per ?? stock.per,
+                          pbr: live.pbr ?? stock.pbr,
+                          roe: live.roe ?? stock.roe,
+                        } : stock
+                        return (
+                          <RecommendationCard
+                            key={stock.ticker}
+                            stock={merged}
+                            rank={i + 1}
+                            animate
+                          />
+                        )
+                      }) : (
                         <div
                           className="col-span-full py-6 text-center rounded-2xl"
                           style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', color: 'var(--text-muted)', fontSize: '12px' }}

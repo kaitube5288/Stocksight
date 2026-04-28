@@ -55,20 +55,21 @@ export async function getKoreanStockQuote(ticker: string): Promise<StockQuote | 
   return null
 }
 
-// 여러 종목 실제 현재가 일괄 조회
+// 여러 종목 실제 현재가 일괄 조회 (Naver 우선, Yahoo fallback)
 export async function getRealPrices(
   tickers: string[]
 ): Promise<Record<string, { price: number; previousClose: number }>> {
-  const results = await Promise.all(tickers.map(t => getKoreanStockQuote(t)))
+  const results = await Promise.all(tickers.map(async (ticker) => {
+    const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
+    const naver = await fetchNaverData(code)
+    if (naver.price > 0) return { ticker, price: naver.price, previousClose: naver.price }
+    const q = await getKoreanStockQuote(ticker)
+    if (q && (q.price > 0 || q.previousClose > 0))
+      return { ticker, price: q.price || q.previousClose, previousClose: q.previousClose || q.price }
+    return null
+  }))
   const map: Record<string, { price: number; previousClose: number }> = {}
-  results.forEach((q, i) => {
-    if (q && (q.price > 0 || q.previousClose > 0)) {
-      map[tickers[i]] = {
-        price: q.price || q.previousClose,
-        previousClose: q.previousClose || q.price,
-      }
-    }
-  })
+  results.forEach(r => { if (r) map[r.ticker] = { price: r.price, previousClose: r.previousClose } })
   return map
 }
 
@@ -116,17 +117,38 @@ const NAVER_API_HEADERS = {
   'Accept': 'application/json, text/plain, */*',
 }
 
-async function fetchNaverMarket(code: string): Promise<'KOSPI' | 'KOSDAQ' | null> {
+interface NaverBasic {
+  price: number
+  per: number | null
+  pbr: number | null
+  roe: number | null
+  market: 'KOSPI' | 'KOSDAQ' | null
+}
+
+export async function fetchNaverData(code: string): Promise<NaverBasic> {
   try {
     const res = await axios.get(
       `https://m.stock.naver.com/api/stock/${code}/basic`,
       { headers: NAVER_API_HEADERS, timeout: 8000 }
     )
-    const nameKor: string = res.data?.stockExchangeType?.nameKor ?? ''
-    if (nameKor.includes('코스피')) return 'KOSPI'
-    if (nameKor.includes('코스닥')) return 'KOSDAQ'
-    return null
-  } catch { return null }
+    const d = res.data
+    const toNum = (v: unknown): number | null => {
+      if (v == null || v === '' || v === '-') return null
+      const n = parseFloat(String(v).replace(/,/g, ''))
+      return isNaN(n) ? null : Math.round(n * 100) / 100
+    }
+    const price = toNum(d.closePrice) ?? toNum(d.stockPrice) ?? toNum(d.currentPrice) ?? 0
+    const nameKor: string = d.stockExchangeType?.nameKor ?? ''
+    return {
+      price,
+      per: toNum(d.per),
+      pbr: toNum(d.pbr),
+      roe: toNum(d.roe),
+      market: nameKor.includes('코스피') ? 'KOSPI' : nameKor.includes('코스닥') ? 'KOSDAQ' : null,
+    }
+  } catch {
+    return { price: 0, per: null, pbr: null, roe: null, market: null }
+  }
 }
 
 function parseN(s: string): number | null {
@@ -182,30 +204,43 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  const [ks, kq, investData, roe, naverMarket] = await Promise.all([
-    fetchYahooQuote(`${code}.KS`),
-    fetchYahooQuote(`${code}.KQ`),
-    scrapeNaverMain(code),
+  // Naver mobile API: PER/PBR/ROE/market 한번에 (스크래핑보다 안정적)
+  const [naverData, scrapedRoe] = await Promise.all([
+    fetchNaverData(code),
     scrapeNaverROE(code),
-    fetchNaverMarket(code),
   ])
 
-  // Naver API 시장 정보를 1순위로 사용 (가장 정확)
-  // 실패 시 Yahoo exchangeName → Yahoo 가격 유무 순으로 fallback
-  function quoteMarket(q: StockQuote | null): 'KOSPI' | 'KOSDAQ' | null {
-    if (!q || (q.price <= 0 && q.previousClose <= 0)) return null
-    const ex = (q.exchangeName ?? '').toUpperCase()
-    if (ex === 'KSC') return 'KOSPI'
-    if (ex === 'KOE' || ex === 'KOQ') return 'KOSDAQ'
-    return null
-  }
-  const market: 'KOSPI' | 'KOSDAQ' | null =
-    naverMarket ??
-    quoteMarket(ks) ?? quoteMarket(kq) ??
-    (ks && (ks.price > 0 || ks.previousClose > 0) ? 'KOSPI' :
-     kq && (kq.price > 0 || kq.previousClose > 0) ? 'KOSDAQ' : null)
+  // ROE: Naver API에 있으면 우선, 없으면 스크래핑 결과 사용
+  const roe = naverData.roe ?? scrapedRoe
 
-  return { per: investData.per, pbr: investData.pbr, roe, market }
+  // 시장 구분: Naver API 실패 시 Yahoo fallback
+  let market = naverData.market
+  if (!market) {
+    const [ks, kq] = await Promise.all([
+      fetchYahooQuote(`${code}.KS`),
+      fetchYahooQuote(`${code}.KQ`),
+    ])
+    function quoteMarket(q: StockQuote | null): 'KOSPI' | 'KOSDAQ' | null {
+      if (!q || (q.price <= 0 && q.previousClose <= 0)) return null
+      const ex = (q.exchangeName ?? '').toUpperCase()
+      if (ex === 'KSC') return 'KOSPI'
+      if (ex === 'KOE' || ex === 'KOQ') return 'KOSDAQ'
+      return null
+    }
+    market = quoteMarket(ks) ?? quoteMarket(kq) ??
+      (ks && (ks.price > 0 || ks.previousClose > 0) ? 'KOSPI' :
+       kq && (kq.price > 0 || kq.previousClose > 0) ? 'KOSDAQ' : null)
+  }
+
+  // PER/PBR: Naver API 우선, 없으면 HTML 스크래핑 fallback
+  let { per, pbr } = naverData
+  if (per == null || pbr == null) {
+    const scraped = await scrapeNaverMain(code)
+    per = per ?? scraped.per
+    pbr = pbr ?? scraped.pbr
+  }
+
+  return { per, pbr, roe, market }
 }
 
 export async function getFundamentalsMap(
