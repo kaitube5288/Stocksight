@@ -320,9 +320,14 @@ export default function Home() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {group.length > 0 ? group.map((stock, i) => {
                         const live = liveData[stock.ticker]
+                        const livePrice = live?.price ?? null
                         const merged = live ? {
                           ...stock,
-                          current_price: live.price ?? stock.current_price,
+                          current_price: livePrice ?? stock.current_price,
+                          buy_price: livePrice ?? stock.buy_price,
+                          sell_price: livePrice
+                            ? Math.round(livePrice * (1 + stock.expected_return / 100))
+                            : stock.sell_price,
                           per: live.per ?? stock.per,
                           pbr: live.pbr ?? stock.pbr,
                           roe: live.roe ?? stock.roe,
