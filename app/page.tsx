@@ -6,6 +6,58 @@ import NewsPanel from '@/components/NewsPanel'
 import MarketBar from '@/components/MarketBar'
 import { DailyRecommendation } from '@/lib/supabase'
 
+type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
+
+function calcDynamicBuyPrice(
+  currentPrice: number,
+  tradeType: string | null | undefined,
+  probability: number,
+  live: LiveEntry,
+  storedPer: number | null | undefined,
+  storedPbr: number | null | undefined,
+  storedRoe: number | null | undefined,
+): number {
+  // 거래유형별 기준 할인율 (%)
+  let discount =
+    tradeType === '단타' ? 0.8 :
+    tradeType === '스윙' ? 2.0 : 3.5
+
+  const per = live.per ?? storedPer ?? null
+  const pbr = live.pbr ?? storedPbr ?? null
+  const roe = live.roe ?? storedRoe ?? null
+
+  // PER: 저평가면 빨리 진입, 고평가면 더 눌림 대기
+  if (per != null) {
+    if (per < 10)       discount -= 0.5
+    else if (per > 30)  discount += 1.0
+    else if (per > 20)  discount += 0.5
+  }
+
+  // PBR: 장부가 이하면 안전마진 확보, 고PBR은 추가 할인
+  if (pbr != null) {
+    if (pbr < 1)      discount -= 0.3
+    else if (pbr > 3) discount += 0.3
+  }
+
+  // ROE: 우량 기업은 진입 서두르고, 저수익 기업은 더 기다림
+  if (roe != null) {
+    if (roe > 20)    discount -= 0.3
+    else if (roe < 5) discount += 0.5
+  }
+
+  // 상승확률: 높으면 빨리 진입, 낮으면 할인 더 요구
+  if (probability > 80)      discount -= 0.3
+  else if (probability < 60) discount += 0.5
+
+  // 거래유형별 할인율 범위 클램프
+  const [minD, maxD] =
+    tradeType === '단타' ? [0.2, 1.5] :
+    tradeType === '스윙' ? [0.5, 4.0] : [1.0, 6.0]
+  discount = Math.max(minD, Math.min(maxD, discount))
+
+  return Math.round(currentPrice * (1 - discount / 100))
+}
+
 function usePushNotification() {
   const [permission, setPermission] = useState<NotificationPermission>('default')
 
@@ -321,12 +373,15 @@ export default function Home() {
                       {group.length > 0 ? group.map((stock, i) => {
                         const live = liveData[stock.ticker]
                         const livePrice = live?.price ?? null
+                        const dynBuyPrice = livePrice
+                          ? calcDynamicBuyPrice(livePrice, stock.trade_type, stock.probability, live ?? { price: null, per: null, pbr: null, roe: null }, stock.per, stock.pbr, stock.roe)
+                          : null
                         const merged = live ? {
                           ...stock,
                           current_price: livePrice ?? stock.current_price,
-                          buy_price: livePrice ?? stock.buy_price,
-                          sell_price: livePrice
-                            ? Math.round(livePrice * (1 + stock.expected_return / 100))
+                          buy_price: dynBuyPrice ?? stock.buy_price,
+                          sell_price: dynBuyPrice
+                            ? Math.round(dynBuyPrice * (1 + stock.expected_return / 100))
                             : stock.sell_price,
                           per: live.per ?? stock.per,
                           pbr: live.pbr ?? stock.pbr,
