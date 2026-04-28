@@ -118,8 +118,8 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
           <div className="mono text-sm font-bold up">₩{stock.sell_price.toLocaleString()}</div>
         </div>
         <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(220,38,38,0.18)' }}>
-          <div className="text-[10px] mb-0.5" style={{ color: 'rgba(255,255,255,0.55)', WebkitTextStroke: '0.3px rgba(255,255,255,0.7)' }}>예상 수익</div>
-          <div className="mono text-lg font-bold" style={{ color: '#ff6b6b', WebkitTextStroke: '0.6px rgba(255,255,255,0.85)', textShadow: '0 0 16px rgba(255,107,107,0.45)' }}>+{stock.expected_return.toFixed(1)}%</div>
+          <div className="text-[10px] mb-0.5" style={{ color: 'rgba(255,255,255,0.55)' }}>예상 수익</div>
+          <div className="mono text-lg font-bold" style={{ color: '#ff6b6b' }}>+{stock.expected_return.toFixed(1)}%</div>
         </div>
       </div>
 
