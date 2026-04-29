@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
 
 export const maxDuration = 300 // 5분 타임아웃
+export const dynamic = 'force-dynamic'
 
 const YF_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -56,30 +57,34 @@ const CHECK_YEARS = [2015, 2018, 2020, 2022, 2023, 2024, 2025, 2026]
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin()
   try {
-    // 연도별 데이터 건수 + 2026년 최신 거래일 병렬 조회
-    const [results, sentinelRow] = await Promise.all([
-      Promise.all(
-        CHECK_YEARS.map(async year => {
-          const { count } = await supabaseAdmin
-            .from('historical_patterns')
-            .select('*', { count: 'exact', head: true })
-            .gte('trade_date', `${year}-01-01`)
-            .lte('trade_date', `${year}-12-31`)
-          return { year, count: count ?? 0 }
-        })
-      ),
-      supabaseAdmin
-        .from('market_events')
-        .select('affected_sectors')
-        .eq('description', '__2026_collection__')
-        .single(),
-    ])
+    // 연도별 데이터 건수 조회 (sentinel과 분리)
+    const results = await Promise.all(
+      CHECK_YEARS.map(async year => {
+        const { count } = await supabaseAdmin
+          .from('historical_patterns')
+          .select('*', { count: 'exact', head: true })
+          .gte('trade_date', `${year}-01-01`)
+          .lte('trade_date', `${year}-12-31`)
+        return { year, count: count ?? 0 }
+      })
+    )
 
     const collectedYears = results
       .filter(r => r.count >= 50)
       .map(r => r.year)
 
-    const isoTimestamp = sentinelRow.data?.affected_sectors?.[0] ?? null
+    // sentinel 조회 (실패해도 collectedYears 결과에 영향 없도록 분리)
+    let isoTimestamp: string | null = null
+    try {
+      const { data } = await supabaseAdmin
+        .from('market_events')
+        .select('affected_sectors')
+        .eq('description', '__2026_collection__')
+        .maybeSingle()
+      isoTimestamp = data?.affected_sectors?.[0] ?? null
+    } catch {
+      // sentinel 조회 실패 무시
+    }
 
     return NextResponse.json({
       collectedYears,
@@ -148,22 +153,19 @@ export async function POST(req: NextRequest) {
 
     // 수집 완료 시각 저장 (market_events 테이블에 sentinel 레코드)
     const collectedAt = new Date().toISOString()
+    // event_date를 고정값으로 써야 upsert onConflict 정상 동작 (날짜 변경 시 중복 방지)
     await supabaseAdmin
       .from('market_events')
-      .delete()
-      .eq('description', '__2026_collection__')
-    await supabaseAdmin
-      .from('market_events')
-      .insert({
-        event_date: new Date().toISOString().slice(0, 10),
-        event_type: 'system_meta',
+      .upsert({
+        event_date: '1900-01-01',
+        event_type: 'geopolitical',
         description: '__2026_collection__',
         affected_sectors: [collectedAt],
         affected_tickers: [],
         impact_direction: 'positive',
         impact_magnitude: 0,
         source: 'system',
-      })
+      }, { onConflict: 'event_date,description' })
 
     return NextResponse.json({
       success: true,

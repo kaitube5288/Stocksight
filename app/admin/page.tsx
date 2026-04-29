@@ -88,10 +88,18 @@ export default function AdminPage() {
           `[${now()}] 텔레그램 전송: ${data.telegramSent ? '✅' : '⚠️ 토큰 미설정'}`,
         ])
       } else {
-        setAnalyzeLog(prev => [...prev, `[${now()}] ❌ ${data.error}`])
+        setAnalyzeLog(prev => [
+          ...prev,
+          `[${now()}] ❌ ${data.error}`,
+          ...(last2026Update ? [`[${now()}] 📦 마지막 수집 데이터: ${formatKST(last2026Update)}`] : []),
+        ])
       }
     } catch (e) {
-      setAnalyzeLog(prev => [...prev, `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`])
+      setAnalyzeLog(prev => [
+        ...prev,
+        `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`,
+        ...(last2026Update ? [`[${now()}] 📦 마지막 수집 데이터: ${formatKST(last2026Update)}`] : []),
+      ])
     } finally {
       setAnalyzing(false)
     }
