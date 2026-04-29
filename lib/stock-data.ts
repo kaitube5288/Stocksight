@@ -139,11 +139,13 @@ export async function fetchNaverData(code: string): Promise<NaverBasic> {
     }
     const price = toNum(d.closePrice) ?? toNum(d.stockPrice) ?? toNum(d.currentPrice) ?? 0
     const nameKor: string = d.stockExchangeType?.nameKor ?? ''
+    // ROE: basic API 필드명이 종목마다 다를 수 있어 여러 이름 시도
+    const roe = toNum(d.roe) ?? toNum(d.roeRate) ?? toNum(d.returnOnEquity) ?? toNum(d.roe12M)
     return {
       price,
       per: toNum(d.per),
       pbr: toNum(d.pbr),
-      roe: toNum(d.roe),
+      roe,
       market: nameKor.includes('코스피') ? 'KOSPI' : nameKor.includes('코스닥') ? 'KOSDAQ' : null,
     }
   } catch {
@@ -174,6 +176,30 @@ async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: n
   } catch { return { per: null, pbr: null } }
 }
 
+// Naver 추가 API 엔드포인트에서 ROE 시도 (/finance/ratios, /investment 등)
+async function fetchNaverROEFromAPI(code: string): Promise<number | null> {
+  const toNum = (v: unknown): number | null => {
+    if (v == null || v === '' || v === '-') return null
+    const n = parseFloat(String(v).replace(/,/g, ''))
+    return isNaN(n) ? null : Math.round(n * 100) / 100
+  }
+  const endpoints = [
+    `https://m.stock.naver.com/api/stock/${code}/finance/ratios`,
+    `https://m.stock.naver.com/api/stock/${code}/investment`,
+    `https://m.stock.naver.com/api/stock/${code}/finance/highlight`,
+  ]
+  for (const url of endpoints) {
+    try {
+      const res = await axios.get(url, { headers: NAVER_API_HEADERS, timeout: 6000 })
+      const d = res.data
+      const roe = toNum(d?.roe) ?? toNum(d?.roeRate) ?? toNum(d?.returnOnEquity)
+      if (roe !== null && Math.abs(roe) < 300) return roe
+    } catch { /* 엔드포인트 없으면 다음 시도 */ }
+  }
+  return null
+}
+
+// Naver 재무제표 HTML에서 ROE 행 전체를 파싱해 가장 최근 값 추출
 async function scrapeNaverROE(code: string): Promise<number | null> {
   try {
     const res = await axios.get(
@@ -181,22 +207,39 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
       { headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` }, timeout: 10000, responseType: 'text' }
     )
     const html = res.data as string
-    const idx = html.indexOf('>ROE')
-    if (idx === -1) return null
-    const after = html.slice(idx, idx + 600)
-    // em 태그 → td 직접 숫자 → span 포함 td 순으로 시도
-    const patterns = [
-      /<em>(-?[\d,]+\.?\d+)<\/em>/,
-      /<td[^>]*>\s*(-?[\d,]+\.?\d+)\s*<\/td>/,
-      /<td[^>]*>(-?[\d,]+\.?\d+)<span/,
-    ]
-    for (const p of patterns) {
-      const m = after.match(p)
-      if (m) {
-        const n = parseN(m[1])
-        if (n !== null && Math.abs(n) < 300) return n
-      }
+
+    // ROE 라벨 위치 찾기 (ROE, ROE(%), ROE(지배주주) 등 변형 포함)
+    const roeIdx = html.search(/ROE/)
+    if (roeIdx === -1) return null
+
+    // ROE가 속한 <tr> 전체 추출
+    const trStart = html.lastIndexOf('<tr', roeIdx)
+    const trEnd = html.indexOf('</tr>', roeIdx)
+    const rowHtml = trStart !== -1 && trEnd !== -1
+      ? html.slice(trStart, trEnd + 5)
+      : html.slice(roeIdx, roeIdx + 1500)
+
+    // <em> 태그 값 우선 (네이버는 최신 연도 값을 em으로 감쌈)
+    const emMatches = [...rowHtml.matchAll(/<em>\s*(-?[\d,.]+)\s*<\/em>/g)]
+    for (let i = emMatches.length - 1; i >= 0; i--) {
+      const n = parseN(emMatches[i][1])
+      if (n !== null && n !== 0 && Math.abs(n) < 300) return n
     }
+
+    // em 없으면 num 클래스 td에서 추출
+    const tdMatches = [...rowHtml.matchAll(/<td[^>]*class="[^"]*num[^"]*"[^>]*>\s*(-?[\d,.]+)\s*<\/td>/g)]
+    for (let i = tdMatches.length - 1; i >= 0; i--) {
+      const n = parseN(tdMatches[i][1])
+      if (n !== null && n !== 0 && Math.abs(n) < 300) return n
+    }
+
+    // 마지막 fallback: 일반 td 숫자
+    const plainTd = [...rowHtml.matchAll(/<td[^>]*>\s*(-?[\d,.]+)\s*<\/td>/g)]
+    for (let i = plainTd.length - 1; i >= 0; i--) {
+      const n = parseN(plainTd[i][1])
+      if (n !== null && n !== 0 && Math.abs(n) < 300) return n
+    }
+
     return null
   } catch { return null }
 }
@@ -204,14 +247,15 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  // Naver mobile API: PER/PBR/ROE/market 한번에 (스크래핑보다 안정적)
-  const [naverData, scrapedRoe] = await Promise.all([
+  // Naver mobile API: PER/PBR/ROE/market 한번에 + ROE 전용 추가 소스 병렬 조회
+  const [naverData, apiRoe, scrapedRoe] = await Promise.all([
     fetchNaverData(code),
+    fetchNaverROEFromAPI(code),
     scrapeNaverROE(code),
   ])
 
-  // ROE: Naver API에 있으면 우선, 없으면 스크래핑 결과 사용
-  const roe = naverData.roe ?? scrapedRoe
+  // ROE 우선순위: basic API → 추가 API 엔드포인트 → HTML 스크래핑
+  const roe = naverData.roe ?? apiRoe ?? scrapedRoe
 
   // 시장 구분: Naver API 실패 시 Yahoo fallback
   let market = naverData.market
