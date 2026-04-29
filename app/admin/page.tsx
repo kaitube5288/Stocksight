@@ -175,7 +175,7 @@ export default function AdminPage() {
                 <div>{`수집 완료: ${collectedYears.filter(y => y !== 2026).join(', ')}년`}</div>
                 {last2026Update ? (
                   <div style={{ color: 'rgba(255,200,100,0.6)' }}>
-                    {`2026년 마지막 갱신: ${last2026Update}`}
+                    {`2026년 마지막 갱신: ${formatKST(last2026Update)}`}
                   </div>
                 ) : collectedYears.includes(2026) ? (
                   <div style={{ color: 'rgba(100,255,150,0.5)' }}>2026년 수집 완료</div>
@@ -285,4 +285,15 @@ function Log({ entries }: { entries: string[] }) {
 
 function now() {
   return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function formatKST(iso: string): string {
+  const d = new Date(iso)
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  const yyyy = kst.getUTCFullYear()
+  const mm = String(kst.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(kst.getUTCDate()).padStart(2, '0')
+  const hh = String(kst.getUTCHours()).padStart(2, '0')
+  const min = String(kst.getUTCMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${min} (KST)`
 }

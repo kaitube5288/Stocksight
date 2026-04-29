@@ -57,7 +57,7 @@ export async function GET() {
   const supabaseAdmin = getSupabaseAdmin()
   try {
     // 연도별 데이터 건수 + 2026년 최신 거래일 병렬 조회
-    const [results, last2026Row] = await Promise.all([
+    const [results, sentinelRow] = await Promise.all([
       Promise.all(
         CHECK_YEARS.map(async year => {
           const { count } = await supabaseAdmin
@@ -69,11 +69,9 @@ export async function GET() {
         })
       ),
       supabaseAdmin
-        .from('historical_patterns')
-        .select('trade_date')
-        .gte('trade_date', '2026-01-01')
-        .order('trade_date', { ascending: false })
-        .limit(1)
+        .from('market_events')
+        .select('affected_sectors')
+        .eq('description', '__2026_collection__')
         .single(),
     ])
 
@@ -81,9 +79,11 @@ export async function GET() {
       .filter(r => r.count >= 50)
       .map(r => r.year)
 
+    const isoTimestamp = sentinelRow.data?.affected_sectors?.[0] ?? null
+
     return NextResponse.json({
       collectedYears,
-      last2026Update: last2026Row.data?.trade_date ?? null,
+      last2026Update: isoTimestamp,
     })
   } catch {
     return NextResponse.json({ collectedYears: [], last2026Update: null })
@@ -145,6 +145,25 @@ export async function POST(req: NextRequest) {
 
       if (!error) saved++
     }
+
+    // 수집 완료 시각 저장 (market_events 테이블에 sentinel 레코드)
+    const collectedAt = new Date().toISOString()
+    await supabaseAdmin
+      .from('market_events')
+      .delete()
+      .eq('description', '__2026_collection__')
+    await supabaseAdmin
+      .from('market_events')
+      .insert({
+        event_date: new Date().toISOString().slice(0, 10),
+        event_type: 'system_meta',
+        description: '__2026_collection__',
+        affected_sectors: [collectedAt],
+        affected_tickers: [],
+        impact_direction: 'positive',
+        impact_magnitude: 0,
+        source: 'system',
+      })
 
     return NextResponse.json({
       success: true,
