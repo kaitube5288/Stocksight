@@ -119,7 +119,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
   const fetchData = useCallback(async (isRetry = false) => {
     if (!isRetry) setLoading(true)
     // src: 0=Yahoo query1 / 1=Yahoo query2 / 2=Daum — index % 3 로 분산
-    const src = isRetry ? 1 : index % 3
+    const src = isRetry ? 0 : index % 3
     const url = `/api/chart?ticker=${ticker}&tradeType=${encodeURIComponent(tradeType)}&src=${src}`
       + (from ? `&from=${encodeURIComponent(from)}` : '')
     try {
@@ -141,7 +141,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
 
   useEffect(() => {
     // 차트 순서에 따라 로드 시간 엇갈리기 (Yahoo Finance 동시 요청 차단 방지)
-    const delay = setTimeout(() => fetchData(), index * 500)
+    const delay = setTimeout(() => fetchData(), index * 1000)
     return () => clearTimeout(delay)
   }, [fetchData, refreshKey, index])
 

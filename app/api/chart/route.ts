@@ -25,33 +25,40 @@ export async function GET(request: NextRequest) {
 
   const { interval, range } = TRADE_CONFIG[tradeType as keyof typeof TRADE_CONFIG]
 
+  // 소스 우선순위: query1 → query2 → Daum → Naver(일봉)
+  // src로 시작 순서를 조정하되, 빈 데이터면 나머지 소스를 순차 시도
+  const order = buildOrder(src, interval)
   try {
-    let prices = await fetchPrimary(ticker, interval, range, from, src)
-
-    // 빈 데이터 시 Yahoo query2 로 fallback
-    if (!prices.length) {
-      prices = await fetchYahoo(ticker, interval, range, from, 'query2')
+    for (const s of order) {
+      const prices = await trySource(ticker, interval, range, from, s)
+      if (prices.length > 0) return NextResponse.json({ prices, interval, src: s })
     }
-
-    return NextResponse.json({ prices, interval, src })
+    return NextResponse.json({ prices: [], interval })
   } catch {
     return NextResponse.json({ prices: [], interval })
   }
 }
 
-async function fetchPrimary(
+// src에 따라 시도 순서 결정 — query1이 Vercel에서 가장 안정적
+function buildOrder(src: number, interval: string): number[] {
+  const daily = interval === '1d'
+  // 0=query1, 1=query2, 2=Daum, 3=Naver(일봉만)
+  const all = daily ? [0, 1, 2, 3] : [0, 1, 2]
+  return [src, ...all.filter(s => s !== src)]
+}
+
+async function trySource(
   ticker: string,
   interval: string,
   range: string,
   from: string | null,
   src: number,
-) {
+): Promise<import('@/lib/price-providers').PricePoint[]> {
   try {
     if (src === 0) return await fetchYahoo(ticker, interval, range, from, 'query1')
+    if (src === 1) return await fetchYahoo(ticker, interval, range, from, 'query2')
     if (src === 2) return await fetchDaum(ticker, interval, from)
     if (src === 3 && interval === '1d') return await fetchNaver(ticker, from)
-    return await fetchYahoo(ticker, interval, range, from, 'query2')
-  } catch {
     return []
-  }
+  } catch { return [] }
 }
