@@ -21,11 +21,15 @@ export default function AdminPage() {
   const [startYear, setStartYear] = useState(2020)
   const [chatIdResult, setChatIdResult] = useState('')
   const [collectedYears, setCollectedYears] = useState<number[]>([])
+  const [last2026Update, setLast2026Update] = useState<string | null>(null)
 
   const loadCollectedYears = async () => {
     fetch('/api/collect-history')
       .then(r => r.json())
-      .then(d => setCollectedYears(d.collectedYears ?? []))
+      .then(d => {
+        setCollectedYears(d.collectedYears ?? [])
+        setLast2026Update(d.last2026Update ?? null)
+      })
       .catch(() => {})
   }
 
@@ -165,10 +169,19 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-4 mb-4">
-          <div className="flex-1 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            {collectedYears.length > 0
-              ? `수집 완료: ${collectedYears.filter(y => y !== 2026).join(', ')}년`
-              : '수집된 데이터 없음'}
+          <div className="flex-1 text-xs space-y-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            {collectedYears.length > 0 ? (
+              <>
+                <div>{`수집 완료: ${collectedYears.filter(y => y !== 2026).join(', ')}년`}</div>
+                {last2026Update ? (
+                  <div style={{ color: 'rgba(255,200,100,0.6)' }}>
+                    {`2026년 마지막 갱신: ${last2026Update}`}
+                  </div>
+                ) : collectedYears.includes(2026) ? (
+                  <div style={{ color: 'rgba(100,255,150,0.5)' }}>2026년 수집 완료</div>
+                ) : null}
+              </>
+            ) : '수집된 데이터 없음'}
           </div>
           <Btn onClick={runCollection} loading={collecting} label={`▶ ${startYear}년부터 수집`} />
         </div>

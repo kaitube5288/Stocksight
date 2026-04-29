@@ -56,25 +56,37 @@ const CHECK_YEARS = [2015, 2018, 2020, 2022, 2023, 2024, 2025, 2026]
 export async function GET() {
   const supabaseAdmin = getSupabaseAdmin()
   try {
-    // 연도별로 실제 데이터 건수 확인
-    const results = await Promise.all(
-      CHECK_YEARS.map(async year => {
-        const { count } = await supabaseAdmin
-          .from('historical_patterns')
-          .select('*', { count: 'exact', head: true })
-          .gte('trade_date', `${year}-01-01`)
-          .lte('trade_date', `${year}-12-31`)
-        return { year, count: count ?? 0 }
-      })
-    )
-    // 해당 연도에 50일 이상 데이터 있으면 수집 완료로 판단
+    // 연도별 데이터 건수 + 2026년 최신 거래일 병렬 조회
+    const [results, last2026Row] = await Promise.all([
+      Promise.all(
+        CHECK_YEARS.map(async year => {
+          const { count } = await supabaseAdmin
+            .from('historical_patterns')
+            .select('*', { count: 'exact', head: true })
+            .gte('trade_date', `${year}-01-01`)
+            .lte('trade_date', `${year}-12-31`)
+          return { year, count: count ?? 0 }
+        })
+      ),
+      supabaseAdmin
+        .from('historical_patterns')
+        .select('trade_date')
+        .gte('trade_date', '2026-01-01')
+        .order('trade_date', { ascending: false })
+        .limit(1)
+        .single(),
+    ])
+
     const collectedYears = results
       .filter(r => r.count >= 50)
       .map(r => r.year)
 
-    return NextResponse.json({ collectedYears })
+    return NextResponse.json({
+      collectedYears,
+      last2026Update: last2026Row.data?.trade_date ?? null,
+    })
   } catch {
-    return NextResponse.json({ collectedYears: [] })
+    return NextResponse.json({ collectedYears: [], last2026Update: null })
   }
 }
 

@@ -62,25 +62,20 @@ async function callGemini(prompt: string): Promise<string> {
       try {
         return await callModel(genAI, modelName, prompt)
       } catch (e: unknown) {
-        const err = e instanceof Error ? e : new Error(String(e))
-        const msg = err.message
-        console.warn(`[Gemini] 키${ki + 1}/${modelName} 실패: ${msg.slice(0, 120)}`)
+        const msg = e instanceof Error ? e.message : String(e)
+        // 전체 에러 메시지 로그 (잘리면 503 등이 숨어 디버깅 불가)
+        console.warn(`[Gemini] 키${ki + 1}/${modelName} 실패: ${msg.slice(0, 300)}`)
 
-        // 429/할당량: 이 키의 다른 모델도 실패할 것이므로 즉시 다음 키로 전환
+        // 429/할당량: 같은 키의 다른 모델도 실패하므로 즉시 다음 키로
         const is429 =
           msg.includes('429') ||
           msg.toLowerCase().includes('quota') ||
           msg.toLowerCase().includes('too many requests')
         if (is429) { keyRateLimited = true; break }
 
-        // 503/404: 다음 모델 시도
-        const isRetryable =
-          msg.includes('503') || msg.includes('404') ||
-          msg.toLowerCase().includes('service unavailable') ||
-          msg.toLowerCase().includes('high demand') ||
-          msg.toLowerCase().includes('not found')
-        if (isRetryable) continue
-        throw err
+        // 그 외 모든 에러(503, 404, 네트워크, fetch 오류 등):
+        // throw 하지 않고 다음 모델 시도 → 모든 키/모델 소진 후에만 최종 에러
+        continue
       }
     }
 
