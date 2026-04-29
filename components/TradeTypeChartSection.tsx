@@ -7,6 +7,7 @@ import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 interface Props {
   tradeType: '단타' | '스윙' | '중기'
   entries:   ActiveChartEntry[]
+  onDismiss: (entry: ActiveChartEntry) => void
 }
 
 const TRADE_META = {
@@ -15,7 +16,7 @@ const TRADE_META = {
   '중기': { label: '중기 수익률 추적', sub: '일봉 · 25거래일',  color: 'var(--accent-green)' },
 }
 
-export default function TradeTypeChartSection({ tradeType, entries }: Props) {
+export default function TradeTypeChartSection({ tradeType, entries, onDismiss }: Props) {
   const [open, setOpen] = useState(false)
   const meta = TRADE_META[tradeType]
 
@@ -74,6 +75,7 @@ export default function TradeTypeChartSection({ tradeType, entries }: Props) {
               rank={entry.rank}
               from={entry.startAt}
               expiresAt={entry.expiresAt}
+              onDismiss={() => onDismiss(entry)}
             />
           ))}
         </div>

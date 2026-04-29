@@ -15,8 +15,9 @@ interface Props {
   instances:  BuyPriceInstance[]  // 1개 이상; 중복 추천 시 추천1/추천2...
   tradeType:  string
   rank:       number
-  from?:      string   // 첫 추천 시점 ISO (차트 시작점)
-  expiresAt?: string   // 추적 만료 시점 ISO
+  from?:      string      // 첫 추천 시점 ISO (차트 시작점)
+  expiresAt?: string      // 추적 만료 시점 ISO
+  onDismiss?: () => void  // 수동 삭제
 }
 
 // 인스턴스별 색상 (추천1=금, 추천2=파랑, 추천3=초록)
@@ -64,7 +65,7 @@ function formatExpiryRemaining(expiresAt: string): string {
   return `${Math.floor(diffMs / 3600000)}시간 남음`
 }
 
-export default function StockChart({ ticker, name, instances, tradeType, rank, from, expiresAt }: Props) {
+export default function StockChart({ ticker, name, instances, tradeType, rank, from, expiresAt, onDismiss }: Props) {
   const [prices, setPrices]         = useState<PricePoint[]>([])
   const [loading, setLoading]       = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -107,20 +108,37 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
           </span>
           <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{ticker}</span>
         </div>
-        <button
-          onClick={() => setRefreshKey(k => k + 1)}
-          disabled={loading}
-          title="새로고침"
-          className="mono text-[11px] px-1.5 py-0.5 rounded transition-all"
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: loading ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading ? '···' : '↺'}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setRefreshKey(k => k + 1)}
+            disabled={loading}
+            title="새로고침"
+            className="mono text-[11px] px-1.5 py-0.5 rounded transition-all"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: loading ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {loading ? '···' : '↺'}
+          </button>
+          {onDismiss && (
+            <button
+              onClick={onDismiss}
+              title="차트 숨기기"
+              className="mono text-[11px] px-1.5 py-0.5 rounded transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.35)',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 인스턴스별 매수가 + 수익률 (나란히 표시) */}
