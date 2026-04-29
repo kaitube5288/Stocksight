@@ -13,9 +13,9 @@ if (API_KEYS.length === 0 && process.env.GEMINI_API_KEY) {
   API_KEYS.push(process.env.GEMINI_API_KEY)
 }
 
-// 503 과부하 시 같은 모델 재시도 (최대 3회, 지수 backoff)
+// 503/429 시 같은 모델 backoff 재시도 (최대 3회)
 async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string): Promise<string> {
-  const delays = [4000, 10000, 20000]
+  const delays = [5000, 12000, 25000]
   let lastErr: Error = new Error('unknown')
   for (let i = 0; i <= delays.length; i++) {
     try {
@@ -27,11 +27,14 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
       return result.response.text()
     } catch (e: unknown) {
       lastErr = e instanceof Error ? e : new Error(String(e))
-      const is503 =
+      const isTransient =
         lastErr.message.includes('503') ||
+        lastErr.message.includes('429') ||
         lastErr.message.toLowerCase().includes('service unavailable') ||
-        lastErr.message.toLowerCase().includes('high demand')
-      if (is503 && i < delays.length) {
+        lastErr.message.toLowerCase().includes('high demand') ||
+        lastErr.message.toLowerCase().includes('too many requests') ||
+        lastErr.message.toLowerCase().includes('quota')
+      if (isTransient && i < delays.length) {
         await new Promise(r => setTimeout(r, delays[i]))
         continue
       }
@@ -41,32 +44,39 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
   throw lastErr
 }
 
-// 모델 우선순위: 2.5-flash → 2.0-flash → 1.5-pro (1.5-flash는 v1beta에서 404 제거됨)
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+// 모델 우선순위: 2.0-flash(가장 안정) → 2.5-flash → 1.5-flash → 1.5-pro
+const FALLBACK_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+]
 
 async function callGemini(prompt: string): Promise<string> {
   if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
 
-  for (const key of API_KEYS) {
-    const genAI = new GoogleGenerativeAI(key)
+  for (let ki = 0; ki < API_KEYS.length; ki++) {
+    const genAI = new GoogleGenerativeAI(API_KEYS[ki])
     for (const modelName of FALLBACK_MODELS) {
       try {
         return await callModel(genAI, modelName, prompt)
       } catch (e: unknown) {
         const err = e instanceof Error ? e : new Error(String(e))
+        const msg = err.message
+        console.warn(`[Gemini] 키${ki + 1}/${modelName} 실패: ${msg.slice(0, 120)}`)
         const isRetryable =
-          err.message.includes('429') ||
-          err.message.includes('503') ||
-          err.message.includes('404') ||
-          err.message.toLowerCase().includes('quota') ||
-          err.message.toLowerCase().includes('too many requests') ||
-          err.message.toLowerCase().includes('service unavailable') ||
-          err.message.toLowerCase().includes('high demand') ||
-          err.message.toLowerCase().includes('not found')
+          msg.includes('429') || msg.includes('503') || msg.includes('404') ||
+          msg.toLowerCase().includes('quota') ||
+          msg.toLowerCase().includes('too many requests') ||
+          msg.toLowerCase().includes('service unavailable') ||
+          msg.toLowerCase().includes('high demand') ||
+          msg.toLowerCase().includes('not found')
         if (isRetryable) continue
         throw err
       }
     }
+    // 키 전환 시 1초 대기 (연속 rate limit 방지)
+    if (ki < API_KEYS.length - 1) await new Promise(r => setTimeout(r, 1000))
   }
 
   throw new Error(`모든 Gemini API 키/모델 시도 실패 (키 ${API_KEYS.length}개, 모델 ${FALLBACK_MODELS.length}개)`)
