@@ -89,6 +89,8 @@ export default function Home() {
   const [recommendation, setRecommendation] = useState<DailyRecommendation | null>(null)
   const [isToday, setIsToday] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showRisk, setShowRisk] = useState(false)
@@ -165,7 +167,7 @@ export default function Home() {
     setAnalyzing(true)
     setError('')
     try {
-      const res = await fetch('/api/analyze', { method: 'POST' })
+      const res = await fetch('/api/cron/daily', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         await loadRecommendations(true)
@@ -176,6 +178,21 @@ export default function Home() {
       setError(e instanceof Error ? e.message : '분석 요청 실패')
     } finally {
       setAnalyzing(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setRefreshMsg('')
+    try {
+      const res = await fetch('/api/news?force=true')
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setRefreshMsg(`✅ 뉴스 ${data.count}건 갱신`)
+    } catch {
+      setRefreshMsg('❌ 갱신 실패')
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -278,28 +295,48 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleAnalysisClick}
-              disabled={analyzing}
-              className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
-              style={{ cursor: analyzing ? 'not-allowed' : 'pointer' }}
-            >
-              {analyzing ? (
-                <span className="flex items-center gap-2">
-                  <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing || analyzing}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
+                style={{
+                  background: 'rgba(77,166,255,0.12)',
+                  border: '1px solid rgba(77,166,255,0.3)',
+                  color: 'var(--accent-blue)',
+                  cursor: refreshing || analyzing ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {refreshing ? '갱신 중...' : '자료 갱신'}
+              </button>
+              <button
+                onClick={handleAnalysisClick}
+                disabled={analyzing || refreshing}
+                className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40"
+                style={{ cursor: analyzing || refreshing ? 'not-allowed' : 'pointer' }}
+              >
+                {analyzing ? (
+                  <span className="flex items-center gap-2">
+                    <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
+                  </span>
+                ) : (
+                  '▶ AI 분석 실행'
+                )}
+              </button>
+              {refreshMsg && (
+                <span className="text-xs" style={{ color: refreshMsg.startsWith('✅') ? 'rgba(180,255,180,0.8)' : 'rgba(255,150,150,0.8)' }}>
+                  {refreshMsg}
                 </span>
-              ) : (
-                '▶ AI 분석 실행'
               )}
-            </button>
-            {analyzing && (
-              <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>
-                뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
-              </span>
-            )}
+              {analyzing && (
+                <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>
+                  뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
+                </span>
+              )}
+            </div>
             {error && (
-              <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)' }}>
+              <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)', paddingLeft: '2px' }}>
                 {error}
               </span>
             )}

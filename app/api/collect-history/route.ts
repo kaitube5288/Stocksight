@@ -74,22 +74,20 @@ export async function GET() {
       .map(r => r.year)
 
     // sentinel 조회 (실패해도 collectedYears 결과에 영향 없도록 분리)
-    let isoTimestamp: string | null = null
+    let last2026Update: string | null = null
+    let lastHistCollect: string | null = null
     try {
-      const { data } = await supabaseAdmin
-        .from('market_events')
-        .select('affected_sectors')
-        .eq('description', '__2026_collection__')
-        .maybeSingle()
-      isoTimestamp = data?.affected_sectors?.[0] ?? null
+      const [analysisRow, histRow] = await Promise.all([
+        supabaseAdmin.from('market_events').select('affected_sectors').eq('description', '__2026_collection__').maybeSingle(),
+        supabaseAdmin.from('market_events').select('affected_sectors').eq('description', '__hist_collection__').maybeSingle(),
+      ])
+      last2026Update = analysisRow.data?.affected_sectors?.[0] ?? null
+      lastHistCollect = histRow.data?.affected_sectors?.[0] ?? null
     } catch {
       // sentinel 조회 실패 무시
     }
 
-    return NextResponse.json({
-      collectedYears,
-      last2026Update: isoTimestamp,
-    })
+    return NextResponse.json({ collectedYears, last2026Update, lastHistCollect })
   } catch {
     return NextResponse.json({ collectedYears: [], last2026Update: null })
   }
@@ -150,6 +148,20 @@ export async function POST(req: NextRequest) {
 
       if (!error) saved++
     }
+
+    // 히스토리컬 수집 완료 시각 sentinel 저장
+    await supabaseAdmin
+      .from('market_events')
+      .upsert({
+        event_date: '1900-01-02',
+        event_type: 'geopolitical',
+        description: '__hist_collection__',
+        affected_sectors: [new Date().toISOString()],
+        affected_tickers: [],
+        impact_direction: 'positive',
+        impact_magnitude: 0,
+        source: 'system',
+      }, { onConflict: 'event_date,description' })
 
     return NextResponse.json({
       success: true,

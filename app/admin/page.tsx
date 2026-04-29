@@ -22,6 +22,7 @@ export default function AdminPage() {
   const [chatIdResult, setChatIdResult] = useState('')
   const [collectedYears, setCollectedYears] = useState<number[]>([])
   const [last2026Update, setLast2026Update] = useState<string | null>(null)
+  const [lastHistCollect, setLastHistCollect] = useState<string | null>(null)
 
   const loadCollectedYears = async () => {
     fetch('/api/collect-history')
@@ -29,6 +30,7 @@ export default function AdminPage() {
       .then(d => {
         setCollectedYears(d.collectedYears ?? [])
         setLast2026Update(d.last2026Update ?? null)
+        setLastHistCollect(d.lastHistCollect ?? null)
       })
       .catch(() => {})
   }
@@ -168,7 +170,11 @@ export default function AdminPage() {
                 <div>{`수집 완료: ${collectedYears.filter(y => y !== 2026).join(', ')}년`}</div>
                 {last2026Update ? (
                   <div style={{ color: 'rgba(255,200,100,0.6)' }}>
-                    {`2026년 마지막 갱신: ${formatKST(last2026Update)}`}
+                    {`2026년 마지막 분석 성공: ${formatKST(last2026Update)}`}
+                  </div>
+                ) : lastHistCollect ? (
+                  <div style={{ color: 'rgba(255,200,100,0.45)' }}>
+                    {`2026년 마지막 수집: ${formatKST(lastHistCollect)}`}
                   </div>
                 ) : collectedYears.includes(2026) ? (
                   <div style={{ color: 'rgba(100,255,150,0.5)' }}>2026년 수집 완료</div>
