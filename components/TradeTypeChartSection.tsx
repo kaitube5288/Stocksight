@@ -65,7 +65,7 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss }:
           className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4"
           style={{ background: 'rgba(0,0,0,0.2)' }}
         >
-          {entries.map(entry => (
+          {entries.map((entry, i) => (
             <StockChart
               key={`${entry.ticker}-${entry.startAt}`}
               ticker={entry.ticker}
@@ -76,6 +76,7 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss }:
               from={entry.startAt}
               expiresAt={entry.expiresAt}
               onDismiss={() => onDismiss(entry)}
+              index={i}
             />
           ))}
         </div>

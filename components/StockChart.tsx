@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   ResponsiveContainer, LineChart, Line,
   XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid,
@@ -12,15 +12,15 @@ interface PricePoint { time: string; close: number }
 interface Props {
   ticker:     string
   name:       string
-  instances:  BuyPriceInstance[]  // 1개 이상; 중복 추천 시 추천1/추천2...
+  instances:  BuyPriceInstance[]
   tradeType:  string
   rank:       number
-  from?:      string      // 첫 추천 시점 ISO (차트 시작점)
-  expiresAt?: string      // 추적 만료 시점 ISO
-  onDismiss?: () => void  // 수동 삭제
+  from?:      string
+  expiresAt?: string
+  onDismiss?: () => void
+  index?:     number  // 로드 순서 (stagger delay용)
 }
 
-// 인스턴스별 색상 (추천1=금, 추천2=파랑, 추천3=초록)
 const REF_COLORS = [
   { line: 'rgba(255,201,77,0.75)',  text: 'rgba(255,201,77,0.9)'  },
   { line: 'rgba(77,166,255,0.75)', text: 'rgba(77,166,255,0.9)'  },
@@ -35,7 +35,7 @@ function formatXLabel(iso: string, tradeType: string): string {
   return `${String(kstH).padStart(2, '0')}:${String(kstM).padStart(2, '0')}`
 }
 
-function formatTooltipLabel(iso: string, tradeType: string): string {
+function formatTooltipTime(iso: string, tradeType: string): string {
   const d = new Date(iso)
   if (tradeType === '중기') {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -43,7 +43,8 @@ function formatTooltipLabel(iso: string, tradeType: string): string {
   const kstH = (d.getUTCHours() + 9) % 24
   const kstM = d.getUTCMinutes()
   const date = new Date(d.getTime() + 9 * 3600 * 1000)
-  return `${date.getUTCMonth()+1}/${date.getUTCDate()} ${String(kstH).padStart(2,'0')}:${String(kstM).padStart(2,'0')}`
+  const dow = ['일','월','화','수','목','금','토'][date.getUTCDay()]
+  return `${date.getUTCMonth()+1}/${date.getUTCDate()}(${dow}) ${String(kstH).padStart(2,'0')}:${String(kstM).padStart(2,'0')}`
 }
 
 function getTickInterval(count: number): number {
@@ -65,29 +66,86 @@ function formatExpiryRemaining(expiresAt: string): string {
   return `${Math.floor(diffMs / 3600000)}시간 남음`
 }
 
-export default function StockChart({ ticker, name, instances, tradeType, rank, from, expiresAt, onDismiss }: Props) {
+// 커스텀 툴팁: 추천1/추천2 수익률 모두 표시
+function CustomTooltip({ active, payload, label, tradeType, instances }: {
+  active?: boolean
+  payload?: { value: number }[]
+  label?: string
+  tradeType: string
+  instances: BuyPriceInstance[]
+}) {
+  if (!active || !payload?.length || !label) return null
+  const v = payload[0].value
+  return (
+    <div style={{
+      background: '#111', border: '1px solid rgba(255,255,255,0.15)',
+      borderRadius: '8px', padding: '8px 10px', fontSize: '11px',
+      color: 'rgba(255,255,255,0.85)', lineHeight: '1.6',
+    }}>
+      <div style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontSize: '10px' }}>
+        {formatTooltipTime(label, tradeType)}
+      </div>
+      <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+        ₩{v.toLocaleString()}
+      </div>
+      {instances.map((inst, i) => {
+        const ret = ((v - inst.price) / inst.price * 100)
+        const color = REF_COLORS[i % REF_COLORS.length]
+        return (
+          <div key={i} style={{ color: color.text, fontSize: '10px' }}>
+            {inst.label || '매수가'} ₩{inst.price.toLocaleString()}
+            {' → '}
+            <span style={{ color: ret >= 0 ? '#00e5aa' : '#ff6b6b', fontWeight: 700 }}>
+              {ret >= 0 ? '+' : ''}{ret.toFixed(2)}%
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export default function StockChart({ ticker, name, instances, tradeType, rank, from, expiresAt, onDismiss, index = 0 }: Props) {
   const [prices, setPrices]         = useState<PricePoint[]>([])
   const [loading, setLoading]       = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
+  const mountedRef                  = useRef(true)
 
-  const fetchData = useCallback(() => {
-    setLoading(true)
-    let url = `/api/chart?ticker=${ticker}&tradeType=${encodeURIComponent(tradeType)}`
-    if (from) url += `&from=${encodeURIComponent(from)}`
-    fetch(url)
-      .then(r => r.json())
-      .then(d => setPrices(d.prices ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  const fetchData = useCallback(async (isRetry = false) => {
+    if (!isRetry) setLoading(true)
+    const url = `/api/chart?ticker=${ticker}&tradeType=${encodeURIComponent(tradeType)}`
+      + (from ? `&from=${encodeURIComponent(from)}` : '')
+    try {
+      const res = await fetch(url)
+      const d   = await res.json()
+      const data: PricePoint[] = d.prices ?? []
+      if (!mountedRef.current) return
+      if (data.length === 0 && !isRetry) {
+        // 빈 데이터 시 2초 후 1회 자동 재시도 (Yahoo Finance rate-limit 대응)
+        await new Promise(r => setTimeout(r, 2000))
+        if (mountedRef.current) fetchData(true)
+        return
+      }
+      setPrices(data)
+    } catch { /* ignore */ } finally {
+      if (mountedRef.current) setLoading(false)
+    }
   }, [ticker, tradeType, from])
 
-  useEffect(() => { fetchData() }, [fetchData, refreshKey])
+  useEffect(() => {
+    // 차트 순서에 따라 로드 시간 엇갈리기 (Yahoo Finance 동시 요청 차단 방지)
+    const delay = setTimeout(() => fetchData(), index * 500)
+    return () => clearTimeout(delay)
+  }, [fetchData, refreshKey, index])
 
-  // 첫 번째 인스턴스(추천1) 기준으로 차트 라인 색상 결정
   const primaryRet = calcReturn(prices, instances[0]?.price ?? 0)
   const isPos = primaryRet != null && primaryRet >= 0
 
-  // Y축 범위: 모든 인스턴스 매수가 포함
   const allPrices = prices.map(p => p.close).concat(instances.map(inst => inst.price))
   const minP = Math.min(...allPrices)
   const maxP = Math.max(...allPrices)
@@ -100,7 +158,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
       className="rounded-2xl p-4 flex flex-col gap-3"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
     >
-      {/* 종목명 + 새로고침 */}
+      {/* 종목명 + 버튼 */}
       <div className="flex items-center justify-between">
         <div>
           <span className="text-xs font-bold mr-2" style={{ color: 'var(--text-primary)' }}>
@@ -141,7 +199,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
         </div>
       </div>
 
-      {/* 인스턴스별 매수가 + 수익률 (나란히 표시) */}
+      {/* 인스턴스별 매수가 + 수익률 */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         {instances.map((inst, i) => {
           const ret = calcReturn(prices, inst.price)
@@ -186,8 +244,20 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
             <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>로딩 중...</span>
           </div>
         ) : prices.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full gap-2">
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>데이터 없음</span>
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              className="mono text-[10px] px-2 py-1 rounded transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+              }}
+            >
+              ↺ 재시도
+            </button>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
@@ -210,21 +280,16 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
                 width={32}
               />
               <Tooltip
-                contentStyle={{
-                  background: '#111',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: '8px',
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.85)',
-                }}
-                labelFormatter={iso => formatTooltipLabel(iso as string, tradeType)}
-                formatter={(value: unknown) => {
-                  const v = value as number
-                  const primary = instances[0]?.price ?? 0
-                  return [`₩${v.toLocaleString()} (${((v - primary) / primary * 100).toFixed(2)}%)`, '가격']
-                }}
+                content={(props) => (
+                  <CustomTooltip
+                    active={props.active}
+                    payload={props.payload as unknown as { value: number }[] | undefined}
+                    label={props.label as string | undefined}
+                    tradeType={tradeType}
+                    instances={instances}
+                  />
+                )}
               />
-              {/* 인스턴스별 매수가 기준선 */}
               {instances.map((inst, i) => {
                 const color = REF_COLORS[i % REF_COLORS.length]
                 return (
