@@ -118,7 +118,9 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
 
   const fetchData = useCallback(async (isRetry = false) => {
     if (!isRetry) setLoading(true)
-    const url = `/api/chart?ticker=${ticker}&tradeType=${encodeURIComponent(tradeType)}`
+    // src: 0=Yahoo query1 / 1=Yahoo query2 / 2=Daum — index % 3 로 분산
+    const src = isRetry ? 1 : index % 3
+    const url = `/api/chart?ticker=${ticker}&tradeType=${encodeURIComponent(tradeType)}&src=${src}`
       + (from ? `&from=${encodeURIComponent(from)}` : '')
     try {
       const res = await fetch(url)
