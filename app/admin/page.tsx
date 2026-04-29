@@ -46,16 +46,21 @@ export default function AdminPage() {
       if (data.success) {
         setCollectLog(prev => [...prev, `[${now()}] ✅ ${data.message}`])
         await loadCollectedYears()
-        // 수집 완료 후 수집된 데이터 포함해 AI 재분석 자동 실행
-        setCollectLog(prev => [...prev, `[${now()}] 🔄 수집 데이터 반영 AI 재분석 중... (30~60초)`])
-        const analysisRes = await fetch('/api/cron/daily', { method: 'POST' })
-        const analysisData = await analysisRes.json()
-        setCollectLog(prev => [
-          ...prev,
-          analysisData.success
-            ? `[${now()}] ✅ AI 재분석 완료 — 뉴스 ${analysisData.newsCount}건 분석`
-            : `[${now()}] ❌ AI 분석 오류: ${analysisData.error}`,
-        ])
+        // 수집 완료 후 AI 재분석 자동 실행 (Gemini 실패 시 무시)
+        setCollectLog(prev => [...prev, `[${now()}] 🔄 수집 데이터 반영 AI 재분석 중... (30~90초)`])
+        try {
+          const analysisRes = await fetch('/api/cron/daily', { method: 'POST' })
+          let analysisData: { success?: boolean; newsCount?: number; error?: string } = {}
+          try { analysisData = await analysisRes.json() } catch { /* 타임아웃 시 HTML 응답 무시 */ }
+          setCollectLog(prev => [
+            ...prev,
+            analysisData.success
+              ? `[${now()}] ✅ AI 재분석 완료 — 뉴스 ${analysisData.newsCount}건 분석`
+              : `[${now()}] ⚠️ AI 재분석 실패 (Gemini 할당량 초과 또는 타임아웃) — 메인에서 수동 실행 가능`,
+          ])
+        } catch {
+          setCollectLog(prev => [...prev, `[${now()}] ⚠️ AI 재분석 스킵 — 메인 페이지에서 수동 실행해주세요`])
+        }
       } else {
         setCollectLog(prev => [...prev, `[${now()}] ❌ 오류: ${data.error}`])
       }

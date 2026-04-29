@@ -15,7 +15,7 @@ if (API_KEYS.length === 0 && process.env.GEMINI_API_KEY) {
 
 // 503/429 시 같은 모델 backoff 재시도 (최대 3회)
 async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string): Promise<string> {
-  const delays = [5000, 12000, 25000]
+  const delays = [4000, 8000, 15000]
   let lastErr: Error = new Error('unknown')
   for (let i = 0; i <= delays.length; i++) {
     try {
