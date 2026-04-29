@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { supabaseAdmin } from './supabase'
+import { MAJOR_STOCKS } from './major-stocks'
 
 export type StockQuote = {
   ticker: string
@@ -296,37 +297,101 @@ export async function getFundamentalsMap(
   return map
 }
 
-// 과거 유사 패턴 조회 (Supabase)
+// 키워드 → 관련 섹터 매핑
+const KEYWORD_SECTOR_MAP: Record<string, string[]> = {
+  '반도체': ['반도체'],
+  'AI': ['반도체', '로봇', 'IT'],
+  '2차전지': ['2차전지'],
+  '배터리': ['2차전지'],
+  '바이오': ['바이오', '제약'],
+  '방산': ['방산'],
+  '조선': ['조선'],
+  '금융': ['금융', '보험'],
+  '자동차': ['자동차'],
+  '게임': ['게임'],
+  '로봇': ['로봇'],
+  '인터넷': ['IT'],
+  '원자력': ['원자력'],
+  '철강': ['철강'],
+  '화학': ['화학'],
+}
+
+// 과거 유사 패턴 조회: market_events(주요사건) + historical_patterns(종목 상승 이력) 병합
 export async function getSimilarHistoricalPatterns(keywords: string[]): Promise<string> {
+  const lines: string[] = []
+
+  // 1. market_events: 키워드 연관 주요 경제 사건
   try {
-    const { data } = await supabaseAdmin
+    const { data: events } = await supabaseAdmin
       .from('market_events')
       .select('*')
       .order('event_date', { ascending: false })
       .limit(50)
 
-    if (!data || !data.length) return '과거 패턴 데이터 없음 (scripts/collect_historical.py 실행 필요)'
-
-    const relevant = data.filter((event) =>
-      keywords.some(
-        (kw) =>
-          event.description?.includes(kw) ||
-          event.affected_sectors?.some((s: string) => s.includes(kw))
+    if (events?.length) {
+      const relevant = events.filter(e =>
+        keywords.some(kw =>
+          e.description?.includes(kw) ||
+          e.affected_sectors?.some((s: string) => s.includes(kw))
+        )
       )
-    )
+      const source = relevant.length ? relevant.slice(0, 5) : events.slice(0, 3)
+      lines.push('[주요 경제 사건 참고]')
+      source.forEach(e => {
+        lines.push(`- ${e.event_date}: ${e.description} (${e.impact_direction}, ${e.impact_magnitude}%)`)
+      })
+    }
+  } catch { /* 실패 시 무시 */ }
 
-    const source = relevant.length ? relevant : data.slice(0, 10)
+  // 2. historical_patterns: 키워드 관련 섹터 종목이 크게 오른 과거 날짜 조회
+  try {
+    const relevantSectors = new Set<string>()
+    keywords.forEach(kw => {
+      ;(KEYWORD_SECTOR_MAP[kw] ?? []).forEach(s => relevantSectors.add(s))
+    })
 
-    return source
-      .slice(0, 10)
-      .map(
-        (e) =>
-          `- [${e.event_date}] ${e.description} → 영향종목: ${e.affected_tickers?.join(', ') || '없음'} (${e.impact_direction}, ${e.impact_magnitude}%)`
+    if (relevantSectors.size > 0) {
+      const relevantTickers = new Set(
+        MAJOR_STOCKS.filter(s => relevantSectors.has(s.sector)).map(s => s.ticker)
       )
-      .join('\n')
-  } catch {
-    return '과거 패턴 조회 실패'
-  }
+
+      const { data: patterns } = await supabaseAdmin
+        .from('historical_patterns')
+        .select('trade_date, top_gainers')
+        .order('trade_date', { ascending: false })
+        .limit(1000)
+
+      if (patterns?.length) {
+        type Gainer = { ticker: string; name: string; sector: string; change_pct: number }
+
+        // 관련 섹터 종목이 상위 상승에 포함된 날짜만 필터
+        const matchingDays = patterns
+          .map(p => {
+            const gainers = (p.top_gainers as Gainer[]) ?? []
+            const hit = gainers.filter(g => relevantTickers.has(g.ticker))
+            if (!hit.length) return null
+            const avgChange = hit.reduce((s, g) => s + g.change_pct, 0) / hit.length
+            return { date: p.trade_date as string, hit, avgChange }
+          })
+          .filter(Boolean) as { date: string; hit: Gainer[]; avgChange: number }[]
+
+        // 평균 상승률 기준 상위 5일
+        const top5 = matchingDays
+          .sort((a, b) => b.avgChange - a.avgChange)
+          .slice(0, 5)
+
+        if (top5.length) {
+          lines.push('\n[과거 유사 상승일 패턴 — 오늘 뉴스 관련 섹터 기준]')
+          top5.forEach(d => {
+            const desc = d.hit.map(g => `${g.name} +${g.change_pct.toFixed(1)}%`).join(', ')
+            lines.push(`- ${d.date}: ${desc}`)
+          })
+        }
+      }
+    }
+  } catch { /* 실패 시 무시 */ }
+
+  return lines.join('\n') || '과거 패턴 데이터 없음'
 }
 
 export function formatMarketContext(params: {
