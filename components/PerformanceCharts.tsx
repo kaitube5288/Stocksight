@@ -4,8 +4,15 @@ import { useEffect, useState, useCallback } from 'react'
 import TradeTypeChartSection from './TradeTypeChartSection'
 import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 
-type Sections = { '단타': ActiveChartEntry[]; '스윙': ActiveChartEntry[]; '중기': ActiveChartEntry[] }
 type TT = '단타' | '스윙' | '중기'
+type Sections = Record<TT, ActiveChartEntry[]>
+
+interface DismissedRecord {
+  key:       string
+  tradeType: TT
+  ticker:    string
+  name:      string
+}
 
 const STORAGE_KEY = 'stocksight:dismissed-charts'
 
@@ -13,45 +20,57 @@ function dismissKey(tradeType: TT, entry: ActiveChartEntry) {
   return `${tradeType}:${entry.ticker}:${entry.startAt}`
 }
 
-function loadDismissed(): Set<string> {
-  if (typeof window === 'undefined') return new Set()
+function loadDismissed(): Map<string, DismissedRecord> {
+  if (typeof window === 'undefined') return new Map()
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? new Set(JSON.parse(stored) as string[]) : new Set()
-  } catch { return new Set() }
+    if (!stored) return new Map()
+    const records: DismissedRecord[] = JSON.parse(stored)
+    return new Map(records.map(r => [r.key, r]))
+  } catch { return new Map() }
 }
 
-function saveDismissed(set: Set<string>) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...set])) } catch {}
+function saveDismissed(map: Map<string, DismissedRecord>) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...map.values()])) } catch {}
+}
+
+const TT_COLOR: Record<TT, string> = {
+  '단타': 'var(--accent-red)',
+  '스윙': 'var(--accent-blue)',
+  '중기': 'var(--accent-green)',
 }
 
 export default function PerformanceCharts() {
   const [sections, setSections]   = useState<Sections | null>(null)
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  const [dismissed, setDismissed] = useState<Map<string, DismissedRecord>>(new Map())
+  const [showDismissed, setShowDismissed] = useState(false)
 
-  // localStorage는 hydration 후 로드
   useEffect(() => { setDismissed(loadDismissed()) }, [])
 
   const dismiss = useCallback((tradeType: TT, entry: ActiveChartEntry) => {
     setDismissed(prev => {
-      const next = new Set(prev)
-      next.add(dismissKey(tradeType, entry))
+      const next = new Map(prev)
+      const key = dismissKey(tradeType, entry)
+      next.set(key, { key, tradeType, ticker: entry.ticker, name: entry.name })
+      saveDismissed(next)
+      return next
+    })
+  }, [])
+
+  const restore = useCallback((key: string) => {
+    setDismissed(prev => {
+      const next = new Map(prev)
+      next.delete(key)
       saveDismissed(next)
       return next
     })
   }, [])
 
   const fetchSections = useCallback(async (showRefresh = false) => {
-    if (showRefresh) {
-      setRefreshing(true)
-      // 전체 갱신 시 삭제 목록 초기화
-      setDismissed(new Set())
-      try { localStorage.removeItem(STORAGE_KEY) } catch {}
-    } else {
-      setLoading(true)
-    }
+    if (showRefresh) setRefreshing(true)
+    else setLoading(true)
     try {
       const res  = await fetch('/api/active-charts')
       const data = await res.json()
@@ -64,16 +83,14 @@ export default function PerformanceCharts() {
 
   useEffect(() => { fetchSections() }, [fetchSections])
 
-  // 삭제된 항목 필터링
   const filtered: Sections | null = sections ? {
     '단타': sections['단타'].filter(e => !dismissed.has(dismissKey('단타', e))),
     '스윙': sections['스윙'].filter(e => !dismissed.has(dismissKey('스윙', e))),
     '중기': sections['중기'].filter(e => !dismissed.has(dismissKey('중기', e))),
   } : null
 
-  const totalCount = filtered
-    ? filtered['단타'].length + filtered['스윙'].length + filtered['중기'].length
-    : 0
+  const totalCount  = filtered ? filtered['단타'].length + filtered['스윙'].length + filtered['중기'].length : 0
+  const dismissedList = [...dismissed.values()]
 
   return (
     <div className="mt-8 flex flex-col gap-3">
@@ -82,20 +99,72 @@ export default function PerformanceCharts() {
         <h2 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
           추천 종목 수익률 추적
         </h2>
-        <button
-          onClick={() => fetchSections(true)}
-          disabled={refreshing || loading}
-          className="mono text-xs px-3 py-1 rounded-lg transition-all"
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: (refreshing || loading) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
-            cursor: (refreshing || loading) ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {refreshing ? '갱신 중...' : '↺ 전체 갱신'}
-        </button>
+        <div className="flex items-center gap-2">
+          {dismissedList.length > 0 && (
+            <button
+              onClick={() => setShowDismissed(v => !v)}
+              className="mono text-xs px-3 py-1 rounded-lg transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.35)',
+                cursor: 'pointer',
+              }}
+            >
+              숨긴 종목 {dismissedList.length}개 {showDismissed ? '▲' : '▼'}
+            </button>
+          )}
+          <button
+            onClick={() => fetchSections(true)}
+            disabled={refreshing || loading}
+            className="mono text-xs px-3 py-1 rounded-lg transition-all"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: (refreshing || loading) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
+              cursor: (refreshing || loading) ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {refreshing ? '갱신 중...' : '↺ 전체 갱신'}
+          </button>
+        </div>
       </div>
+
+      {/* 숨긴 종목 목록 (개별 복원) */}
+      {showDismissed && dismissedList.length > 0 && (
+        <div
+          className="flex flex-wrap gap-2 px-4 py-3 rounded-xl"
+          style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
+        >
+          {dismissedList.map(rec => (
+            <div
+              key={rec.key}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+            >
+              <span
+                className="text-[9px] font-bold px-1 rounded"
+                style={{ background: `${TT_COLOR[rec.tradeType]}20`, color: TT_COLOR[rec.tradeType] }}
+              >
+                {rec.tradeType}
+              </span>
+              <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{rec.name}</span>
+              <button
+                onClick={() => restore(rec.key)}
+                className="text-[10px] mono px-1.5 rounded transition-all"
+                style={{
+                  background: 'rgba(0,229,170,0.1)',
+                  border: '1px solid rgba(0,229,170,0.3)',
+                  color: 'rgba(0,229,170,0.8)',
+                  cursor: 'pointer',
+                }}
+              >
+                복원
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="py-6 text-center" style={{ color: 'var(--text-muted)', fontSize: '12px' }}>

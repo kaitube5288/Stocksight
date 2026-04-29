@@ -1,40 +1,30 @@
 import { NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { addTradingDays } from '@/lib/trading-days'
 
 export const dynamic = 'force-dynamic'
 
 const TRADING_DAYS = { '단타': 3, '스윙': 5, '중기': 25 } as const
 type TT = keyof typeof TRADING_DAYS
 
-function addTradingDays(from: Date, days: number): Date {
-  const d = new Date(from)
-  let count = 0
-  while (count < days) {
-    d.setDate(d.getDate() + 1)
-    if (d.getDay() !== 0 && d.getDay() !== 6) count++
-  }
-  d.setHours(23, 59, 59, 999)
-  return d
-}
-
 export interface BuyPriceInstance {
-  label: string  // "" if only one instance, "추천1"/"추천2" if multiple
+  label: string  // "" if single, "추천1"/"추천2" if multiple
   price: number
 }
 
 export interface ActiveChartEntry {
   ticker:    string
   name:      string
-  instances: BuyPriceInstance[]  // 1개 이상; 중복 추천 시 여러 개
-  startAt:   string              // 첫 추천 시점 ISO (차트 시작점)
-  expiresAt: string              // 최신 추천일 + N거래일
+  instances: BuyPriceInstance[]
+  startAt:   string  // 첫 추천 시점 ISO
+  expiresAt: string  // 최신 추천일 + N거래일
   rank:      number
 }
 
 type Meta = {
   ticker: string
   name: string
-  buyPrices: { price: number; dateKey: string }[]  // dateKey: YYYY-MM-DD
+  buyPrices: { price: number; dateKey: string }[]
   firstRecDate: Date
   latestRecDate: Date
 }
@@ -48,24 +38,21 @@ function buildSection(
 
   for (const rec of recs) {
     const recDate = new Date(rec.created_at)
-    const dateKey = recDate.toISOString().split('T')[0]
+    // KST 기준 날짜 키 (Vercel = UTC)
+    const dateKey = new Date(recDate.getTime() + 9 * 3_600_000).toISOString().split('T')[0]
     for (const stock of rec.stocks ?? []) {
       if (stock.trade_type !== tt) continue
       const ex = map.get(stock.ticker)
       if (!ex) {
         map.set(stock.ticker, {
-          ticker: stock.ticker,
-          name: stock.name,
+          ticker: stock.ticker, name: stock.name,
           buyPrices: [{ price: stock.buy_price, dateKey }],
-          firstRecDate: recDate,
-          latestRecDate: recDate,
+          firstRecDate: recDate, latestRecDate: recDate,
         })
       } else {
-        // 같은 날 중복 추천은 무시, 다른 날이면 새 인스턴스 추가
+        // 같은 날 중복 추천 무시, 다른 날이면 새 인스턴스 추가
         const alreadyToday = ex.buyPrices.some(bp => bp.dateKey === dateKey)
-        if (!alreadyToday) {
-          ex.buyPrices.push({ price: stock.buy_price, dateKey })
-        }
+        if (!alreadyToday) ex.buyPrices.push({ price: stock.buy_price, dateKey })
         if (recDate > ex.latestRecDate) ex.latestRecDate = recDate
       }
     }
@@ -79,8 +66,7 @@ function buildSection(
 
     const multi = m.buyPrices.length > 1
     result.push({
-      ticker: m.ticker,
-      name: m.name,
+      ticker: m.ticker, name: m.name,
       instances: m.buyPrices.map((bp, i) => ({
         label: multi ? `추천${i + 1}` : '',
         price: bp.price,
@@ -98,7 +84,7 @@ export async function GET() {
   const now = new Date()
 
   const since = new Date(now)
-  since.setDate(since.getDate() - 36)
+  since.setDate(since.getDate() - 40) // 공휴일 고려해 여유 있게
 
   const { data: recs, error } = await supabase
     .from('recommendations')
