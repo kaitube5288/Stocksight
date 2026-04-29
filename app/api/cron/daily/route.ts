@@ -165,7 +165,21 @@ async function runDailyAnalysis() {
       date: todayDate,
     })
 
-    // 7. 오래된 뉴스 캐시 정리 (7일 초과)
+    // 7. 분석 성공 시각 sentinel 갱신 (수집+분석 모두 성공했을 때만)
+    await supabaseAdmin
+      .from('market_events')
+      .upsert({
+        event_date: '1900-01-01',
+        event_type: 'geopolitical',
+        description: '__2026_collection__',
+        affected_sectors: [new Date().toISOString()],
+        affected_tickers: [],
+        impact_direction: 'positive',
+        impact_magnitude: 0,
+        source: 'system',
+      }, { onConflict: 'event_date,description' })
+
+    // 8. 오래된 뉴스 캐시 정리 (7일 초과)
     const cleanupDate = new Date()
     cleanupDate.setDate(cleanupDate.getDate() - 7)
     await supabaseAdmin

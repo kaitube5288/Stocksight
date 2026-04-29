@@ -151,22 +151,6 @@ export async function POST(req: NextRequest) {
       if (!error) saved++
     }
 
-    // 수집 완료 시각 저장 (market_events 테이블에 sentinel 레코드)
-    const collectedAt = new Date().toISOString()
-    // event_date를 고정값으로 써야 upsert onConflict 정상 동작 (날짜 변경 시 중복 방지)
-    await supabaseAdmin
-      .from('market_events')
-      .upsert({
-        event_date: '1900-01-01',
-        event_type: 'geopolitical',
-        description: '__2026_collection__',
-        affected_sectors: [collectedAt],
-        affected_tickers: [],
-        impact_direction: 'positive',
-        impact_magnitude: 0,
-        source: 'system',
-      }, { onConflict: 'event_date,description' })
-
     return NextResponse.json({
       success: true,
       message: `${processed}개 종목, ${saved}일 데이터 저장 완료`,
