@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import RecommendationCard from '@/components/RecommendationCard'
 import NewsPanel from '@/components/NewsPanel'
 import MarketBar from '@/components/MarketBar'
-import TradeTypeChartSection from '@/components/TradeTypeChartSection'
+import PerformanceCharts from '@/components/PerformanceCharts'
 import { DailyRecommendation } from '@/lib/supabase'
 
 type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
@@ -478,24 +478,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 가격 추이 차트 섹션 */}
-      {recommendation && (recommendation.stocks?.length ?? 0) > 0 && (() => {
-        const stocks     = recommendation.stocks ?? []
-        const daytrading = stocks.filter(s => s.trade_type === '단타')
-        const swing      = stocks.filter(s => s.trade_type === '스윙')
-        const longterm   = stocks.filter(s => s.trade_type === '중기')
-        return (
-          <div className="mt-8 flex flex-col gap-3">
-            <div className="section-line" />
-            <h2 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
-              추천 종목 가격 추이
-            </h2>
-            <TradeTypeChartSection tradeType="단타" stocks={daytrading} rankOffset={0} />
-            <TradeTypeChartSection tradeType="스윙" stocks={swing}      rankOffset={3} />
-            <TradeTypeChartSection tradeType="중기" stocks={longterm}   rankOffset={6} />
-          </div>
-        )
-      })()}
+      {/* 수익률 추적 차트 섹션 */}
+      <PerformanceCharts />
 
       {/* 푸터 */}
       <footer className="mt-10 pt-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>

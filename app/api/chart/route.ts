@@ -26,6 +26,7 @@ function isMarketHours(ts: number): boolean {
 export async function GET(request: NextRequest) {
   const ticker    = request.nextUrl.searchParams.get('ticker') ?? ''
   const tradeType = request.nextUrl.searchParams.get('tradeType') ?? ''
+  const from      = request.nextUrl.searchParams.get('from') // ISO — 추천 시점부터 데이터 요청
 
   if (!ticker || !(tradeType in TRADE_CONFIG)) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 })
@@ -35,7 +36,14 @@ export async function GET(request: NextRequest) {
   const symbol = ticker.includes('.') ? ticker : `${ticker}.KS`
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`
+    let url: string
+    if (from) {
+      const p1 = Math.floor(new Date(from).getTime() / 1000)
+      const p2 = Math.floor(Date.now() / 1000)
+      url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&period1=${p1}&period2=${p2}`
+    } else {
+      url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`
+    }
     const res = await axios.get(url, { headers: YF_HEADERS, timeout: 12000 })
 
     const result = res.data?.chart?.result?.[0]

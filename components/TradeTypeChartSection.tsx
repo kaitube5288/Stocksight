@@ -2,32 +2,31 @@
 
 import { useState } from 'react'
 import StockChart from './StockChart'
-import { StockRecommendation } from '@/lib/supabase'
+import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 
 interface Props {
-  tradeType:  '단타' | '스윙' | '중기'
-  stocks:     StockRecommendation[]
-  rankOffset: number
+  tradeType: '단타' | '스윙' | '중기'
+  entries:   ActiveChartEntry[]
 }
 
 const TRADE_META = {
-  '단타': { label: '단타 추천 종목 차트', sub: '5분봉 · 2일',  color: 'var(--accent-red)'  },
-  '스윙': { label: '스윙 추천 종목 차트', sub: '30분봉 · 4일', color: 'var(--accent-blue)' },
-  '중기': { label: '중기 추천 종목 차트', sub: '일봉 · 5주',   color: 'var(--accent-green)'},
+  '단타': { label: '단타 수익률 추적', sub: '5분봉 · 3거래일',  color: 'var(--accent-red)'   },
+  '스윙': { label: '스윙 수익률 추적', sub: '30분봉 · 5거래일', color: 'var(--accent-blue)'  },
+  '중기': { label: '중기 수익률 추적', sub: '일봉 · 25거래일',  color: 'var(--accent-green)' },
 }
 
-export default function TradeTypeChartSection({ tradeType, stocks, rankOffset }: Props) {
+export default function TradeTypeChartSection({ tradeType, entries }: Props) {
   const [open, setOpen] = useState(false)
   const meta = TRADE_META[tradeType]
 
-  if (!stocks.length) return null
+  if (!entries.length) return null
 
   return (
     <div
       className="rounded-2xl overflow-hidden"
       style={{ border: '1px solid rgba(255,255,255,0.07)' }}
     >
-      {/* 헤더 (클릭으로 토글) */}
+      {/* 헤더 */}
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-5 py-4 transition-all"
@@ -50,6 +49,9 @@ export default function TradeTypeChartSection({ tradeType, stocks, rankOffset }:
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {meta.sub}
           </span>
+          <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
+            {entries.length}종목
+          </span>
         </div>
         <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>
           {open ? '▲ 접기' : '▼ 펼치기'}
@@ -62,14 +64,16 @@ export default function TradeTypeChartSection({ tradeType, stocks, rankOffset }:
           className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4"
           style={{ background: 'rgba(0,0,0,0.2)' }}
         >
-          {stocks.map((stock, i) => (
+          {entries.map(entry => (
             <StockChart
-              key={stock.ticker}
-              ticker={stock.ticker}
-              name={stock.name}
-              buyPrice={stock.buy_price}
+              key={`${entry.ticker}-${entry.startAt}`}
+              ticker={entry.ticker}
+              name={entry.name}
+              instances={entry.instances}
               tradeType={tradeType}
-              rank={rankOffset + i + 1}
+              rank={entry.rank}
+              from={entry.startAt}
+              expiresAt={entry.expiresAt}
             />
           ))}
         </div>
