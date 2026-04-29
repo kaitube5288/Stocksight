@@ -48,23 +48,8 @@ export default function AdminPage() {
       })
       const data = await res.json()
       if (data.success) {
-        setCollectLog(prev => [...prev, `[${now()}] ✅ ${data.message}`])
+        setCollectLog(prev => [...prev, `[${now()}] ✅ ${data.message}`, `[${now()}] 💡 추천 종목을 갱신하려면 ② 일일 분석을 실행하세요`])
         await loadCollectedYears()
-        // 수집 완료 후 AI 재분석 자동 실행 (Gemini 실패 시 무시)
-        setCollectLog(prev => [...prev, `[${now()}] 🔄 수집 데이터 반영 AI 재분석 중... (30~90초)`])
-        try {
-          const analysisRes = await fetch('/api/cron/daily', { method: 'POST' })
-          let analysisData: { success?: boolean; newsCount?: number; error?: string } = {}
-          try { analysisData = await analysisRes.json() } catch { /* 타임아웃 시 HTML 응답 무시 */ }
-          setCollectLog(prev => [
-            ...prev,
-            analysisData.success
-              ? `[${now()}] ✅ AI 재분석 완료 — 뉴스 ${analysisData.newsCount}건 분석`
-              : `[${now()}] ⚠️ AI 재분석 실패 (Gemini 할당량 초과 또는 타임아웃) — 메인에서 수동 실행 가능`,
-          ])
-        } catch {
-          setCollectLog(prev => [...prev, `[${now()}] ⚠️ AI 재분석 스킵 — 메인 페이지에서 수동 실행해주세요`])
-        }
       } else {
         setCollectLog(prev => [...prev, `[${now()}] ❌ 오류: ${data.error}`])
       }
