@@ -394,6 +394,139 @@ export async function getSimilarHistoricalPatterns(keywords: string[]): Promise<
   return lines.join('\n') || '과거 패턴 데이터 없음'
 }
 
+// ─────────────────────────────────────────────
+// 기술적 분석 (RSI / MACD / 이동평균 추세)
+// ─────────────────────────────────────────────
+
+export type TechnicalIndicators = {
+  rsi14: number | null
+  macdSignal: 'buy' | 'sell' | 'neutral' | null
+  trend: 'up' | 'down' | 'sideways' | null
+}
+
+function calcSMA(prices: number[], period: number): number | null {
+  if (prices.length < period) return null
+  return prices.slice(-period).reduce((a, b) => a + b, 0) / period
+}
+
+function calcEMA(prices: number[], period: number): number[] {
+  const result: number[] = new Array(prices.length).fill(NaN)
+  if (prices.length < period) return result
+  const k = 2 / (period + 1)
+  result[period - 1] = prices.slice(0, period).reduce((a, b) => a + b, 0) / period
+  for (let i = period; i < prices.length; i++) {
+    result[i] = prices[i] * k + result[i - 1] * (1 - k)
+  }
+  return result
+}
+
+function calcRSI(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null
+  const changes = closes.slice(1).map((c, i) => c - closes[i])
+  let avgGain = 0, avgLoss = 0
+  for (let i = 0; i < period; i++) {
+    avgGain += changes[i] > 0 ? changes[i] : 0
+    avgLoss += changes[i] < 0 ? -changes[i] : 0
+  }
+  avgGain /= period; avgLoss /= period
+  for (let i = period; i < changes.length; i++) {
+    avgGain = (avgGain * (period - 1) + (changes[i] > 0 ? changes[i] : 0)) / period
+    avgLoss = (avgLoss * (period - 1) + (changes[i] < 0 ? -changes[i] : 0)) / period
+  }
+  if (avgLoss === 0) return 100
+  return Math.round((100 - 100 / (1 + avgGain / avgLoss)) * 10) / 10
+}
+
+async function fetchCloses(ticker: string): Promise<number[]> {
+  const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
+  for (const suffix of ['.KS', '.KQ']) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=180d&interval=1d`
+      const res = await axios.get(url, { headers: YF_HEADERS, timeout: 10000 })
+      const raw: (number | null)[] = res.data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []
+      const closes = raw.filter((v): v is number => v != null && !isNaN(v))
+      if (closes.length > 30) return closes
+    } catch { /* 다음 시도 */ }
+  }
+  return []
+}
+
+export async function fetchTechnicalIndicators(ticker: string): Promise<TechnicalIndicators> {
+  const empty: TechnicalIndicators = { rsi14: null, macdSignal: null, trend: null }
+  try {
+    const closes = await fetchCloses(ticker)
+    if (closes.length < 30) return empty
+
+    const rsi14 = calcRSI(closes)
+
+    // 이동평균 추세: 종가 vs MA20 vs MA60
+    const ma20 = calcSMA(closes, 20)
+    const ma60 = closes.length >= 60 ? calcSMA(closes, 60) : null
+    const last = closes[closes.length - 1]
+    let trend: TechnicalIndicators['trend'] = null
+    if (ma20) {
+      if (last > ma20 && (ma60 == null || ma20 > ma60)) trend = 'up'
+      else if (last < ma20 && (ma60 == null || ma20 < ma60)) trend = 'down'
+      else trend = 'sideways'
+    }
+
+    // MACD (12/26/9)
+    let macdSignal: TechnicalIndicators['macdSignal'] = null
+    if (closes.length >= 35) {
+      const e12 = calcEMA(closes, 12)
+      const e26 = calcEMA(closes, 26)
+      const macd = e12.map((v, i) => !isNaN(v) && !isNaN(e26[i]) ? v - e26[i] : NaN)
+      const valid = macd.filter(v => !isNaN(v))
+      if (valid.length >= 10) {
+        const sig = calcEMA(valid, 9)
+        const n = valid.length - 1
+        const m0 = valid[n], m1 = valid[n - 1]
+        const s0 = sig[n], s1 = sig[n - 1]
+        if (!isNaN(s0) && !isNaN(s1)) {
+          if (m1 <= s1 && m0 > s0) macdSignal = 'buy'
+          else if (m1 >= s1 && m0 < s0) macdSignal = 'sell'
+          else macdSignal = 'neutral'
+        }
+      }
+    }
+
+    return { rsi14, macdSignal, trend }
+  } catch { return empty }
+}
+
+// 뉴스 키워드 관련 섹터 종목들의 기술적 지표 요약 (Gemini 프롬프트용)
+export async function fetchSectorTechnicals(keywords: string[]): Promise<string> {
+  const relevantSectors = new Set<string>()
+  keywords.forEach(kw => { ;(KEYWORD_SECTOR_MAP[kw] ?? []).forEach(s => relevantSectors.add(s)) })
+  if (relevantSectors.size === 0) return ''
+
+  // 섹터별 대표 2종목
+  const candidates = Array.from(relevantSectors).flatMap(sector =>
+    MAJOR_STOCKS.filter(s => s.sector === sector).slice(0, 2)
+  ).slice(0, 12)
+
+  const results = await Promise.all(
+    candidates.map(async s => ({ s, t: await fetchTechnicalIndicators(s.ticker) }))
+  )
+
+  const rsiLabel = (r: number) => r >= 70 ? '과매수주의' : r <= 30 ? '과매도반등가능' : '중립'
+  const trendLabel = (t: string) => t === 'up' ? '상승추세' : t === 'down' ? '하락추세' : '횡보'
+  const macdLabel = (m: string) => m === 'buy' ? '골든크로스' : m === 'sell' ? '데드크로스' : '중립'
+
+  const lines: string[] = ['[뉴스 관련 섹터 기술적 지표]']
+  let added = 0
+  results.forEach(({ s, t }) => {
+    if (t.rsi14 == null) return
+    const parts = [`RSI=${t.rsi14}(${rsiLabel(t.rsi14)})`]
+    if (t.trend) parts.push(trendLabel(t.trend))
+    if (t.macdSignal && t.macdSignal !== 'neutral') parts.push(macdLabel(t.macdSignal))
+    lines.push(`- ${s.name}(${s.ticker}): ${parts.join(', ')}`)
+    added++
+  })
+
+  return added > 0 ? lines.join('\n') : ''
+}
+
 export function formatMarketContext(params: {
   kospi: StockQuote | null
   kosdaq: StockQuote | null

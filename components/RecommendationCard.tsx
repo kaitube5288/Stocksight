@@ -49,6 +49,47 @@ function FundamentalBadge({ label, value, unit = '' }: { label: string; value: n
   )
 }
 
+function RsiBadge({ value }: { value: number | null | undefined }) {
+  if (value == null) return null
+  const color = value >= 70 ? '#ff6b6b' : value <= 30 ? '#00e5aa' : 'var(--text-muted)'
+  const label = value >= 70 ? '과매수' : value <= 30 ? '과매도' : '중립'
+  return (
+    <div className="flex flex-col items-center py-1 px-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <span className="text-[9px] mb-0.5" style={{ color: 'var(--text-muted)' }}>RSI</span>
+      <span className="mono text-[10px] font-bold" style={{ color }}>{value} <span style={{ fontSize: '8px' }}>{label}</span></span>
+    </div>
+  )
+}
+
+function TrendBadge({ value }: { value: 'up' | 'down' | 'sideways' | null | undefined }) {
+  if (value == null) return null
+  const cfg = {
+    up:       { label: '상승추세', color: '#00e5aa', bg: 'rgba(0,229,170,0.1)' },
+    down:     { label: '하락추세', color: '#ff6b6b', bg: 'rgba(255,107,107,0.1)' },
+    sideways: { label: '횡보',    color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.04)' },
+  }[value]
+  return (
+    <div className="flex flex-col items-center py-1 px-2 rounded-lg" style={{ background: cfg.bg }}>
+      <span className="text-[9px] mb-0.5" style={{ color: 'var(--text-muted)' }}>추세</span>
+      <span className="text-[10px] font-bold" style={{ color: cfg.color }}>{cfg.label}</span>
+    </div>
+  )
+}
+
+function MacdBadge({ value }: { value: 'buy' | 'sell' | 'neutral' | null | undefined }) {
+  if (value == null || value === 'neutral') return null
+  const cfg = {
+    buy:  { label: '골든크로스', color: '#00e5aa', bg: 'rgba(0,229,170,0.1)' },
+    sell: { label: '데드크로스', color: '#ff6b6b', bg: 'rgba(255,107,107,0.1)' },
+  }[value]
+  return (
+    <div className="flex flex-col items-center py-1 px-2 rounded-lg" style={{ background: cfg.bg }}>
+      <span className="text-[9px] mb-0.5" style={{ color: 'var(--text-muted)' }}>MACD</span>
+      <span className="text-[10px] font-bold" style={{ color: cfg.color }}>{cfg.label}</span>
+    </div>
+  )
+}
+
 export default function RecommendationCard({ stock, rank, animate }: Props) {
   const rankClass = rank <= 3 ? `rank-${rank}` : ''
 
@@ -129,6 +170,19 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
         <FundamentalBadge label="PBR" value={stock.pbr} />
         <FundamentalBadge label="ROE" value={stock.roe} unit="%" />
       </div>
+
+      {/* 기술적 지표 — 단타/스윙만 표시 */}
+      {(stock.trade_type === '단타' || stock.trade_type === '스윙') &&
+        (stock.rsi14 != null || stock.trend != null || stock.macd_signal != null) && (
+        <div>
+          <div className="text-[9px] mb-1.5" style={{ color: 'var(--text-muted)' }}>기술적 지표</div>
+          <div className="flex gap-1.5 flex-wrap">
+            <RsiBadge value={stock.rsi14} />
+            <TrendBadge value={stock.trend} />
+            <MacdBadge value={stock.macd_signal} />
+          </div>
+        </div>
+      )}
 
       <hr className="separator" />
 

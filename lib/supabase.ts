@@ -54,6 +54,9 @@ export type StockRecommendation = {
   roe?: number | null
   market?: 'KOSPI' | 'KOSDAQ' | null
   current_price?: number | null
+  rsi14?: number | null
+  macd_signal?: 'buy' | 'sell' | 'neutral' | null
+  trend?: 'up' | 'down' | 'sideways' | null
 }
 
 export type DailyRecommendation = {

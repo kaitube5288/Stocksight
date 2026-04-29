@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -81,17 +81,21 @@ async function runDailyAnalysis() {
     const dartText = formatDisclosuresForPrompt(disclosures)
     const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
 
-    // 3. 과거 유사 패턴 조회
+    // 3. 과거 유사 패턴 + 섹터 기술적 지표 병렬 조회
     const keywords = extractKeywords(newsText)
-    const historicalPatterns = await getSimilarHistoricalPatterns(keywords)
+    const [historicalPatterns, technicalContext] = await Promise.all([
+      getSimilarHistoricalPatterns(keywords),
+      fetchSectorTechnicals(keywords),
+    ])
 
-    // 4. Gemini 분석
+    // 4. Gemini 분석 (뉴스 + 패턴 + 실시간 기술적 지표 주입)
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
       historicalPatterns,
       marketContext: marketText,
       date: today,
+      technicalContext: technicalContext || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
@@ -102,19 +106,22 @@ async function runDailyAnalysis() {
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 
-    // 4-2. 실제 현재가 + 펀더멘털 병렬 조회
+    // 4-2. 현재가 + 펀더멘털 + 기술적 지표 병렬 조회
     const tickers = result.recommendations.map(r => r.ticker)
-    const [realPrices, fundamentals] = await Promise.all([
+    const [realPrices, fundamentals, technicals] = await Promise.all([
       getRealPrices(tickers),
       getFundamentalsMap(tickers),
+      Promise.all(tickers.map(t => fetchTechnicalIndicators(t))),
     ])
+    const techMap = Object.fromEntries(tickers.map((t, i) => [t, technicals[i]]))
+
     // 거래중단/상폐 종목 제거
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
     result.recommendations = result.recommendations.map(r => {
       const real = realPrices[r.ticker]
       const fund = fundamentals[r.ticker]
-      // 현재가를 매수가 기준으로 사용해 카드 현재가와 괴리 방지
+      const tech = techMap[r.ticker]
       const buyPrice = real
         ? (real.price > 0 ? real.price : real.previousClose)
         : r.buy_price
@@ -130,6 +137,9 @@ async function runDailyAnalysis() {
         pbr: fund?.pbr ?? null,
         roe: fund?.roe ?? null,
         market: fund?.market ?? null,
+        rsi14: tech?.rsi14 ?? null,
+        macd_signal: tech?.macdSignal ?? null,
+        trend: tech?.trend ?? null,
       }
     })
 

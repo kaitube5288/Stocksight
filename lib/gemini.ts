@@ -15,7 +15,8 @@ if (API_KEYS.length === 0 && process.env.GEMINI_API_KEY) {
 
 // 503/429 시 같은 모델 backoff 재시도 (최대 3회)
 async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string): Promise<string> {
-  const delays = [4000, 8000, 15000]
+  // 503 서버 과부하만 내부 재시도 (429는 같은 키로 재시도해도 의미 없으므로 즉시 throw)
+  const delays = [4000, 10000]
   let lastErr: Error = new Error('unknown')
   for (let i = 0; i <= delays.length; i++) {
     try {
@@ -27,14 +28,11 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
       return result.response.text()
     } catch (e: unknown) {
       lastErr = e instanceof Error ? e : new Error(String(e))
-      const isTransient =
+      const is503 =
         lastErr.message.includes('503') ||
-        lastErr.message.includes('429') ||
         lastErr.message.toLowerCase().includes('service unavailable') ||
-        lastErr.message.toLowerCase().includes('high demand') ||
-        lastErr.message.toLowerCase().includes('too many requests') ||
-        lastErr.message.toLowerCase().includes('quota')
-      if (isTransient && i < delays.length) {
+        lastErr.message.toLowerCase().includes('high demand')
+      if (is503 && i < delays.length) {
         await new Promise(r => setTimeout(r, delays[i]))
         continue
       }
@@ -57,17 +55,27 @@ async function callGemini(prompt: string): Promise<string> {
 
   for (let ki = 0; ki < API_KEYS.length; ki++) {
     const genAI = new GoogleGenerativeAI(API_KEYS[ki])
+    let keyRateLimited = false
+
     for (const modelName of FALLBACK_MODELS) {
+      if (keyRateLimited) break
       try {
         return await callModel(genAI, modelName, prompt)
       } catch (e: unknown) {
         const err = e instanceof Error ? e : new Error(String(e))
         const msg = err.message
         console.warn(`[Gemini] 키${ki + 1}/${modelName} 실패: ${msg.slice(0, 120)}`)
-        const isRetryable =
-          msg.includes('429') || msg.includes('503') || msg.includes('404') ||
+
+        // 429/할당량: 이 키의 다른 모델도 실패할 것이므로 즉시 다음 키로 전환
+        const is429 =
+          msg.includes('429') ||
           msg.toLowerCase().includes('quota') ||
-          msg.toLowerCase().includes('too many requests') ||
+          msg.toLowerCase().includes('too many requests')
+        if (is429) { keyRateLimited = true; break }
+
+        // 503/404: 다음 모델 시도
+        const isRetryable =
+          msg.includes('503') || msg.includes('404') ||
           msg.toLowerCase().includes('service unavailable') ||
           msg.toLowerCase().includes('high demand') ||
           msg.toLowerCase().includes('not found')
@@ -75,8 +83,9 @@ async function callGemini(prompt: string): Promise<string> {
         throw err
       }
     }
-    // 키 전환 시 1초 대기 (연속 rate limit 방지)
-    if (ki < API_KEYS.length - 1) await new Promise(r => setTimeout(r, 1000))
+
+    // 키 전환 시 0.5초 대기
+    if (ki < API_KEYS.length - 1) await new Promise(r => setTimeout(r, 500))
   }
 
   throw new Error(`모든 Gemini API 키/모델 시도 실패 (키 ${API_KEYS.length}개, 모델 ${FALLBACK_MODELS.length}개)`)
@@ -110,6 +119,7 @@ export async function generateRecommendations(params: {
   historicalPatterns: string
   marketContext: string
   date: string
+  technicalContext?: string
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요. 각 추천 종목의 매수가·목표 매도가도 함께 제시하세요.
 
@@ -131,6 +141,7 @@ ${params.marketContext}
 
 ## 유사 과거 패턴
 ${params.historicalPatterns}
+${params.technicalContext ? `\n## 뉴스 관련 섹터 기술적 지표 (실시간 계산)\n${params.technicalContext}` : ''}
 
 ---
 
