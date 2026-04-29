@@ -7,8 +7,11 @@ export default function NewsPanel() {
   const [news, setNews] = useState<NewsItem[]>([])
   const [fetchedAt, setFetchedAt] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState('')
   const [nextRefresh, setNextRefresh] = useState(30 * 60)
 
+  // 30분 캐시 활용한 자동 백그라운드 갱신
   const fetchNews = useCallback(async () => {
     setLoading(true)
     try {
@@ -26,13 +29,30 @@ export default function NewsPanel() {
     }
   }, [])
 
+  // 강제 갱신 (캐시 무시) — 자료 갱신 버튼
+  const handleForceRefresh = async () => {
+    setRefreshing(true)
+    setRefreshMsg('')
+    try {
+      const res = await fetch('/api/news?force=true')
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setNews(data.news ?? [])
+      setFetchedAt(data.fetchedAt)
+      setNextRefresh(30 * 60)
+      setRefreshMsg(`✅ ${data.count}건 갱신`)
+    } catch {
+      setRefreshMsg('❌ 갱신 실패')
+    } finally {
+      setRefreshing(false)
+      setTimeout(() => setRefreshMsg(''), 4000)
+    }
+  }
+
   useEffect(() => {
     fetchNews()
 
-    // 30분마다 자동 갱신
     const interval = setInterval(fetchNews, 30 * 60 * 1000)
-
-    // 카운트다운
     const countdown = setInterval(() => {
       setNextRefresh(prev => (prev <= 1 ? 30 * 60 : prev - 1))
     }, 1000)
@@ -68,22 +88,32 @@ export default function NewsPanel() {
             실시간 경제 뉴스
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {fetchedAt && (
             <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
               {formatDate(fetchedAt)} 수집
             </span>
           )}
-          <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
-            갱신 {formatTime(nextRefresh)}
-          </span>
+          {refreshMsg ? (
+            <span className="mono text-xs" style={{ color: refreshMsg.startsWith('✅') ? 'rgba(180,255,180,0.8)' : 'rgba(255,150,150,0.8)' }}>
+              {refreshMsg}
+            </span>
+          ) : (
+            <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              자동 {formatTime(nextRefresh)}
+            </span>
+          )}
           <button
-            onClick={fetchNews}
-            disabled={loading}
+            onClick={handleForceRefresh}
+            disabled={refreshing || loading}
             className="badge glass-hover cursor-pointer transition-all"
-            style={{ color: loading ? 'var(--text-muted)' : 'var(--text-secondary)' }}
+            style={{
+              color: refreshing ? 'var(--text-muted)' : 'var(--accent-blue)',
+              border: '1px solid rgba(77,166,255,0.3)',
+              background: 'rgba(77,166,255,0.08)',
+            }}
           >
-            {loading ? '수집중...' : '새로고침'}
+            {refreshing ? '갱신 중...' : '자료 갱신'}
           </button>
         </div>
       </div>
