@@ -16,14 +16,13 @@ const YF_HEADERS = {
   Accept: 'application/json',
 }
 
-export async function fetchYahoo(
-  ticker: string,
+async function fetchYahooSymbol(
+  symbol: string,
   interval: string,
   range: string,
   from: string | null,
-  host: 'query1' | 'query2' = 'query2',
+  host: 'query1' | 'query2',
 ): Promise<PricePoint[]> {
-  const symbol = ticker.includes('.') ? ticker : `${ticker}.KS`
   const base = `https://${host}.finance.yahoo.com/v8/finance/chart/${symbol}`
   const url = from
     ? `${base}?interval=${interval}&period1=${Math.floor(new Date(from).getTime() / 1000)}&period2=${Math.floor(Date.now() / 1000)}`
@@ -41,6 +40,22 @@ export async function fetchYahoo(
     .map((ts, i) => ({ ts, close: closes[i] }))
     .filter(p => p.close != null && (!isIntraday || isMarketHours(p.ts)))
     .map(p => ({ time: new Date(p.ts * 1000).toISOString(), close: Math.round(p.close) }))
+}
+
+// KOSPI(.KS) 시도 후 실패하면 KOSDAQ(.KQ) 자동 재시도
+export async function fetchYahoo(
+  ticker: string,
+  interval: string,
+  range: string,
+  from: string | null,
+  host: 'query1' | 'query2' = 'query2',
+): Promise<PricePoint[]> {
+  if (ticker.includes('.')) {
+    return fetchYahooSymbol(ticker, interval, range, from, host)
+  }
+  const ks = await fetchYahooSymbol(`${ticker}.KS`, interval, range, from, host).catch(() => [] as PricePoint[])
+  if (ks.length > 0) return ks
+  return fetchYahooSymbol(`${ticker}.KQ`, interval, range, from, host).catch(() => [] as PricePoint[])
 }
 
 // ── Daum Finance ──────────────────────────────────────────────────────────────
