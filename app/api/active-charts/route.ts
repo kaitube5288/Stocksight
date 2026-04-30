@@ -71,7 +71,7 @@ function buildSection(
         label: multi ? `추천${i + 1}` : '',
         price: bp.price,
       })),
-      startAt: m.firstRecDate.toISOString(),
+      startAt: new Date(m.buyPrices[0].dateKey + 'T00:00:00Z').toISOString(),
       expiresAt: expiresAt.toISOString(),
       rank: rank++,
     })
