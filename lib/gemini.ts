@@ -42,9 +42,8 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
   throw lastErr
 }
 
-// 모델 우선순위: 2.0-flash(가장 안정) → 2.5-flash → 1.5-flash → 1.5-pro
+// 모델 우선순위: 2.5-flash → 1.5-flash → 1.5-pro (2.0-flash는 신규 사용자 비활성화)
 const FALLBACK_MODELS = [
-  'gemini-2.0-flash',
   'gemini-2.5-flash',
   'gemini-1.5-flash',
   'gemini-1.5-pro',
@@ -200,7 +199,12 @@ ${params.candidatesContext ? `\n## 후보 종목 실제 데이터 (PER·PBR·ROE
   const text = await callGemini(prompt)
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Gemini 응답에서 JSON을 파싱할 수 없습니다')
-  return JSON.parse(jsonMatch[0]) as GeminiAnalysisResult
+  const parsed = JSON.parse(jsonMatch[0]) as GeminiAnalysisResult
+  // 필수 필드 누락 방어
+  if (!Array.isArray(parsed.recommendations)) parsed.recommendations = []
+  if (!parsed.market_outlook) parsed.market_outlook = '시장 전망 데이터 없음'
+  if (!parsed.risk_factors)   parsed.risk_factors   = '위험 요소 데이터 없음'
+  return parsed
 }
 
 export async function analyzeNewsSimilarity(params: {

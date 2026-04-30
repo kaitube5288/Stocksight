@@ -51,7 +51,7 @@ export async function sendTelegramAlert(params: {
     ...stockLines,
     marketIndicators.length > 0 ? marketIndicators.join(' | ') : '',
     marketIndicators.length > 0 ? `` : '',
-    `📉 ${params.marketOutlook.slice(0, 80)}...`,
+    `📉 ${(params.marketOutlook ?? '').slice(0, 80)}...`,
     ``,
     `🔗 <a href="https://stocksight-pied.vercel.app">분석 보기</a>`,
   ].filter(Boolean)
