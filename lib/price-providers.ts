@@ -148,9 +148,9 @@ const NAVER_MOBILE_HEADERS = {
   Accept:  'application/json',
 }
 
-function toNaverKST(d: Date): string {
-  const kst = new Date(d.getTime() + 9 * 3_600_000)
-  return kst.toISOString().replace(/[-:T]/g, '').slice(0, 14)
+// KST Date (UTC+9h timestamp)를 YYYYMMDDHHMM 형식으로 변환
+function toNaverKST(kstDate: Date): string {
+  return `${kstDate.getUTCFullYear()}${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}${String(kstDate.getUTCDate()).padStart(2, '0')}${String(kstDate.getUTCHours()).padStart(2, '0')}${String(kstDate.getUTCMinutes()).padStart(2, '0')}00`
 }
 
 export async function fetchNaverIntraday(

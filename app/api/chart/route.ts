@@ -3,6 +3,10 @@ import { fetchYahoo, fetchDaum, fetchNaver, fetchNaverIntraday } from '@/lib/pri
 
 export const dynamic = 'force-dynamic'
 
+function getKSTNow(): Date {
+  return new Date(new Date().getTime() + 9 * 3_600_000)
+}
+
 const TRADE_CONFIG = {
   '단타': { interval: '5m',  range: '5d'  },  // 3거래일 커버 (range 방식 사용)
   '스윙': { interval: '30m', range: '10d' },  // 5거래일 커버
@@ -29,7 +33,7 @@ export async function GET(request: NextRequest) {
   // from이 지정되면, from 날짜부터 오늘까지 충분히 가져오도록 range 동적 조정
   if (from) {
     const fromDate = new Date(from)
-    const now = new Date()
+    const now = getKSTNow()
     const daysDiff = Math.ceil((now.getTime() - fromDate.getTime()) / (24 * 3600000))
     // 여유 있게 daysDiff + 10일 이상 가져오기
     const requiredDays = Math.max(daysDiff + 10, parseInt(range))
