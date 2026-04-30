@@ -71,8 +71,8 @@ async function trySource(
   try {
     if (src === 0) return await fetchYahoo(ticker, interval, range, from, 'query1')
     if (src === 1) return await fetchYahoo(ticker, interval, range, from, 'query2')
-    if (src === 2) return await fetchDaum(ticker, interval, from)
-    if (src === 3 && interval === '1d') return await fetchNaver(ticker, from)
+    if (src === 2) return await fetchDaum(ticker, interval, from, range)
+    if (src === 3 && interval === '1d') return await fetchNaver(ticker, from, range)
     if (src === 4 && interval !== '1d') return await fetchNaverIntraday(ticker, interval, from)
     return []
   } catch { return [] }

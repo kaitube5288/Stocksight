@@ -77,6 +77,7 @@ async function fetchDaumWithPrefix(
   interval: string,
   from: string | null,
   prefix: 'A' | 'Q',
+  range?: string,
 ): Promise<PricePoint[]> {
   const code = `${prefix}${ticker}`
   const isIntraday = interval !== '1d'
@@ -84,14 +85,19 @@ async function fetchDaumWithPrefix(
 
   let url: string
   if (interval === '1d') {
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 86400000) + 10, 100) : 45
+    const baseDays = range ? parseInt(range) : 45
+    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 86400000) + 10, baseDays) : baseDays
     url = `https://finance.daum.net/api/charts/${code}/days?limit=${limit}&adjusted=false`
   } else if (interval === '30m') {
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 1800000) + 20, 400) : 200
+    const baseDays = range ? parseInt(range) : 10
+    const baseLimit = baseDays * 16 // 30분 봉: 하루 ~16개
+    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 1800000) + 20, baseLimit) : baseLimit
     url = `https://finance.daum.net/api/charts/${code}/minutes/30?limit=${limit}&adjusted=false`
   } else {
     // 5m
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 300000) + 20, 800) : 600
+    const baseDays = range ? parseInt(range) : 5
+    const baseLimit = baseDays * 80 // 5분 봉: 하루 ~80개
+    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 300000) + 20, baseLimit) : baseLimit
     url = `https://finance.daum.net/api/charts/${code}/minutes/5?limit=${limit}&adjusted=false`
   }
 
@@ -118,11 +124,12 @@ export async function fetchDaum(
   ticker: string,
   interval: string,
   from: string | null,
+  range?: string,
 ): Promise<PricePoint[]> {
   // KOSPI(A) 먼저 시도, 실패하면 KOSDAQ(Q)
   for (const prefix of ['A', 'Q'] as const) {
     try {
-      const prices = await fetchDaumWithPrefix(ticker, interval, from, prefix)
+      const prices = await fetchDaumWithPrefix(ticker, interval, from, prefix, range)
       if (prices.length > 0) return prices
     } catch { /* try next */ }
   }
@@ -178,13 +185,14 @@ const NAVER_HEADERS = {
   Accept:  'text/html,application/json,*/*',
 }
 
-export async function fetchNaver(ticker: string, from: string | null): Promise<PricePoint[]> {
+export async function fetchNaver(ticker: string, from: string | null, range?: string): Promise<PricePoint[]> {
   const fmt = (d: Date) =>
     `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
 
   const now       = new Date()
   const endTime   = fmt(now)
-  const startDate = from ? new Date(from) : new Date(now.getTime() - 40 * 86400000)
+  const baseDays = range ? parseInt(range) : 40
+  const startDate = from ? new Date(from) : new Date(now.getTime() - baseDays * 86400000)
   const startTime = fmt(startDate)
 
   const url = `https://api.finance.naver.com/siseJson.naver?symbol=${ticker}&requestType=1&startTime=${startTime}&endTime=${endTime}&timeframe=day&count=200`
