@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchYahoo, fetchDaum, fetchNaver, fetchNaverIntraday } from '@/lib/price-providers'
+import { fetchYahoo, fetchDaum, fetchNaver, fetchNaverIntraday, PricePoint } from '@/lib/price-providers'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +12,19 @@ const TRADE_CONFIG = {
   '스윙': { interval: '30m', range: '10d' },  // 5거래일 커버
   '중기': { interval: '1d',  range: '45d' },  // 25거래일(~35일) + 여유
 } as const
+
+// 분봉을 일봉으로 변환 (각 날짜의 마지막 분봉을 종가로 사용)
+function convertIntraDayToDaily(prices: PricePoint[]): PricePoint[] {
+  if (prices.length === 0) return []
+
+  const daily: Record<string, PricePoint> = {}
+  for (const p of prices) {
+    const date = p.time.split('T')[0] // YYYY-MM-DD 추출
+    daily[date] = p // 나중 데이터가 덮어씀 (각 날의 마지막 값)
+  }
+
+  return Object.values(daily).sort((a, b) => a.time.localeCompare(b.time))
+}
 
 // src 값별 데이터 소스
 // 0 = Yahoo query1 | 1 = Yahoo query2 | 2 = Daum | 3 = Naver(일봉 전용)
@@ -56,6 +69,16 @@ export async function GET(request: NextRequest) {
     }
 
     if (results.length === 0) {
+      // 일봉 데이터가 모두 없으면 분봉으로 보충 시도
+      if (interval === '1d') {
+        try {
+          const intraDayPrices = await fetchNaverIntraday(ticker, '30m', from)
+          const dailyFromIntraday = convertIntraDayToDaily(intraDayPrices)
+          if (dailyFromIntraday.length > 0) {
+            return NextResponse.json({ prices: dailyFromIntraday, interval, src: 5 }) // src=5: intraday fallback
+          }
+        } catch { /* fallback 실패 */ }
+      }
       return NextResponse.json({ prices: [], interval })
     }
 
@@ -65,6 +88,25 @@ export async function GET(request: NextRequest) {
       const maxLast = max.prices[max.prices.length - 1]?.time
       return (currLast ?? '') > (maxLast ?? '') ? curr : max
     })
+
+    // 일봉 데이터가 오늘 날짜를 포함하지 않으면 분봉으로 보충
+    if (interval === '1d' && best.prices.length > 0) {
+      const lastDailyDate = best.prices[best.prices.length - 1].time.split('T')[0]
+      const today = getKSTNow().toISOString().split('T')[0]
+
+      if (lastDailyDate < today) {
+        try {
+          const intraDayPrices = await fetchNaverIntraday(ticker, '30m', from)
+          const dailyFromIntraday = convertIntraDayToDaily(intraDayPrices)
+
+          // 분봉에서 오늘 데이터를 찾으면 추가
+          const todayIntraday = dailyFromIntraday.find(p => p.time.split('T')[0] === today)
+          if (todayIntraday) {
+            best.prices = [...best.prices, todayIntraday]
+          }
+        } catch { /* 보충 실패해도 계속 진행 */ }
+      }
+    }
 
     return NextResponse.json({ prices: best.prices, interval, src: best.src })
   } catch {
