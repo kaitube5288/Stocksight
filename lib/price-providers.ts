@@ -24,9 +24,9 @@ async function fetchYahooSymbol(
   host: 'query1' | 'query2',
 ): Promise<PricePoint[]> {
   const base = `https://${host}.finance.yahoo.com/v8/finance/chart/${symbol}`
-  const url = from
-    ? `${base}?interval=${interval}&period1=${Math.floor(new Date(from).getTime() / 1000)}&period2=${Math.floor(Date.now() / 1000)}`
-    : `${base}?interval=${interval}&range=${range}`
+  // period1/period2 방식은 한국 주식 인트라데이에서 1개 봉만 반환하는 버그가 있어
+  // 항상 range 방식을 사용하고 from 필터를 후처리로 적용
+  const url = `${base}?interval=${interval}&range=${range}`
 
   const res = await axios.get(url, { headers: YF_HEADERS, timeout: 12000 })
   const result = res.data?.chart?.result?.[0]
@@ -35,10 +35,12 @@ async function fetchYahooSymbol(
   const timestamps: number[] = result.timestamp ?? []
   const closes: number[]     = result.indicators?.quote?.[0]?.close ?? []
   const isIntraday = interval !== '1d'
+  const fromMs = from ? new Date(from).getTime() : 0
 
   return timestamps
     .map((ts, i) => ({ ts, close: closes[i] }))
     .filter(p => p.close != null && (!isIntraday || isMarketHours(p.ts)))
+    .filter(p => !from || p.ts * 1000 >= fromMs)
     .map(p => ({ time: new Date(p.ts * 1000).toISOString(), close: Math.round(p.close) }))
 }
 

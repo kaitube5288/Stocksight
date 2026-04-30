@@ -4,9 +4,9 @@ import { fetchYahoo, fetchDaum, fetchNaver } from '@/lib/price-providers'
 export const dynamic = 'force-dynamic'
 
 const TRADE_CONFIG = {
-  '단타': { interval: '5m',  range: '2d'  },
-  '스윙': { interval: '30m', range: '5d'  },
-  '중기': { interval: '1d',  range: '35d' },
+  '단타': { interval: '5m',  range: '5d'  },  // 3거래일 커버 (range 방식 사용)
+  '스윙': { interval: '30m', range: '10d' },  // 5거래일 커버
+  '중기': { interval: '1d',  range: '45d' },  // 25거래일(~35일) + 여유
 } as const
 
 // src 값별 데이터 소스
