@@ -14,17 +14,18 @@ interface SourceResult {
 export async function GET(request: NextRequest) {
   const ticker   = request.nextUrl.searchParams.get('ticker')   ?? '005930'
   const interval = request.nextUrl.searchParams.get('interval') ?? '5m'
+  const from     = request.nextUrl.searchParams.get('from')     ?? null
   const range    = interval === '1d' ? '35d' : interval === '30m' ? '5d' : '2d'
 
   const results: Record<string, SourceResult> = {}
 
   const tests: { name: string; fn: () => Promise<{ time: string; close: number }[]> }[] = [
-    { name: 'yahoo-query1', fn: () => fetchYahoo(ticker, interval, range, null, 'query1') },
-    { name: 'yahoo-query2', fn: () => fetchYahoo(ticker, interval, range, null, 'query2') },
-    { name: 'daum',         fn: () => fetchDaum(ticker, interval, null) },
+    { name: 'yahoo-query1', fn: () => fetchYahoo(ticker, interval, range, from, 'query1') },
+    { name: 'yahoo-query2', fn: () => fetchYahoo(ticker, interval, range, from, 'query2') },
+    { name: 'daum',         fn: () => fetchDaum(ticker, interval, from) },
   ]
   if (interval === '1d') {
-    tests.push({ name: 'naver', fn: () => fetchNaver(ticker, null) })
+    tests.push({ name: 'naver', fn: () => fetchNaver(ticker, from) })
   }
 
   for (const t of tests) {
