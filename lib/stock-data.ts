@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { supabaseAdmin } from './supabase'
 import { MAJOR_STOCKS } from './major-stocks'
+import { fetchROEFromDART } from './dart'
 
 export type StockQuote = {
   ticker: string
@@ -269,8 +270,9 @@ export async function getKoreanStockFundamentals(ticker: string): Promise<StockF
     scrapeNaverROE(code),
   ])
 
-  // ROE 우선순위: basic API → 추가 API 엔드포인트 → HTML 스크래핑
-  const roe = naverData.roe ?? apiRoe ?? scrapedRoe
+  // ROE 우선순위: Naver basic API → 추가 API → HTML 스크래핑 → DART 재무제표
+  const naverRoe = naverData.roe ?? apiRoe ?? scrapedRoe
+  const roe = naverRoe ?? await fetchROEFromDART(code).catch(() => null)
 
   // 시장 구분: Naver API 실패 시 Yahoo fallback
   let market = naverData.market
@@ -409,13 +411,19 @@ export async function getSimilarHistoricalPatterns(keywords: string[]): Promise<
 }
 
 // ─────────────────────────────────────────────
-// 기술적 분석 (RSI / MACD / 이동평균 추세)
+// 기술적 분석 (RSI / MACD / 볼린저밴드 / 거래량 / 지지저항 / 캔들패턴)
 // ─────────────────────────────────────────────
 
 export type TechnicalIndicators = {
   rsi14: number | null
   macdSignal: 'buy' | 'sell' | 'neutral' | null
   trend: 'up' | 'down' | 'sideways' | null
+  volumeSurge: number | null                        // 20일 평균 대비 배율 (1.5=150%)
+  bollingerSignal: 'buy' | 'sell' | 'neutral' | null // 하단 근접=buy, 상단 근접=sell
+  bollingerWidth: number | null                     // 밴드폭 % (변동성 지표)
+  supportLevel: number | null                       // 60일 저점(지지선)
+  resistanceLevel: number | null                    // 60일 고점(저항선)
+  candlePattern: 'hammer' | 'shooting_star' | 'doji' | 'bullish_engulfing' | 'bearish_engulfing' | null
 }
 
 function calcSMA(prices: number[], period: number): number | null {
@@ -451,29 +459,92 @@ function calcRSI(closes: number[], period = 14): number | null {
   return Math.round((100 - 100 / (1 + avgGain / avgLoss)) * 10) / 10
 }
 
-async function fetchCloses(ticker: string): Promise<number[]> {
+function calcBollingerBands(closes: number[], period = 20, mult = 2) {
+  if (closes.length < period) return null
+  const slice = closes.slice(-period)
+  const mid = slice.reduce((a, b) => a + b, 0) / period
+  const std = Math.sqrt(slice.reduce((a, b) => a + (b - mid) ** 2, 0) / period)
+  const upper = mid + mult * std
+  const lower = mid - mult * std
+  return { upper, middle: mid, lower, width: Math.round(((upper - lower) / mid) * 1000) / 10 }
+}
+
+function calcVolumeSurge(volumes: number[], period = 20): number | null {
+  if (volumes.length < period + 1) return null
+  const avg = volumes.slice(-period - 1, -1).reduce((a, b) => a + b, 0) / period
+  if (avg === 0) return null
+  return Math.round((volumes[volumes.length - 1] / avg) * 100) / 100
+}
+
+function calcSupportResistance(highs: number[], lows: number[], period = 60) {
+  if (lows.length < period || highs.length < period) return null
+  return {
+    support:    Math.round(Math.min(...lows.slice(-period))),
+    resistance: Math.round(Math.max(...highs.slice(-period))),
+  }
+}
+
+function detectCandlePattern(
+  opens: number[], highs: number[], lows: number[], closes: number[]
+): TechnicalIndicators['candlePattern'] {
+  const n = closes.length - 1
+  if (n < 1) return null
+  const o = opens[n], h = highs[n], l = lows[n], c = closes[n]
+  const body = Math.abs(c - o)
+  const range = h - l
+  if (range === 0) return null
+  const lowerWick = Math.min(o, c) - l
+  const upperWick = h - Math.max(o, c)
+  if (body / range < 0.05) return 'doji'
+  if (lowerWick >= body * 2 && upperWick <= body * 0.5) return 'hammer'
+  if (upperWick >= body * 2 && lowerWick <= body * 0.5) return 'shooting_star'
+  const po = opens[n - 1], pc = closes[n - 1]
+  if (c > o && pc < po && o < pc && c > po) return 'bullish_engulfing'
+  if (c < o && pc > po && o > pc && c < po) return 'bearish_engulfing'
+  return null
+}
+
+interface OHLCV { opens: number[]; highs: number[]; lows: number[]; closes: number[]; volumes: number[] }
+
+async function fetchOHLCV(ticker: string): Promise<OHLCV> {
+  const empty: OHLCV = { opens: [], highs: [], lows: [], closes: [], volumes: [] }
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
   for (const suffix of ['.KS', '.KQ']) {
     try {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=180d&interval=1d`
       const res = await axios.get(url, { headers: YF_HEADERS, timeout: 10000 })
-      const raw: (number | null)[] = res.data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []
-      const closes = raw.filter((v): v is number => v != null && !isNaN(v))
-      if (closes.length > 30) return closes
+      const q = res.data?.chart?.result?.[0]?.indicators?.quote?.[0]
+      if (!q) continue
+      const rawClose: (number | null)[] = q.close ?? []
+      const valid = rawClose.map((_, i) => i).filter(i => rawClose[i] != null && !isNaN(rawClose[i]!))
+      if (valid.length < 30) continue
+      const pick = (arr: (number | null)[]): number[] => valid.map(i => arr[i] ?? 0)
+      return {
+        closes:  pick(rawClose),
+        opens:   pick(q.open   ?? []),
+        highs:   pick(q.high   ?? []),
+        lows:    pick(q.low    ?? []),
+        volumes: pick(q.volume ?? []),
+      }
     } catch { /* 다음 시도 */ }
   }
-  return []
+  return empty
 }
 
 export async function fetchTechnicalIndicators(ticker: string): Promise<TechnicalIndicators> {
-  const empty: TechnicalIndicators = { rsi14: null, macdSignal: null, trend: null }
+  const empty: TechnicalIndicators = {
+    rsi14: null, macdSignal: null, trend: null,
+    volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
+    supportLevel: null, resistanceLevel: null, candlePattern: null,
+  }
   try {
-    const closes = await fetchCloses(ticker)
+    const { opens, highs, lows, closes, volumes } = await fetchOHLCV(ticker)
     if (closes.length < 30) return empty
 
+    // RSI
     const rsi14 = calcRSI(closes)
 
-    // 이동평균 추세: 종가 vs MA20 vs MA60
+    // 이동평균 추세
     const ma20 = calcSMA(closes, 20)
     const ma60 = closes.length >= 60 ? calcSMA(closes, 60) : null
     const last = closes[closes.length - 1]
@@ -494,8 +565,7 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
       if (valid.length >= 10) {
         const sig = calcEMA(valid, 9)
         const n = valid.length - 1
-        const m0 = valid[n], m1 = valid[n - 1]
-        const s0 = sig[n], s1 = sig[n - 1]
+        const m0 = valid[n], m1 = valid[n - 1], s0 = sig[n], s1 = sig[n - 1]
         if (!isNaN(s0) && !isNaN(s1)) {
           if (m1 <= s1 && m0 > s0) macdSignal = 'buy'
           else if (m1 >= s1 && m0 < s0) macdSignal = 'sell'
@@ -504,7 +574,33 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
       }
     }
 
-    return { rsi14, macdSignal, trend }
+    // 볼린저밴드
+    const bb = calcBollingerBands(closes)
+    let bollingerSignal: TechnicalIndicators['bollingerSignal'] = null
+    const bollingerWidth = bb?.width ?? null
+    if (bb) {
+      const pct = (last - bb.lower) / (bb.upper - bb.lower)
+      bollingerSignal = pct <= 0.2 ? 'buy' : pct >= 0.8 ? 'sell' : 'neutral'
+    }
+
+    // 거래량 급증
+    const volumeSurge = volumes.length > 0 ? calcVolumeSurge(volumes) : null
+
+    // 지지/저항선
+    const sr = calcSupportResistance(highs, lows)
+
+    // 캔들 패턴
+    const candlePattern = opens.length >= 2
+      ? detectCandlePattern(opens, highs, lows, closes)
+      : null
+
+    return {
+      rsi14, macdSignal, trend,
+      volumeSurge, bollingerSignal, bollingerWidth,
+      supportLevel: sr?.support ?? null,
+      resistanceLevel: sr?.resistance ?? null,
+      candlePattern,
+    }
   } catch { return empty }
 }
 

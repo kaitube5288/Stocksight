@@ -144,6 +144,12 @@ async function runDailyAnalysis() {
       return true
     })
 
+    // 확률 상한 95% 캡핑
+    result.recommendations = result.recommendations.map(r => ({
+      ...r,
+      probability: Math.min(r.probability, 95),
+    }))
+
     result.recommendations = result.recommendations.map(r => {
       const real = realPrices[r.ticker]
       const fund = fundamentals[r.ticker]
@@ -271,6 +277,18 @@ function formatCandidatesContext(
     if (t?.rsi14 != null) parts.push(`RSI ${t.rsi14}`)
     if (t?.macdSignal)   parts.push(t.macdSignal === 'buy' ? 'MACD↑' : t.macdSignal === 'sell' ? 'MACD↓' : 'MACD-')
     if (t?.trend)        parts.push(t.trend === 'up' ? '추세↑' : t.trend === 'down' ? '추세↓' : '추세-')
+    if (t?.volumeSurge != null && t.volumeSurge >= 1.5) parts.push(`거래량${t.volumeSurge.toFixed(1)}x`)
+    if (t?.bollingerSignal === 'buy')  parts.push('BB하단근접')
+    if (t?.bollingerSignal === 'sell') parts.push('BB상단근접')
+    if (t?.supportLevel != null)    parts.push(`지지${t.supportLevel.toLocaleString()}`)
+    if (t?.resistanceLevel != null) parts.push(`저항${t.resistanceLevel.toLocaleString()}`)
+    if (t?.candlePattern) {
+      const cpLabel: Record<string, string> = {
+        hammer: '망치형', shooting_star: '유성형', doji: '도지',
+        bullish_engulfing: '강세장악형', bearish_engulfing: '약세장악형',
+      }
+      parts.push(cpLabel[t.candlePattern] ?? t.candlePattern)
+    }
     lines.push(parts.join(' | '))
   }
   return lines.join('\n')
