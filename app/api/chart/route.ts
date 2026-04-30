@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchYahoo, fetchDaum, fetchNaver } from '@/lib/price-providers'
+import { fetchYahoo, fetchDaum, fetchNaver, fetchNaverIntraday } from '@/lib/price-providers'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// src에 따라 시도 순서 결정 — query1이 Vercel에서 가장 안정적
+// src에 따라 시도 순서 결정
+// 0=Yahoo query1 | 1=Yahoo query2 | 2=Daum | 3=Naver 일봉 | 4=Naver 분봉(단타/스윙)
 function buildOrder(src: number, interval: string): number[] {
   const daily = interval === '1d'
-  // 0=query1, 1=query2, 2=Daum, 3=Naver(일봉만)
-  const all = daily ? [0, 1, 2, 3] : [0, 1, 2]
+  const all = daily ? [0, 1, 2, 3] : [0, 1, 2, 4]
   return [src, ...all.filter(s => s !== src)]
 }
 
@@ -59,6 +59,7 @@ async function trySource(
     if (src === 1) return await fetchYahoo(ticker, interval, range, from, 'query2')
     if (src === 2) return await fetchDaum(ticker, interval, from)
     if (src === 3 && interval === '1d') return await fetchNaver(ticker, from)
+    if (src === 4 && interval !== '1d') return await fetchNaverIntraday(ticker, interval, from)
     return []
   } catch { return [] }
 }

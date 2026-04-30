@@ -129,6 +129,48 @@ export async function fetchDaum(
   return []
 }
 
+// ── Naver Mobile API (분봉: 5m / 30m) ───────────────────────────────────────
+const NAVER_MOBILE_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+  Referer: 'https://m.stock.naver.com/',
+  Accept:  'application/json',
+}
+
+function toNaverKST(d: Date): string {
+  const kst = new Date(d.getTime() + 9 * 3_600_000)
+  return kst.toISOString().replace(/[-:T]/g, '').slice(0, 14)
+}
+
+export async function fetchNaverIntraday(
+  ticker: string,
+  interval: string,  // '5m' | '30m'
+  from: string | null,
+): Promise<PricePoint[]> {
+  const timeframe = interval === '30m' ? 'minute30' : 'minute5'
+  const days = interval === '30m' ? 12 : 7
+  const now = new Date()
+  const startDate = from ? new Date(from) : new Date(now.getTime() - days * 86_400_000)
+  const url = `https://api.stock.naver.com/chart/domestic/item/${ticker}/${timeframe}` +
+    `?startDateTime=${toNaverKST(startDate)}&endDateTime=${toNaverKST(now)}`
+
+  const res = await axios.get(url, { headers: NAVER_MOBILE_HEADERS, timeout: 12000 })
+  const items: { localDateTime?: string; currentPrice?: number }[] = res.data ?? []
+
+  const fromMs = from ? new Date(from).getTime() : 0
+  return items
+    .filter(item => item.localDateTime && item.currentPrice != null)
+    .map(item => {
+      const dt = item.localDateTime!
+      const iso = `${dt.slice(0,4)}-${dt.slice(4,6)}-${dt.slice(6,8)}T${dt.slice(8,10)}:${dt.slice(10,12)}:${dt.slice(12,14)}+09:00`
+      return { time: new Date(iso).toISOString(), close: Math.round(item.currentPrice!) }
+    })
+    .filter(p => {
+      const ts = Math.floor(new Date(p.time).getTime() / 1000)
+      return isMarketHours(ts) && (!from || new Date(p.time).getTime() >= fromMs)
+    })
+    .sort((a, b) => a.time.localeCompare(b.time))
+}
+
 // ── Naver Finance (일봉 전용) ─────────────────────────────────────────────────
 const NAVER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
