@@ -36,10 +36,13 @@ export async function sendTelegramAlert(params: {
 
   const marketIndicators: string[] = []
   if (params.usdkrw) {
-    marketIndicators.push(`💵 USD/KRW: ${params.usdkrw.toFixed(0)}원`)
+    marketIndicators.push(`💵 USD/KRW: ${params.usdkrw.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}`)
   }
-  if (params.goldPrice) {
-    marketIndicators.push(`🥇 Gold: $${params.goldPrice.toFixed(2)}/oz`)
+  if (params.goldPrice && params.usdkrw) {
+    // 국제 금 가격(USD/oz) → 한국 금시세(KRW/g)로 변환
+    // 1 oz = 31.1035g
+    const goldPricePerGram = Math.round((params.goldPrice * params.usdkrw) / 31.1035)
+    marketIndicators.push(`🥇 Gold: ${goldPricePerGram.toLocaleString('ko-KR')}원/g`)
   }
 
   const lines = [
