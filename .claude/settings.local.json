@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(curl -s \"http://localhost:3000/api/chart?ticker=215380&tradeType=중기&from=2026-04-29T00:00:00Z&src=0\")"
     ]
   }
 }

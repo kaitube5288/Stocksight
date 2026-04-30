@@ -82,22 +82,23 @@ async function fetchDaumWithPrefix(
   const code = `${prefix}${ticker}`
   const isIntraday = interval !== '1d'
   const fromTs = from ? new Date(from).getTime() : 0
+  const nowMs = getKSTNow().getTime()
 
   let url: string
   if (interval === '1d') {
     const baseDays = range ? parseInt(range) : 45
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 86400000) + 10, baseDays) : baseDays
+    const limit = from ? Math.min(Math.ceil((nowMs - fromTs) / 86400000) + 10, baseDays) : baseDays
     url = `https://finance.daum.net/api/charts/${code}/days?limit=${limit}&adjusted=false`
   } else if (interval === '30m') {
     const baseDays = range ? parseInt(range) : 10
     const baseLimit = baseDays * 16 // 30분 봉: 하루 ~16개
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 1800000) + 20, baseLimit) : baseLimit
+    const limit = from ? Math.min(Math.ceil((nowMs - fromTs) / 1800000) + 20, baseLimit) : baseLimit
     url = `https://finance.daum.net/api/charts/${code}/minutes/30?limit=${limit}&adjusted=false`
   } else {
     // 5m
     const baseDays = range ? parseInt(range) : 5
     const baseLimit = baseDays * 80 // 5분 봉: 하루 ~80개
-    const limit = from ? Math.min(Math.ceil((Date.now() - fromTs) / 300000) + 20, baseLimit) : baseLimit
+    const limit = from ? Math.min(Math.ceil((nowMs - fromTs) / 300000) + 20, baseLimit) : baseLimit
     url = `https://finance.daum.net/api/charts/${code}/minutes/5?limit=${limit}&adjusted=false`
   }
 
@@ -118,6 +119,10 @@ async function fetchDaumWithPrefix(
       return !from || new Date(p.time).getTime() >= fromTs
     })
     .sort((a, b) => a.time.localeCompare(b.time))
+}
+
+function getKSTNow(): Date {
+  return new Date(new Date().getTime() + 9 * 3_600_000)
 }
 
 export async function fetchDaum(
@@ -155,7 +160,7 @@ export async function fetchNaverIntraday(
 ): Promise<PricePoint[]> {
   const timeframe = interval === '30m' ? 'minute30' : 'minute5'
   const days = interval === '30m' ? 12 : 7
-  const now = new Date()
+  const now = getKSTNow()
   const startDate = from ? new Date(from) : new Date(now.getTime() - days * 86_400_000)
   const url = `https://api.stock.naver.com/chart/domestic/item/${ticker}/${timeframe}` +
     `?startDateTime=${toNaverKST(startDate)}&endDateTime=${toNaverKST(now)}`
@@ -189,7 +194,7 @@ export async function fetchNaver(ticker: string, from: string | null, range?: st
   const fmt = (d: Date) =>
     `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
 
-  const now       = new Date()
+  const now       = getKSTNow()
   const endTime   = fmt(now)
   const baseDays = range ? parseInt(range) : 40
   const startDate = from ? new Date(from) : new Date(now.getTime() - baseDays * 86400000)
