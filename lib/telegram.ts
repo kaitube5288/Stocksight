@@ -8,6 +8,8 @@ export async function sendTelegramAlert(params: {
   stocks: StockRecommendation[]
   marketOutlook: string
   date: string
+  usdkrw?: number | null
+  goldPrice?: number | null
 }): Promise<boolean> {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return false
   if (TELEGRAM_TOKEN.startsWith('your-')) return false
@@ -32,14 +34,24 @@ export async function sendTelegramAlert(params: {
     stockLines.push('')
   }
 
+  const marketIndicators: string[] = []
+  if (params.usdkrw) {
+    marketIndicators.push(`💵 USD/KRW: ${params.usdkrw.toFixed(0)}원`)
+  }
+  if (params.goldPrice) {
+    marketIndicators.push(`🥇 Gold: $${params.goldPrice.toFixed(2)}/oz`)
+  }
+
   const lines = [
     `📊 <b>StockSight 오늘의 추천 (${params.date})</b>`,
     ``,
     ...stockLines,
+    marketIndicators.length > 0 ? marketIndicators.join(' | ') : '',
+    marketIndicators.length > 0 ? `` : '',
     `📉 ${params.marketOutlook.slice(0, 80)}...`,
     ``,
     `🔗 <a href="https://stocksight-pied.vercel.app">분석 보기</a>`,
-  ]
+  ].filter(Boolean)
 
   const text = lines.join('\n')
 

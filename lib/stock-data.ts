@@ -99,6 +99,20 @@ export async function getUSDKRW(): Promise<number | null> {
   }
 }
 
+// 금(Gold) 가격 (USD/oz) - 국제 가격
+export async function getGoldPrice(): Promise<number | null> {
+  try {
+    // GC=F는 Comex 금 선물가
+    const res = await axios.get(
+      'https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?interval=1d&range=1d',
+      { headers: YF_HEADERS, timeout: 8000 }
+    )
+    return res.data?.chart?.result?.[0]?.meta?.regularMarketPrice || null
+  } catch {
+    return null
+  }
+}
+
 export type StockFundamentals = {
   per: number | null
   pbr: number | null

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -71,11 +71,12 @@ async function runDailyAnalysis() {
       ? uniqueNews.slice(0, 30).map(n => `- [${n.source}] ${n.title} (${n.pubDate})`).join('\n')
       : '수집된 뉴스 없음'
 
-    // 2. DART 공시 + 시장 지표 병렬 수집
-    const [disclosures, { kospi, kosdaq }, usdkrw] = await Promise.all([
+    // 2. DART 공시 + 시장 지표 + 환율/금시세 병렬 수집
+    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice] = await Promise.all([
       getTodayDisclosures(),
       getMarketIndex(),
       getUSDKRW(),
+      getGoldPrice(),
     ])
 
     const dartText = formatDisclosuresForPrompt(disclosures)
@@ -163,6 +164,8 @@ async function runDailyAnalysis() {
       stocks: result.recommendations,
       marketOutlook: result.market_outlook,
       date: todayDate,
+      usdkrw,
+      goldPrice,
     })
 
     // 7. 분석 성공 시각 sentinel 갱신 (수집+분석 모두 성공했을 때만)
