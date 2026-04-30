@@ -23,15 +23,29 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 })
   }
 
-  const { interval, range } = TRADE_CONFIG[tradeType as keyof typeof TRADE_CONFIG]
+  let { interval } = TRADE_CONFIG[tradeType as keyof typeof TRADE_CONFIG]
+  let { range } = TRADE_CONFIG[tradeType as keyof typeof TRADE_CONFIG]
+
+  // from이 지정되면, from 날짜부터 오늘까지 충분히 가져오도록 range 동적 조정
+  if (from) {
+    const fromDate = new Date(from)
+    const now = new Date()
+    const daysDiff = Math.ceil((now.getTime() - fromDate.getTime()) / (24 * 3600000))
+    // 여유 있게 daysDiff + 10일 이상 가져오기
+    const requiredDays = Math.max(daysDiff + 10, parseInt(range))
+    range = `${requiredDays}d` as any
+  }
 
   // 소스 우선순위: query1 → query2 → Daum → Naver(일봉)
   // src로 시작 순서를 조정하되, 빈 데이터면 나머지 소스를 순차 시도
   const order = buildOrder(src, interval)
+  const isIntraday = interval !== '1d'
   try {
     for (const s of order) {
       const prices = await trySource(ticker, interval, range, from, s)
-      if (prices.length > 0) return NextResponse.json({ prices, interval, src: s })
+      // 인트라데이: Yahoo가 일봉 스텁(1개) 반환하는 경우 건너뜀 → 최소 2개 필요
+      const ok = isIntraday ? prices.length >= 2 : prices.length > 0
+      if (ok) return NextResponse.json({ prices, interval, src: s })
     }
     return NextResponse.json({ prices: [], interval })
   } catch {
