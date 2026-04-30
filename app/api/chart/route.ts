@@ -37,17 +37,32 @@ export async function GET(request: NextRequest) {
   }
 
   // 소스 우선순위: query1 → query2 → Daum → Naver(일봉)
-  // src로 시작 순서를 조정하되, 빈 데이터면 나머지 소스를 순차 시도
+  // 모든 소스에서 데이터를 받아서 가장 최신 날짜까지 있는 것을 선택
   const order = buildOrder(src, interval)
   const isIntraday = interval !== '1d'
   try {
+    const results: { prices: import('@/lib/price-providers').PricePoint[]; src: number }[] = []
+
     for (const s of order) {
       const prices = await trySource(ticker, interval, range, from, s)
-      // 인트라데이: Yahoo가 일봉 스텁(1개) 반환하는 경우 건너뜀 → 최소 2개 필요
       const ok = isIntraday ? prices.length >= 2 : prices.length > 0
-      if (ok) return NextResponse.json({ prices, interval, src: s })
+      if (ok) {
+        results.push({ prices, src: s })
+      }
     }
-    return NextResponse.json({ prices: [], interval })
+
+    if (results.length === 0) {
+      return NextResponse.json({ prices: [], interval })
+    }
+
+    // 가장 최신 날짜까지 있는 소스를 선택
+    const best = results.reduce((max, curr) => {
+      const currLast = curr.prices[curr.prices.length - 1]?.time
+      const maxLast = max.prices[max.prices.length - 1]?.time
+      return (currLast ?? '') > (maxLast ?? '') ? curr : max
+    })
+
+    return NextResponse.json({ prices: best.prices, interval, src: best.src })
   } catch {
     return NextResponse.json({ prices: [], interval })
   }
