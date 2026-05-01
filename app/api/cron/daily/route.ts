@@ -6,6 +6,7 @@ import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
+import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 
 export const maxDuration = 300
 
@@ -22,11 +23,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // 토/일 KST 기준 스킵
+  // 토/일 + 한국 공휴일 KST 기준 스킵
   const kstDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
   const kstDay = kstDate.getDay() // 0=일, 6=토
   if (kstDay === 0 || kstDay === 6) {
     return NextResponse.json({ skipped: true, reason: '주말 휴장' })
+  }
+  const todayKST = getKSTDate()
+  if (isKoreanMarketHoliday(todayKST)) {
+    return NextResponse.json({ skipped: true, reason: `공휴일 휴장 (${todayKST})` })
   }
 
   return runDailyAnalysis()
