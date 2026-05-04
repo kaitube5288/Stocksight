@@ -115,6 +115,7 @@ export async function generateRecommendations(params: {
   date: string
   technicalContext?: string
   candidatesContext?: string
+  performanceInsights?: string
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -133,7 +134,7 @@ export async function generateRecommendations(params: {
 
 ## 오늘 날짜
 ${params.date}
-
+${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}
 ## 수집된 뉴스 (전날 09:00 KST ~ 오늘 08:40 KST)
 ${params.todayNews}
 

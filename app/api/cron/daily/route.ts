@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
+import { buildPerformanceInsights } from '@/lib/performance-analysis'
 
 export const maxDuration = 300
 
@@ -88,22 +89,23 @@ async function runDailyAnalysis() {
     const dartText = formatDisclosuresForPrompt(disclosures)
     const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
 
-    // 3. 과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 병렬 조회
+    // 3. 과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
     const keywords = extractKeywords(newsText)
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
       Promise.all(candidateTickers.map(t => fetchTechnicalIndicators(t))),
+      buildPerformanceInsights(),
     ])
 
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const candidatesContext = formatCandidatesContext(candidatePool, candidateFundamentals, candidateTechMap)
 
-    // 4. Gemini 분석 (뉴스 + 패턴 + 실시간 기술적 지표 + 후보 종목 실제 데이터 주입)
+    // 4. Gemini 분석 (뉴스 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 주입)
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
@@ -112,6 +114,7 @@ async function runDailyAnalysis() {
       date: today,
       technicalContext: technicalContext || undefined,
       candidatesContext: candidatesContext || undefined,
+      performanceInsights: performanceInsights || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
