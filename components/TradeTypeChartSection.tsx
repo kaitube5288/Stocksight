@@ -5,9 +5,10 @@ import StockChart from './StockChart'
 import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 
 interface Props {
-  tradeType: '단타' | '스윙' | '중기'
-  entries:   ActiveChartEntry[]
-  onDismiss: (entry: ActiveChartEntry) => void
+  tradeType:        '단타' | '스윙' | '중기'
+  entries:          ActiveChartEntry[]
+  onDismiss:        (entry: ActiveChartEntry, returnPct: number | null) => void
+  cumulativeReturn: number | null
 }
 
 const TRADE_META = {
@@ -16,7 +17,7 @@ const TRADE_META = {
   '중기': { label: '중기 수익률 추적', sub: '일봉 · 25거래일',  color: 'var(--accent-green)' },
 }
 
-export default function TradeTypeChartSection({ tradeType, entries, onDismiss }: Props) {
+export default function TradeTypeChartSection({ tradeType, entries, onDismiss, cumulativeReturn }: Props) {
   const [open, setOpen] = useState(false)
   const meta = TRADE_META[tradeType]
 
@@ -54,9 +55,23 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss }:
             {entries.length}종목
           </span>
         </div>
-        <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>
-          {open ? '▲ 접기' : '▼ 펼치기'}
-        </span>
+        <div className="flex items-center gap-2">
+          {cumulativeReturn != null && (
+            <span
+              className="mono text-xs font-bold px-2 py-0.5 rounded-md"
+              style={{
+                background: cumulativeReturn >= 0 ? 'rgba(0,229,170,0.12)' : 'rgba(255,107,107,0.12)',
+                color:      cumulativeReturn >= 0 ? '#00e5aa' : '#ff6b6b',
+                border:     `1px solid ${cumulativeReturn >= 0 ? 'rgba(0,229,170,0.3)' : 'rgba(255,107,107,0.3)'}`,
+              }}
+            >
+              누적 {cumulativeReturn >= 0 ? '+' : ''}{cumulativeReturn.toFixed(2)}%
+            </span>
+          )}
+          <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>
+            {open ? '▲ 접기' : '▼ 펼치기'}
+          </span>
+        </div>
       </button>
 
       {/* 차트 그리드 */}
@@ -75,7 +90,7 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss }:
               rank={entry.rank}
               from={entry.startAt}
               expiresAt={entry.expiresAt}
-              onDismiss={() => onDismiss(entry)}
+              onDismiss={(ret) => onDismiss(entry, ret)}
               index={i}
             />
           ))}

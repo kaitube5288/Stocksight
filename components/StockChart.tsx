@@ -17,7 +17,7 @@ interface Props {
   rank:       number
   from?:      string
   expiresAt?: string
-  onDismiss?: () => void
+  onDismiss?: (returnPct: number | null) => void
   index?:     number  // 로드 순서 (stagger delay용)
 }
 
@@ -185,7 +185,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
           </button>
           {onDismiss && (
             <button
-              onClick={onDismiss}
+              onClick={() => onDismiss(primaryRet)}
               title="차트 숨기기"
               className="mono text-[11px] px-1.5 py-0.5 rounded transition-all"
               style={{
