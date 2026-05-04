@@ -87,6 +87,7 @@ function usePushNotification() {
 }
 
 export default function Home() {
+  const [tab, setTab] = useState<'code' | 'ai'>('code')
   const [recommendation, setRecommendation] = useState<DailyRecommendation | null>(null)
   const [isToday, setIsToday] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -233,6 +234,37 @@ export default function Home() {
           )}
         </div>
       </header>
+
+      {/* 탭 네비게이션 */}
+      <div className="mb-6 flex items-center gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '0' }}>
+        {(['code', 'ai'] as const).map(t => {
+          const active = tab === t
+          const label = t === 'code' ? 'Code 추천' : 'AI 추천'
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className="text-xs font-semibold px-4 py-2 transition-all"
+              style={{
+                color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderBottom: active ? '2px solid rgba(255,255,255,0.7)' : '2px solid transparent',
+                background: 'none',
+                marginBottom: '-1px',
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'ai' ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <span className="text-4xl" style={{ opacity: 0.2 }}>◎</span>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>AI 추천 페이지 준비 중입니다.</p>
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>링크 내용을 붙여넣어주시면 바로 구현합니다.</p>
+        </div>
+      ) : (<>
 
       {/* 마켓 바 */}
       <div className="mb-5">
@@ -492,6 +524,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
+      </>)}
     </main>
   )
 }
