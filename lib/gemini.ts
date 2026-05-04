@@ -135,7 +135,9 @@ export async function generateRecommendations(params: {
 ## 오늘 날짜
 ${params.date}
 ${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}
-## 수집된 뉴스 (전날 09:00 KST ~ 오늘 08:40 KST)
+## 수집된 뉴스 (당일 08:40 KST 실시간 수집 — 임팩트 티어별 분류)
+★ HIGH: 실적·수주·수급·정책 → 섹터/종목 즉각 반영 필수
+• MEDIUM: 일반 뉴스 → 참고 반영  ○ LOW: 전망·우려 → 배경 참고
 ${params.todayNews}
 
 ## 오늘 DART 공시

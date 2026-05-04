@@ -8,6 +8,7 @@ import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
+import { fetchAndAnalyzeNews, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
 
 export const maxDuration = 300
 
@@ -47,36 +48,22 @@ async function runDailyAnalysis() {
   const supabaseAdmin = getSupabaseAdmin()
 
   try {
-    const now = new Date()
     const todayDate = getKSTDate()
     const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
-    // 1. 전날 09:00 ~ 당일 08:40 뉴스 읽기
-    const cutoff = new Date(now)
-    cutoff.setDate(cutoff.getDate() - 1)
-    cutoff.setHours(0, 0, 0, 0) // 전날 09:00 KST = 00:00 UTC (Vercel 서버는 UTC)
+    // 1. 뉴스 직접 수집 + 임팩트 분석 (08:40 KST 실시간)
+    //    기존 news_cache DB 읽기(09:00 크론 의존) 방식을 대체 — 뉴스가 분석 전에 반드시 수집됨을 보장
+    const { news: freshNews, analyzed: analyzedNews } = await fetchAndAnalyzeNews()
+    const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
 
-    const { data: newsCacheRows } = await supabaseAdmin
-      .from('news_cache')
-      .select('news, fetched_at')
-      .gte('fetched_at', cutoff.toISOString())
-      .order('fetched_at', { ascending: true })
-
-    const allNews = (newsCacheRows ?? []).flatMap(row =>
-      Array.isArray(row.news) ? row.news : []
-    )
-
-    // 중복 제거
-    const seen = new Set<string>()
-    const uniqueNews = allNews.filter(n => {
-      if (seen.has(n.title)) return false
-      seen.add(n.title)
-      return true
-    })
-
-    const newsText = uniqueNews.length
-      ? uniqueNews.slice(0, 30).map(n => `- [${n.source}] ${n.title} (${n.pubDate})`).join('\n')
-      : '수집된 뉴스 없음'
+    // 수집한 뉴스를 news_cache에 저장 (이력 보관 — 실패해도 분석 계속)
+    if (freshNews.length > 0) {
+      void (async () => {
+        try {
+          await supabaseAdmin.from('news_cache').insert({ news: freshNews, fetched_at: new Date().toISOString() })
+        } catch { /* ignore */ }
+      })()
+    }
 
     // 2. DART 공시 + 시장 지표 + 환율/금시세 병렬 수집
     const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice] = await Promise.all([
@@ -89,8 +76,9 @@ async function runDailyAnalysis() {
     const dartText = formatDisclosuresForPrompt(disclosures)
     const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
 
-    // 3. 과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
-    const keywords = extractKeywords(newsText)
+    // 3. 섹터 키워드 추출 (분석된 뉴스 임팩트 가중치 기반: high 3점, medium 1점)
+    //    과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
+    const keywords = extractSectorsFromNews(analyzedNews)
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
@@ -105,7 +93,7 @@ async function runDailyAnalysis() {
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const candidatesContext = formatCandidatesContext(candidatePool, candidateFundamentals, candidateTechMap)
 
-    // 4. Gemini 분석 (뉴스 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 주입)
+    // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백)
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
@@ -232,7 +220,10 @@ async function runDailyAnalysis() {
     return NextResponse.json({
       success: true,
       date: todayDate,
-      newsCount: uniqueNews.length,
+      newsCount: freshNews.length,
+      newsHigh: analyzedNews.filter(n => n.impact === 'high').length,
+      newsMedium: analyzedNews.filter(n => n.impact === 'medium').length,
+      detectedSectors: keywords.slice(0, 8),
       telegramSent: !!process.env.TELEGRAM_BOT_TOKEN,
       data,
     })
@@ -243,12 +234,7 @@ async function runDailyAnalysis() {
   }
 }
 
-function extractKeywords(text: string): string[] {
-  const keywords = ['반도체', 'AI', '2차전지', '바이오', '자동차', '철강', '화학', '금융', '부동산', '원자력', '방산', '인터넷', '게임', '조선', '로봇']
-  return keywords.filter(k => text.includes(k))
-}
-
-// A: 후보 종목 풀 선정 — 뉴스 관련 섹터 + 방어주
+// 후보 종목 풀 선정 — 뉴스 관련 섹터 + 방어주
 const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
   '반도체': ['반도체'], 'AI': ['반도체', '로봇', 'IT'], '2차전지': ['2차전지'],
   '바이오': ['바이오', '제약'], '자동차': ['자동차'], '철강': ['철강'],
