@@ -259,9 +259,13 @@ export default function Home() {
         })}
       </div>
 
-      {tab === 'ai' ? (
+      {/* AI 추천 탭 — 항상 마운트, CSS로 보이기/숨기기 (상태 유지) */}
+      <div style={{ display: tab === 'ai' ? 'block' : 'none' }}>
         <AIRecommendationPage />
-      ) : (<>
+      </div>
+
+      {/* Code 추천 탭 */}
+      <div style={{ display: tab === 'code' ? 'block' : 'none' }}>
 
       {/* 마켓 바 */}
       <div className="mb-5">
@@ -534,7 +538,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
-      </>)}
+      </div>
     </main>
   )
 }
