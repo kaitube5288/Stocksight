@@ -5,6 +5,7 @@ import RecommendationCard from '@/components/RecommendationCard'
 import NewsPanel from '@/components/NewsPanel'
 import MarketBar from '@/components/MarketBar'
 import PerformanceCharts from '@/components/PerformanceCharts'
+import AIRecommendationPage from '@/components/AIRecommendationPage'
 import { DailyRecommendation } from '@/lib/supabase'
 
 type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
@@ -259,11 +260,7 @@ export default function Home() {
       </div>
 
       {tab === 'ai' ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-4">
-          <span className="text-4xl" style={{ opacity: 0.2 }}>◎</span>
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>AI 추천 페이지 준비 중입니다.</p>
-          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>링크 내용을 붙여넣어주시면 바로 구현합니다.</p>
-        </div>
+        <AIRecommendationPage />
       ) : (<>
 
       {/* 마켓 바 */}

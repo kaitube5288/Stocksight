@@ -637,6 +637,201 @@ export async function fetchSectorTechnicals(keywords: string[]): Promise<string>
   return added > 0 ? lines.join('\n') : ''
 }
 
+// ─────────────────────────────────────────────
+// 상세 기술적 지표 (AI추천용 — 52주 범위 + MA5/20/60 + 수급 신호)
+// ─────────────────────────────────────────────
+export type DetailedTechnicals = TechnicalIndicators & {
+  ma5: number | null
+  ma20: number | null
+  ma60: number | null
+  high52w: number | null
+  low52w: number | null
+  ma5Signal: string     // ex) "근접 — 눌림목 구간"
+  maAlignmentSignal: string  // ex) "정배열 유지 중"
+  bollingerStatusText: string
+  range52wSignal: string  // ex) "신고가 부근" / "중간 구간" / "저점 근접"
+  priceSignal: string     // ex) "급등 후 조정" / "안정적 상승" / "횡보 중"
+}
+
+async function fetchOHLCV1Y(ticker: string): Promise<OHLCV & { highs1y: number[]; lows1y: number[] }> {
+  const empty = { opens: [], highs: [], lows: [], closes: [], volumes: [], highs1y: [], lows1y: [] }
+  const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
+  for (const suffix of ['.KS', '.KQ']) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=1y&interval=1d`
+      const res = await axios.get(url, { headers: YF_HEADERS, timeout: 12000 })
+      const q = res.data?.chart?.result?.[0]?.indicators?.quote?.[0]
+      if (!q) continue
+      const rawClose: (number | null)[] = q.close ?? []
+      const valid = rawClose.map((_, i) => i).filter(i => rawClose[i] != null && !isNaN(rawClose[i]!))
+      if (valid.length < 30) continue
+      const pick = (arr: (number | null)[]): number[] => valid.map(i => arr[i] ?? 0)
+      return {
+        closes:  pick(rawClose),
+        opens:   pick(q.open   ?? []),
+        highs:   pick(q.high   ?? []),
+        lows:    pick(q.low    ?? []),
+        volumes: pick(q.volume ?? []),
+        highs1y: pick(q.high   ?? []),
+        lows1y:  pick(q.low    ?? []),
+      }
+    } catch { /* 다음 시도 */ }
+  }
+  return empty
+}
+
+export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedTechnicals> {
+  const base: DetailedTechnicals = {
+    rsi14: null, macdSignal: null, trend: null,
+    volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
+    supportLevel: null, resistanceLevel: null, candlePattern: null,
+    ma5: null, ma20: null, ma60: null, high52w: null, low52w: null,
+    ma5Signal: '데이터 없음', maAlignmentSignal: '데이터 없음',
+    bollingerStatusText: '데이터 없음', range52wSignal: '데이터 없음', priceSignal: '데이터 없음',
+  }
+  try {
+    const { opens, highs, lows, closes, volumes, highs1y, lows1y } = await fetchOHLCV1Y(ticker)
+    if (closes.length < 30) return base
+
+    const last = closes[closes.length - 1]
+    const prev = closes[closes.length - 2]
+
+    // RSI
+    const rsi14 = calcRSI(closes)
+
+    // MA
+    const ma5  = calcSMA(closes, 5)
+    const ma20 = calcSMA(closes, 20)
+    const ma60 = closes.length >= 60 ? calcSMA(closes, 60) : null
+
+    // 52주 범위
+    const high52w = highs1y.length ? Math.round(Math.max(...highs1y)) : null
+    const low52w  = lows1y.length  ? Math.round(Math.min(...lows1y))  : null
+
+    // 추세
+    let trend: TechnicalIndicators['trend'] = null
+    if (ma20) {
+      if (last > ma20 && (ma60 == null || ma20 > ma60)) trend = 'up'
+      else if (last < ma20 && (ma60 == null || ma20 < ma60)) trend = 'down'
+      else trend = 'sideways'
+    }
+
+    // MACD
+    let macdSignal: TechnicalIndicators['macdSignal'] = null
+    if (closes.length >= 35) {
+      const e12 = calcEMA(closes, 12)
+      const e26 = calcEMA(closes, 26)
+      const macd = e12.map((v, i) => !isNaN(v) && !isNaN(e26[i]) ? v - e26[i] : NaN)
+      const valid = macd.filter(v => !isNaN(v))
+      if (valid.length >= 10) {
+        const sig = calcEMA(valid, 9)
+        const n = valid.length - 1
+        const m0 = valid[n], m1 = valid[n - 1], s0 = sig[n], s1 = sig[n - 1]
+        if (!isNaN(s0) && !isNaN(s1)) {
+          if (m1 <= s1 && m0 > s0) macdSignal = 'buy'
+          else if (m1 >= s1 && m0 < s0) macdSignal = 'sell'
+          else macdSignal = 'neutral'
+        }
+      }
+    }
+
+    // 볼린저밴드
+    const bb = calcBollingerBands(closes)
+    let bollingerSignal: TechnicalIndicators['bollingerSignal'] = null
+    const bollingerWidth = bb?.width ?? null
+    if (bb) {
+      const pct = (last - bb.lower) / (bb.upper - bb.lower)
+      bollingerSignal = pct <= 0.2 ? 'buy' : pct >= 0.8 ? 'sell' : 'neutral'
+    }
+
+    // 볼린저 상태 텍스트
+    let bollingerStatusText = '중립 구간'
+    if (bb) {
+      if (last > bb.upper) bollingerStatusText = '상단 이탈 — 과열 주의'
+      else if (last > bb.upper * 0.98) bollingerStatusText = '상단 근접 — 과매수 경계'
+      else if (last < bb.lower) bollingerStatusText = '하단 이탈 — 반등 가능'
+      else if (last < bb.lower * 1.02) bollingerStatusText = '하단 근접 — 매수 구간'
+      else if (Math.abs(last - bb.middle) / bb.middle < 0.01) bollingerStatusText = '중심선 수렴 중'
+      else if (last > bb.middle) bollingerStatusText = '중심선~상단 구간'
+      else bollingerStatusText = '중심선~하단 구간'
+    }
+
+    // 거래량 급증
+    const volumeSurge = calcVolumeSurge(volumes)
+
+    // 지지/저항
+    const sr = calcSupportResistance(highs, lows)
+
+    // 캔들 패턴
+    const candlePattern = opens.length >= 2
+      ? detectCandlePattern(opens, highs, lows, closes)
+      : null
+
+    // MA5 vs 현재가 신호
+    let ma5Signal = '데이터 없음'
+    if (ma5) {
+      const diff = (last - ma5) / ma5 * 100
+      if (Math.abs(diff) < 1) ma5Signal = '근접 — 눌림목 구간'
+      else if (diff > 5) ma5Signal = '상회 — 단기 과열'
+      else if (diff > 1) ma5Signal = '상회 — 상승 모멘텀'
+      else if (diff < -5) ma5Signal = '하회 — 단기 약세'
+      else ma5Signal = '하회 — 지지선 탐색'
+    }
+
+    // MA 정배열 신호
+    let maAlignmentSignal = '데이터 없음'
+    if (ma5 && ma20) {
+      if (ma5 > ma20 && (ma60 == null || ma20 > ma60)) {
+        maAlignmentSignal = '정배열 유지 중'
+      } else if (ma5 < ma20 && (ma60 == null || ma20 < ma60)) {
+        maAlignmentSignal = '역배열 — 하락 압력'
+      } else if (ma5 > ma20) {
+        maAlignmentSignal = '단기 반등 중'
+      } else {
+        maAlignmentSignal = '혼조 구간'
+      }
+    }
+
+    // 52주 범위 신호
+    let range52wSignal = '데이터 없음'
+    if (high52w && low52w && last) {
+      const pos = (last - low52w) / (high52w - low52w)
+      if (pos >= 0.9) range52wSignal = '신고가 부근'
+      else if (pos >= 0.7) range52wSignal = '상단 구간'
+      else if (pos >= 0.4) range52wSignal = '중간 구간'
+      else if (pos >= 0.2) range52wSignal = '하단 구간'
+      else range52wSignal = '저점 근접'
+    }
+
+    // 현재가 신호 (최근 변동 패턴)
+    let priceSignal = '데이터 없음'
+    if (closes.length >= 5) {
+      const recent5Avg = closes.slice(-5).reduce((a, b) => a + b, 0) / 5
+      const chgDay = prev > 0 ? (last - prev) / prev * 100 : 0
+      const chgVsAvg = (last - recent5Avg) / recent5Avg * 100
+      if (chgDay > 5) priceSignal = '급등 후 조정'
+      else if (chgDay > 2) priceSignal = '강세 상승'
+      else if (chgDay < -3) priceSignal = '단기 조정 중'
+      else if (chgVsAvg > 3) priceSignal = '5일 평균 상회'
+      else if (Math.abs(chgDay) < 0.5) priceSignal = '보합 — 눌림목 가능'
+      else priceSignal = '안정적 흐름'
+    }
+
+    return {
+      rsi14, macdSignal, trend,
+      volumeSurge, bollingerSignal, bollingerWidth,
+      supportLevel: sr?.support ?? null,
+      resistanceLevel: sr?.resistance ?? null,
+      candlePattern,
+      ma5: ma5 ? Math.round(ma5) : null,
+      ma20: ma20 ? Math.round(ma20) : null,
+      ma60: ma60 ? Math.round(ma60) : null,
+      high52w, low52w,
+      ma5Signal, maAlignmentSignal, bollingerStatusText, range52wSignal, priceSignal,
+    }
+  } catch { return base }
+}
+
 export function formatMarketContext(params: {
   kospi: StockQuote | null
   kosdaq: StockQuote | null
