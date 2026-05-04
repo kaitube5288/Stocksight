@@ -333,6 +333,19 @@ export default function Home() {
                   뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
                 </span>
               )}
+              {!analyzing && recommendation?.market_outlook?.startsWith('[하락장 위험]') && (
+                <div
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl animate-pulse"
+                  style={{
+                    background: 'rgba(220,38,38,0.15)',
+                    border: '1px solid rgba(255,80,80,0.45)',
+                  }}
+                >
+                  <span style={{ fontSize: '13px' }}>⚠</span>
+                  <span className="text-xs font-bold" style={{ color: '#ff6b6b' }}>하락장 위험</span>
+                  <span className="text-xs" style={{ color: 'rgba(255,107,107,0.7)' }}>— 오늘 투자 자제 권고</span>
+                </div>
+              )}
             </div>
             {error && (
               <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)', paddingLeft: '2px' }}>
