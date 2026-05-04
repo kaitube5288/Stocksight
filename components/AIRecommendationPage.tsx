@@ -4,12 +4,12 @@ import { useState, useCallback } from 'react'
 import AIStockCard from './AIStockCard'
 import type { AIAnalysisResult } from '@/app/api/ai-analyze/route'
 
-const QUICK_QUERIES = [
-  '오늘 코스닥 종목 3개 추천해줘',
-  '반도체 관련 종목 추천',
-  '바이오 종목 분석해줘',
-  '방산·원자력 관련 종목',
-  '하락장 대비 방어주 추천',
+const QUICK_QUERIES: { label: string; query: string }[] = [
+  { label: '당일 2종목씩 추천', query: '오늘 상승확률이 가장 높은 코스피/코스닥 각 2종목씩 추천해줘' },
+  { label: '반도체 관련 종목 추천', query: '반도체 관련 종목 추천' },
+  { label: '바이오 종목 분석해줘', query: '바이오 종목 분석해줘' },
+  { label: '방산·원자력 관련 종목', query: '방산·원자력 관련 종목' },
+  { label: '하락장 대비 방어주 추천', query: '하락장 대비 방어주 추천' },
 ]
 
 export default function AIRecommendationPage() {
@@ -68,9 +68,9 @@ export default function AIRecommendationPage() {
 
       {/* ── 빠른 요청 버튼 ── */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {QUICK_QUERIES.map(q => (
+        {QUICK_QUERIES.map(({ label, query: q }) => (
           <button
-            key={q}
+            key={label}
             onClick={() => handleQuick(q)}
             disabled={loading}
             className="text-xs px-3 py-1.5 rounded-xl transition-all"
@@ -81,7 +81,7 @@ export default function AIRecommendationPage() {
               cursor: loading ? 'not-allowed' : 'pointer',
             }}
           >
-            {q}
+            {label}
           </button>
         ))}
       </div>

@@ -264,7 +264,7 @@ export default function AIStockCard({ rec, index = 0 }: {
 
       {/* ── 매매 참고가 ── */}
       <div className="px-4 pb-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <div
             className="rounded-xl p-3 flex flex-col gap-1"
             style={{ background: 'rgba(77,148,255,0.08)', border: '1px solid rgba(77,148,255,0.2)' }}
@@ -292,6 +292,22 @@ export default function AIStockCard({ rec, index = 0 }: {
               {fmt(rec.stop_loss)} 하회시
             </span>
           </div>
+          {(() => {
+            const returnPct = rec.buy_low > 0
+              ? ((rec.target_high - rec.buy_low) / rec.buy_low * 100).toFixed(1)
+              : null
+            return (
+              <div
+                className="rounded-xl p-3 flex flex-col gap-1"
+                style={{ background: 'rgba(255,200,0,0.06)', border: '1px solid rgba(255,200,0,0.2)' }}
+              >
+                <span className="text-[10px]" style={{ color: 'rgba(255,200,0,0.6)' }}>목표 수익률</span>
+                <span className="text-sm font-bold mono" style={{ color: '#ffc800' }}>
+                  {returnPct ? `+${returnPct}%` : '-'}
+                </span>
+              </div>
+            )
+          })()}
           <div
             className="rounded-xl p-3 flex flex-col gap-1"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
