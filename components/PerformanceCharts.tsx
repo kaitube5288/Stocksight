@@ -12,7 +12,6 @@ interface DismissedRecord {
   tradeType: TT
   ticker:    string
   name:      string
-  returnPct: number | null
 }
 
 const STORAGE_KEY = 'stocksight:dismissed-charts'
@@ -27,8 +26,7 @@ function loadDismissed(): Map<string, DismissedRecord> {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) return new Map()
     const records: DismissedRecord[] = JSON.parse(stored)
-    // 이전 버전 호환: returnPct 필드 없는 기존 레코드는 null로 초기화
-    return new Map(records.map(r => [r.key, { ...r, returnPct: r.returnPct ?? null }]))
+    return new Map(records.map(r => [r.key, r]))
   } catch { return new Map() }
 }
 
@@ -43,19 +41,32 @@ const TT_COLOR: Record<TT, string> = {
 }
 
 export default function PerformanceCharts() {
-  const [sections, setSections]   = useState<Sections | null>(null)
-  const [loading, setLoading]     = useState(true)
+  const [sections, setSections]     = useState<Sections | null>(null)
+  const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [dismissed, setDismissed] = useState<Map<string, DismissedRecord>>(new Map())
+  const [dismissed, setDismissed]   = useState<Map<string, DismissedRecord>>(new Map())
   const [showDismissed, setShowDismissed] = useState(false)
+
+  // 만료 종목 누적 수익률 (서버 계산)
+  const [cumulative, setCumulative] = useState<Record<TT, number | null>>({
+    '단타': null, '스윙': null, '중기': null,
+  })
 
   useEffect(() => { setDismissed(loadDismissed()) }, [])
 
-  const dismiss = useCallback((tradeType: TT, entry: ActiveChartEntry, returnPct: number | null) => {
+  // 만료 수익률 API 조회 (페이지 로드 시 1회)
+  useEffect(() => {
+    fetch('/api/expired-returns')
+      .then(r => r.json())
+      .then(d => { if (d.cumulative) setCumulative(d.cumulative) })
+      .catch(() => {})
+  }, [])
+
+  const dismiss = useCallback((tradeType: TT, entry: ActiveChartEntry) => {
     setDismissed(prev => {
       const next = new Map(prev)
       const key = dismissKey(tradeType, entry)
-      next.set(key, { key, tradeType, ticker: entry.ticker, name: entry.name, returnPct })
+      next.set(key, { key, tradeType, ticker: entry.ticker, name: entry.name })
       saveDismissed(next)
       return next
     })
@@ -91,15 +102,8 @@ export default function PerformanceCharts() {
     '중기': sections['중기'].filter(e => !dismissed.has(dismissKey('중기', e))),
   } : null
 
-  const totalCount  = filtered ? filtered['단타'].length + filtered['스윙'].length + filtered['중기'].length : 0
+  const totalCount    = filtered ? filtered['단타'].length + filtered['스윙'].length + filtered['중기'].length : 0
   const dismissedList = [...dismissed.values()]
-
-  // 섹션별 누적 수익률 (숨긴 종목들의 수익률 합산)
-  const cumReturn = (tt: TT): number | null => {
-    const valid = [...dismissed.values()].filter(r => r.tradeType === tt && r.returnPct != null)
-    if (!valid.length) return null
-    return valid.reduce((sum, r) => sum + (r.returnPct ?? 0), 0)
-  }
 
   return (
     <div className="mt-8 flex flex-col gap-3">
@@ -188,9 +192,9 @@ export default function PerformanceCharts() {
         </div>
       ) : (
         <>
-          <TradeTypeChartSection tradeType="단타" entries={filtered['단타']} onDismiss={(e, ret) => dismiss('단타', e, ret)} cumulativeReturn={cumReturn('단타')} />
-          <TradeTypeChartSection tradeType="스윙" entries={filtered['스윙']} onDismiss={(e, ret) => dismiss('스윙', e, ret)} cumulativeReturn={cumReturn('스윙')} />
-          <TradeTypeChartSection tradeType="중기" entries={filtered['중기']} onDismiss={(e, ret) => dismiss('중기', e, ret)} cumulativeReturn={cumReturn('중기')} />
+          <TradeTypeChartSection tradeType="단타" entries={filtered['단타']} onDismiss={(e) => dismiss('단타', e)} cumulativeReturn={cumulative['단타']} />
+          <TradeTypeChartSection tradeType="스윙" entries={filtered['스윙']} onDismiss={(e) => dismiss('스윙', e)} cumulativeReturn={cumulative['스윙']} />
+          <TradeTypeChartSection tradeType="중기" entries={filtered['중기']} onDismiss={(e) => dismiss('중기', e)} cumulativeReturn={cumulative['중기']} />
         </>
       )}
     </div>

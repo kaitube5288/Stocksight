@@ -7,21 +7,27 @@ import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 interface Props {
   tradeType:        '단타' | '스윙' | '중기'
   entries:          ActiveChartEntry[]
-  onDismiss:        (entry: ActiveChartEntry, returnPct: number | null) => void
+  onDismiss:        (entry: ActiveChartEntry) => void
   cumulativeReturn: number | null
 }
 
 const TRADE_META = {
   '단타': { label: '단타 수익률 추적', sub: '5분봉 · 3거래일',  color: 'var(--accent-red)'   },
-  '스윙': { label: '스윙 수익률 추적', sub: '30분봉 · 5거래일', color: 'var(--accent-blue)'  },
-  '중기': { label: '중기 수익률 추적', sub: '일봉 · 25거래일',  color: 'var(--accent-green)' },
+  '스윙': { label: '스윙 수익률 추적', sub: '30분봉 · 7거래일', color: 'var(--accent-blue)'  },
+  '중기': { label: '중기 수익률 추적', sub: '일봉 · 36거래일',  color: 'var(--accent-green)' },
 }
 
 export default function TradeTypeChartSection({ tradeType, entries, onDismiss, cumulativeReturn }: Props) {
   const [open, setOpen] = useState(false)
   const meta = TRADE_META[tradeType]
 
-  if (!entries.length) return null
+  if (!entries.length && cumulativeReturn == null) return null
+
+  // 한국 주식 색상 관례: 수익=빨강, 손실=파랑
+  const isProfit = cumulativeReturn != null && cumulativeReturn >= 0
+  const cumColor   = isProfit ? '#ff4d4d' : '#4d94ff'
+  const cumBg      = isProfit ? 'rgba(255,77,77,0.12)' : 'rgba(77,148,255,0.12)'
+  const cumBorder  = isProfit ? 'rgba(255,77,77,0.35)' : 'rgba(77,148,255,0.35)'
 
   return (
     <div
@@ -51,31 +57,33 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss, c
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {meta.sub}
           </span>
-          <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
-            {entries.length}종목
-          </span>
+          {entries.length > 0 && (
+            <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              {entries.length}종목
+            </span>
+          )}
         </div>
+
+        {/* 누적 수익률 + 펼치기 버튼 */}
         <div className="flex items-center gap-2">
           {cumulativeReturn != null && (
             <span
               className="mono text-xs font-bold px-2 py-0.5 rounded-md"
-              style={{
-                background: cumulativeReturn >= 0 ? 'rgba(0,229,170,0.12)' : 'rgba(255,107,107,0.12)',
-                color:      cumulativeReturn >= 0 ? '#00e5aa' : '#ff6b6b',
-                border:     `1px solid ${cumulativeReturn >= 0 ? 'rgba(0,229,170,0.3)' : 'rgba(255,107,107,0.3)'}`,
-              }}
+              style={{ background: cumBg, color: cumColor, border: `1px solid ${cumBorder}` }}
             >
-              누적 {cumulativeReturn >= 0 ? '+' : ''}{cumulativeReturn.toFixed(2)}%
+              누적 {isProfit ? '+' : ''}{cumulativeReturn.toFixed(2)}%
             </span>
           )}
-          <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>
-            {open ? '▲ 접기' : '▼ 펼치기'}
-          </span>
+          {entries.length > 0 && (
+            <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>
+              {open ? '▲ 접기' : '▼ 펼치기'}
+            </span>
+          )}
         </div>
       </button>
 
       {/* 차트 그리드 */}
-      {open && (
+      {open && entries.length > 0 && (
         <div
           className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4"
           style={{ background: 'rgba(0,0,0,0.2)' }}
@@ -90,7 +98,7 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss, c
               rank={entry.rank}
               from={entry.startAt}
               expiresAt={entry.expiresAt}
-              onDismiss={(ret) => onDismiss(entry, ret)}
+              onDismiss={() => onDismiss(entry)}
               index={i}
             />
           ))}
