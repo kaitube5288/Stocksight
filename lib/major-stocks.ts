@@ -6,6 +6,10 @@ export const MAJOR_STOCKS = [
   { ticker: '000990', name: 'DB하이텍', sector: '반도체' },
   { ticker: '036930', name: '주성엔지니어링', sector: '반도체' },
   { ticker: '058470', name: '리노공업', sector: '반도체' },
+  // 반도체 소재 (FCCL·동박·식각액 등)
+  { ticker: '011790', name: 'SKC', sector: '반도체소재' },
+  { ticker: '112290', name: '와이씨켐', sector: '반도체소재' },
+  { ticker: '426550', name: '이엔에프테크놀로지', sector: '반도체소재' },
   // 2차전지
   { ticker: '373220', name: 'LG에너지솔루션', sector: '2차전지' },
   { ticker: '051910', name: 'LG화학', sector: '2차전지' },
@@ -14,6 +18,8 @@ export const MAJOR_STOCKS = [
   { ticker: '247540', name: '에코프로비엠', sector: '2차전지' },
   { ticker: '086520', name: '에코프로', sector: '2차전지' },
   { ticker: '003670', name: '포스코퓨처엠', sector: '2차전지' },
+  { ticker: '302430', name: '이노메트리', sector: '2차전지' },
+  { ticker: '053080', name: '케이엔솔', sector: '2차전지' },
   // 자동차
   { ticker: '005380', name: '현대차', sector: '자동차' },
   { ticker: '000270', name: '기아', sector: '자동차' },
@@ -21,6 +27,8 @@ export const MAJOR_STOCKS = [
   // IT/인터넷
   { ticker: '035420', name: 'NAVER', sector: 'IT' },
   { ticker: '035720', name: '카카오', sector: 'IT' },
+  { ticker: '037030', name: '파워넷', sector: 'IT' },
+  // 게임
   { ticker: '251270', name: '넷마블', sector: '게임' },
   { ticker: '036570', name: 'NC소프트', sector: '게임' },
   { ticker: '259960', name: '크래프톤', sector: '게임' },
@@ -60,25 +68,47 @@ export const MAJOR_STOCKS = [
   // 통신
   { ticker: '017670', name: 'SK텔레콤', sector: '통신' },
   { ticker: '030200', name: 'KT', sector: '통신' },
+  { ticker: '032640', name: 'LG유플러스', sector: '통신' },
   // 로봇/AI
   { ticker: '277810', name: '레인보우로보틱스', sector: '로봇' },
   { ticker: '215380', name: '두산로보틱스', sector: '로봇' },
-  // 원자력/수소
+  // 원자력
   { ticker: '034020', name: '두산에너빌리티', sector: '원자력' },
+  // 수소/연료전지
   { ticker: '336260', name: '두산퓨얼셀', sector: '수소' },
-  { ticker: '426550', name: '이엔에프테크놀로지', sector: '수소' },
+  { ticker: '271940', name: '일진하이솔루스', sector: '수소' },
+  { ticker: '288620', name: '에스퓨얼셀', sector: '수소' },
+  { ticker: '120110', name: '코오롱인더', sector: '수소' },
   // 전선/전력 인프라 (AI 데이터센터·초고압 전선 수요 급증)
   { ticker: '000500', name: '가온전선', sector: '전선' },
   { ticker: '001440', name: '대한전선', sector: '전선' },
   { ticker: '229640', name: 'LS전선아시아', sector: '전선' },
   { ticker: '006260', name: 'LS', sector: '전선' },
-  // 레이저/광학 (의료·산업용 레이저 성장)
-  { ticker: '161580', name: '필옵틱스', sector: '레이저' },
-  { ticker: '452190', name: '한빛레이저', sector: '레이저' },
-  { ticker: '065350', name: '신성델타테크', sector: '레이저' },
+  { ticker: '103590', name: '일진전기', sector: '전선' },
+  { ticker: '006340', name: '대원전선', sector: '전선' },
+  { ticker: '024840', name: 'KBI메탈', sector: '전선' },
   // 전력기기/변압기 (전력망 투자 테마)
   { ticker: '267260', name: 'HD현대일렉트릭', sector: '전력기기' },
   { ticker: '298040', name: '효성중공업', sector: '전력기기' },
+  { ticker: '010120', name: 'LS일렉트릭', sector: '전력기기' },
+  { ticker: '033290', name: '제룡전기', sector: '전력기기' },
+  // 레이저/광학 (산업용·의료용 레이저, 광학 부품)
+  { ticker: '161580', name: '필옵틱스', sector: '레이저' },
+  { ticker: '452190', name: '한빛레이저', sector: '레이저' },
+  { ticker: '078150', name: 'HB테크놀로지', sector: '레이저' },
+  { ticker: '297890', name: 'HB솔루션', sector: '레이저' },
+  { ticker: '039030', name: '이오테크닉스', sector: '레이저' },
+  { ticker: '265520', name: 'AP시스템', sector: '레이저' },
+  { ticker: '076610', name: '해성옵틱스', sector: '레이저' },
+  { ticker: '038060', name: '루멘스', sector: '레이저' },
+  // 전자부품 (커패시터·PCB·전장 부품)
+  { ticker: '012340', name: '뉴인텍', sector: '전자부품' },
+  { ticker: '079190', name: '케스피온', sector: '전자부품' },
+  { ticker: '089010', name: '켐트로닉스', sector: '전자부품' },
+  { ticker: '065350', name: '신성델타테크', sector: '전자부품' },
+  // 전장/차량전자 (ADAS·블랙박스·AI 비전)
+  { ticker: '049120', name: '파인디지털', sector: '전장' },
+  { ticker: '469750', name: '아이비전웍스', sector: '전장' },
 ]
 
 export const STOCK_MAP = Object.fromEntries(

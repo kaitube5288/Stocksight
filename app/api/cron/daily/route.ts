@@ -245,6 +245,7 @@ const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
   '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
   '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
+  '반도체소재': ['반도체소재'], '전자부품': ['전자부품'], '전장': ['전장'],
 }
 
 function buildCandidatePool(keywords: string[]): { ticker: string; name: string; sector: string }[] {
