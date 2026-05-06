@@ -65,7 +65,20 @@ export const MAJOR_STOCKS = [
   { ticker: '215380', name: '두산로보틱스', sector: '로봇' },
   // 원자력/수소
   { ticker: '034020', name: '두산에너빌리티', sector: '원자력' },
-  { ticker: '010690', name: '화신', sector: '수소' },
+  { ticker: '336260', name: '두산퓨얼셀', sector: '수소' },
+  { ticker: '426550', name: '이엔에프테크놀로지', sector: '수소' },
+  // 전선/전력 인프라 (AI 데이터센터·초고압 전선 수요 급증)
+  { ticker: '000500', name: '가온전선', sector: '전선' },
+  { ticker: '001440', name: '대한전선', sector: '전선' },
+  { ticker: '229640', name: 'LS전선아시아', sector: '전선' },
+  { ticker: '006260', name: 'LS', sector: '전선' },
+  // 레이저/광학 (의료·산업용 레이저 성장)
+  { ticker: '161580', name: '필옵틱스', sector: '레이저' },
+  { ticker: '452190', name: '한빛레이저', sector: '레이저' },
+  { ticker: '065350', name: '신성델타테크', sector: '레이저' },
+  // 전력기기/변압기 (전력망 투자 테마)
+  { ticker: '267260', name: 'HD현대일렉트릭', sector: '전력기기' },
+  { ticker: '298040', name: '효성중공업', sector: '전력기기' },
 ]
 
 export const STOCK_MAP = Object.fromEntries(

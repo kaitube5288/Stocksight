@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { fetchAndAnalyzeNews, extractSectorsFromNews, formatAnalyzedNewsForPrompt } from '@/lib/news'
 import { getMarketIndex, getUSDKRW, getRealPrices, getFundamentalsMap, fetchDetailedTechnicals, formatMarketContext } from '@/lib/stock-data'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
+import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
 
 export const maxDuration = 120
 
@@ -12,6 +13,7 @@ const KEYWORD_SECTOR_MAP: Record<string, string[]> = {
   '화학': ['화학'], '금융': ['금융', '보험'], '부동산': ['건설'],
   '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
+  '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
 }
 
 export type AIStockRecommendation = {
@@ -112,10 +114,11 @@ export async function POST(request: Request) {
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
     const keywords = extractSectorsFromNews(analyzedNews)
 
-    // 2. 시장 지표
-    const [{ kospi, kosdaq }, usdkrw] = await Promise.all([
+    // 2. 시장 지표 + market_feedback
+    const [{ kospi, kosdaq }, usdkrw, marketFeedbackInsights] = await Promise.all([
       getMarketIndex(),
       getUSDKRW(),
+      buildMarketFeedbackInsights(),
     ])
     const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
 
@@ -161,7 +164,7 @@ export async function POST(request: Request) {
 ${userQuery ? `\n사용자 요청: ${userQuery}\n` : ''}
 ## 오늘 날짜
 ${today}
-
+${marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${marketFeedbackInsights}\n` : ''}
 ## 현재 시장 지표
 ${marketText}
 

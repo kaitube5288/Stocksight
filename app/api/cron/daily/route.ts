@@ -9,6 +9,7 @@ import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { fetchAndAnalyzeNews, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
+import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
 
 export const maxDuration = 300
 
@@ -82,12 +83,13 @@ async function runDailyAnalysis() {
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
       Promise.all(candidateTickers.map(t => fetchTechnicalIndicators(t))),
       buildPerformanceInsights(),
+      buildMarketFeedbackInsights(),
     ])
 
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
@@ -103,6 +105,7 @@ async function runDailyAnalysis() {
       technicalContext: technicalContext || undefined,
       candidatesContext: candidatesContext || undefined,
       performanceInsights: performanceInsights || undefined,
+      marketFeedbackInsights: marketFeedbackInsights || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
@@ -241,6 +244,7 @@ const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
   '화학': ['화학'], '금융': ['금융', '보험'], '부동산': ['건설'],
   '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
+  '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
 }
 
 function buildCandidatePool(keywords: string[]): { ticker: string; name: string; sector: string }[] {
