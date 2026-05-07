@@ -89,7 +89,7 @@ async function callGeminiForAIAnalysis(prompt: string): Promise<string> {
     for (const modelName of models) {
       try {
         const model = genAI.getGenerativeModel(
-          { model: modelName, generationConfig: { temperature: 0.15 } },
+          { model: modelName, generationConfig: { temperature: 0 } },
           { apiVersion: 'v1beta' }
         )
         const result = await model.generateContent(prompt)
@@ -257,7 +257,7 @@ ${candidateLines}
         price_vs_ma5:     r.price_vs_ma5     || (t?.ma5Signal      ?? '데이터 없음'),
         ma_alignment:     r.ma_alignment     || (t?.maAlignmentSignal ?? '데이터 없음'),
         bollinger_status: r.bollinger_status || (t?.bollingerStatusText ?? '데이터 없음'),
-        from: new Date().toISOString(),
+        // from 미설정 — 차트 API 기본 range(10d 스윙) 사용. today ISO를 넘기면 period1=오늘이 되어 데이터 없음
       }
     })
 

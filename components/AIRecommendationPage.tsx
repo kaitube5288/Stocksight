@@ -27,13 +27,14 @@ const QUICK_QUERIES: { label: string; query: string }[] = [
 ]
 
 export default function AIRecommendationPage() {
-  const [query, setQuery]       = useState('')
-  const [loading, setLoading]   = useState(false)
-  const [result, setResult]     = useState<AIAnalysisResult | null>(null)
-  const [error, setError]       = useState('')
+  const [query, setQuery]             = useState('')
+  const [loading, setLoading]         = useState(false)
+  const [result, setResult]           = useState<AIAnalysisResult | null>(null)
+  const [error, setError]             = useState('')
   const [savedQuery, setSavedQuery]   = useState('')
   const [savedAt, setSavedAt]         = useState('')
   const [fromCache, setFromCache]     = useState(false)
+  const [cacheMsg, setCacheMsg]       = useState('')
 
   // 마운트 시 localStorage에서 마지막 분석 복원
   useEffect(() => {
@@ -48,8 +49,24 @@ export default function AIRecommendationPage() {
     } catch { /* ignore */ }
   }, [])
 
-  const runAnalysis = useCallback(async (q?: string) => {
+  const CACHE_TTL_MS = 10 * 60 * 1000 // 10분
+
+  const runAnalysis = useCallback(async (q?: string, forceRefresh = false) => {
     const finalQuery = q ?? query
+    setCacheMsg('')
+
+    // 10분 이내 동일 쿼리 결과가 있으면 API 재호출 없이 캐시 반환
+    if (!forceRefresh && result && savedQuery === finalQuery && savedAt) {
+      const ageMs = Date.now() - new Date(savedAt).getTime()
+      if (ageMs < CACHE_TTL_MS) {
+        const mins = Math.floor(ageMs / 60000)
+        const secs = Math.floor((ageMs % 60000) / 1000)
+        setCacheMsg(`${mins}분 ${secs}초 전 분석 결과입니다. 새로 분석하려면 ↺ 재분석을 클릭하세요.`)
+        setFromCache(true)
+        return
+      }
+    }
+
     setLoading(true)
     setError('')
     setFromCache(false)
@@ -65,7 +82,6 @@ export default function AIRecommendationPage() {
         setResult(data.data)
         setSavedQuery(finalQuery)
         setSavedAt(now)
-        // localStorage에 저장
         const cache: CachedAnalysis = { result: data.data, query: finalQuery, savedAt: now }
         localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
       } else {
@@ -76,7 +92,7 @@ export default function AIRecommendationPage() {
     } finally {
       setLoading(false)
     }
-  }, [query])
+  }, [query, result, savedQuery, savedAt, CACHE_TTL_MS])
 
   const handleQuick = (q: string) => {
     setQuery(q)
@@ -167,6 +183,17 @@ export default function AIRecommendationPage() {
         </div>
       )}
 
+      {/* ── 캐시 안내 ── */}
+      {cacheMsg && !loading && (
+        <div
+          className="rounded-xl px-4 py-2.5 mb-4 text-xs flex items-center gap-2"
+          style={{ background: 'rgba(255,200,0,0.07)', border: '1px solid rgba(255,200,0,0.2)', color: 'rgba(255,200,0,0.75)' }}
+        >
+          <span>⏱</span>
+          <span className="flex-1">{cacheMsg}</span>
+        </div>
+      )}
+
       {/* ── 에러 ── */}
       {error && !loading && (
         <div
@@ -218,7 +245,7 @@ export default function AIRecommendationPage() {
                 </div>
               </div>
               <button
-                onClick={() => runAnalysis(savedQuery || undefined)}
+                onClick={() => { setCacheMsg(''); runAnalysis(savedQuery || undefined, true) }}
                 className="text-xs px-3 py-1 rounded-lg transition-all mono shrink-0"
                 style={{
                   background: 'rgba(255,255,255,0.05)',
