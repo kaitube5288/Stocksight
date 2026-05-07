@@ -1,8 +1,22 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import AIStockCard from './AIStockCard'
 import type { AIAnalysisResult } from '@/app/api/ai-analyze/route'
+
+const CACHE_KEY = 'ai_analysis_cache'
+
+type CachedAnalysis = {
+  result: AIAnalysisResult
+  query: string
+  savedAt: string // ISO
+}
+
+function formatSavedAt(iso: string) {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 const QUICK_QUERIES: { label: string; query: string }[] = [
   { label: '당일 2종목씩 추천', query: '오늘 상승확률이 가장 높은 코스피/코스닥 각 2종목씩 추천해줘' },
@@ -13,23 +27,47 @@ const QUICK_QUERIES: { label: string; query: string }[] = [
 ]
 
 export default function AIRecommendationPage() {
-  const [query, setQuery]     = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult]   = useState<AIAnalysisResult | null>(null)
-  const [error, setError]     = useState('')
+  const [query, setQuery]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [result, setResult]     = useState<AIAnalysisResult | null>(null)
+  const [error, setError]       = useState('')
+  const [savedQuery, setSavedQuery]   = useState('')
+  const [savedAt, setSavedAt]         = useState('')
+  const [fromCache, setFromCache]     = useState(false)
+
+  // 마운트 시 localStorage에서 마지막 분석 복원
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY)
+      if (!raw) return
+      const cached: CachedAnalysis = JSON.parse(raw)
+      setResult(cached.result)
+      setSavedQuery(cached.query)
+      setSavedAt(cached.savedAt)
+      setFromCache(true)
+    } catch { /* ignore */ }
+  }, [])
 
   const runAnalysis = useCallback(async (q?: string) => {
+    const finalQuery = q ?? query
     setLoading(true)
     setError('')
+    setFromCache(false)
     try {
       const res = await fetch('/api/ai-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q ?? query }),
+        body: JSON.stringify({ query: finalQuery }),
       })
       const data = await res.json()
       if (data.success) {
+        const now = new Date().toISOString()
         setResult(data.data)
+        setSavedQuery(finalQuery)
+        setSavedAt(now)
+        // localStorage에 저장
+        const cache: CachedAnalysis = { result: data.data, query: finalQuery, savedAt: now }
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
       } else {
         setError(data.error ?? 'AI 분석 실패')
       }
@@ -143,27 +181,55 @@ export default function AIRecommendationPage() {
       {result && !loading && (
         <div>
           {/* 분석 메타 */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                AI 종목 분석 결과
-              </span>
-              <span className="text-xs ml-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                {result.analysis_date} · 뉴스 {result.news_count}건 분석
-              </span>
+          <div
+            className="rounded-xl px-4 py-3 mb-4"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-1 min-w-0">
+                {/* 검색 쿼리 */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>요청</span>
+                  <span
+                    className="text-xs font-semibold truncate"
+                    style={{ color: 'var(--text-secondary)' }}
+                    title={savedQuery || '(직접 요청 없음)'}
+                  >
+                    {savedQuery || '(직접 요청 없음)'}
+                  </span>
+                </div>
+                {/* 날짜·시각·뉴스 수 */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {fromCache && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-md"
+                      style={{ background: 'rgba(255,200,0,0.1)', color: 'rgba(255,200,0,0.6)', border: '1px solid rgba(255,200,0,0.2)' }}
+                    >
+                      저장된 분석
+                    </span>
+                  )}
+                  <span className="text-[10px] mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    {savedAt ? formatSavedAt(savedAt) : result.analysis_date}
+                  </span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>·</span>
+                  <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    뉴스 {result.news_count}건 분석
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => runAnalysis(savedQuery || undefined)}
+                className="text-xs px-3 py-1 rounded-lg transition-all mono shrink-0"
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.4)',
+                  cursor: 'pointer',
+                }}
+              >
+                ↺ 재분석
+              </button>
             </div>
-            <button
-              onClick={() => runAnalysis()}
-              className="text-xs px-3 py-1 rounded-lg transition-all mono"
-              style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-              }}
-            >
-              ↺ 재분석
-            </button>
           </div>
 
           {/* 시장 요약 */}
