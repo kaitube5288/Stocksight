@@ -14,10 +14,11 @@ interface DismissedRecord {
   name:      string
 }
 
-const STORAGE_KEY = 'stocksight:dismissed-charts'
+// v2: startAt 제거 — startAt은 데이터 윈도우 변동 시 달라져 키 불일치가 발생했음
+const STORAGE_KEY = 'stocksight:dismissed-v2'
 
 function dismissKey(tradeType: TT, entry: ActiveChartEntry) {
-  return `${tradeType}:${entry.ticker}:${entry.startAt}`
+  return `${tradeType}:${entry.ticker}`
 }
 
 function loadDismissed(): Map<string, DismissedRecord> {

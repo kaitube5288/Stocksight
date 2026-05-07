@@ -8,8 +8,9 @@ const TRADING_DAYS = { '단타': 3, '스윙': 7, '중기': 36 } as const
 type TT = keyof typeof TRADING_DAYS
 
 export interface BuyPriceInstance {
-  label: string  // "" if single, "추천1"/"추천2" if multiple
-  price: number
+  label:   string  // "" if single, "추천1"/"추천2" if multiple
+  price:   number
+  dateKey: string  // YYYY-MM-DD (추천일)
 }
 
 export interface ActiveChartEntry {
@@ -68,8 +69,9 @@ function buildSection(
     result.push({
       ticker: m.ticker, name: m.name,
       instances: m.buyPrices.map((bp, i) => ({
-        label: multi ? `추천${i + 1}` : '',
-        price: bp.price,
+        label:   multi ? `추천${i + 1}` : '',
+        price:   bp.price,
+        dateKey: bp.dateKey,
       })),
       startAt: new Date(m.buyPrices[0].dateKey + 'T00:00:00Z').toISOString(),
       expiresAt: expiresAt.toISOString(),

@@ -207,8 +207,12 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
           const ret = calcReturn(prices, inst.price)
           const pos = ret != null && ret >= 0
           const color = REF_COLORS[i % REF_COLORS.length]
+          // YYYY-MM-DD → M/D 형식
+          const recDate = inst.dateKey
+            ? inst.dateKey.slice(5).replace('-', '/')
+            : null
           return (
-            <div key={i} className="flex items-center gap-1">
+            <div key={i} className="flex items-center gap-1 flex-wrap">
               {inst.label && (
                 <span className="mono text-[9px] font-bold" style={{ color: color.text }}>
                   {inst.label}
@@ -227,6 +231,18 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
                   }}
                 >
                   {pos ? '+' : ''}{ret.toFixed(2)}%
+                </span>
+              )}
+              {recDate && (
+                <span
+                  className="mono text-[9px] px-1 py-0.5 rounded"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'rgba(255,255,255,0.3)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  {recDate}
                 </span>
               )}
             </div>
