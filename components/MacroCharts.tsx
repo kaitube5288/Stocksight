@@ -10,12 +10,12 @@ interface DayPoint { date: string; value: number }
 
 interface MacroData {
   usdkrw: DayPoint[]
-  gold: DayPoint[]
+  gold: DayPoint[]  // USD/oz 원시값
 }
 
 function shortDate(d: string) {
-  const [, m, day] = d.split('-')
-  return `${parseInt(m)}/${parseInt(day)}`
+  const parts = d.split('-')
+  return `${parseInt(parts[1])}/${parseInt(parts[2])}`
 }
 
 function tickInterval(count: number) {
@@ -24,18 +24,21 @@ function tickInterval(count: number) {
   return Math.floor(count / 8)
 }
 
+// gold(USD/oz) → KRW/돈 (telegram.ts와 동일 공식)
+function toKrwPerDon(goldUsd: number, krwPerUsd: number): number {
+  return Math.round((goldUsd * krwPerUsd * 3.75) / 31.1035)
+}
+
 function ChartBlock({
   title,
   unit,
   data,
   color,
-  decimals = 0,
 }: {
   title: string
   unit: string
   data: DayPoint[]
   color: string
-  decimals?: number
 }) {
   if (!data.length) return null
 
@@ -51,9 +54,7 @@ function ChartBlock({
   const yMin = minV - pad
   const yMax = maxV + pad
 
-  const fmt = (v: number) =>
-    decimals > 0 ? v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-                 : v.toLocaleString()
+  const fmt = (v: number) => v.toLocaleString('ko-KR', { maximumFractionDigits: 0 })
 
   return (
     <div
@@ -65,7 +66,8 @@ function ChartBlock({
         <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
         <div className="flex items-center gap-2">
           <span className="mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-            {fmt(last.value)} <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{unit}</span>
+            {fmt(last.value)}
+            <span className="text-[10px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{unit}</span>
           </span>
           {chg != null && (
             <span
@@ -96,11 +98,11 @@ function ChartBlock({
             />
             <YAxis
               domain={[yMin, yMax]}
-              tickFormatter={v => fmt(v)}
+              tickFormatter={fmt}
               tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.28)' }}
               axisLine={false}
               tickLine={false}
-              width={38}
+              width={42}
             />
             <Tooltip
               contentStyle={{
@@ -110,8 +112,8 @@ function ChartBlock({
                 fontSize: '11px',
                 color: 'rgba(255,255,255,0.85)',
               }}
-              formatter={(v: number) => [`${fmt(v)} ${unit}`, title]}
-              labelFormatter={shortDate}
+              formatter={(v: unknown) => [`${fmt(Number(v))} ${unit}`, title]}
+              labelFormatter={(label: unknown) => shortDate(String(label))}
             />
             <Line
               type="monotone"
@@ -129,13 +131,35 @@ function ChartBlock({
 }
 
 export default function MacroCharts() {
-  const [data, setData]       = useState<MacroData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [usdkrwData, setUsdkrwData] = useState<DayPoint[]>([])
+  const [goldData,   setGoldData]   = useState<DayPoint[]>([])
+  const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
     fetch('/api/macro-chart')
       .then(r => r.json())
-      .then(d => setData(d))
+      .then((d: MacroData) => {
+        setUsdkrwData(d.usdkrw ?? [])
+
+        // 날짜 → 환율 맵으로 gold를 KRW/돈 변환 (텔레그램과 동일 공식)
+        const krwMap: Record<string, number> = {}
+        for (const p of d.usdkrw ?? []) krwMap[p.date] = p.value
+
+        // 날짜 정렬, 가장 가까운 환율 사용 (forward-fill)
+        const sortedKrwDates = Object.keys(krwMap).sort()
+        function getNearestKrw(date: string): number {
+          if (krwMap[date]) return krwMap[date]
+          const before = sortedKrwDates.filter(d => d <= date)
+          if (before.length) return krwMap[before[before.length - 1]]
+          return krwMap[sortedKrwDates[0]] ?? 1400
+        }
+
+        const converted = (d.gold ?? []).map(p => ({
+          date:  p.date,
+          value: toKrwPerDon(p.value, getNearestKrw(p.date)),
+        }))
+        setGoldData(converted)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -146,7 +170,7 @@ export default function MacroCharts() {
     </div>
   )
 
-  if (!data) return null
+  if (!usdkrwData.length && !goldData.length) return null
 
   return (
     <div className="mt-5 flex flex-col gap-3">
@@ -154,20 +178,17 @@ export default function MacroCharts() {
       <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
         환율·금시세 (90일)
       </h2>
-      {/* 환율: 오를수록 원화약세 → 빨강 */}
       <ChartBlock
         title="USD/KRW 환율"
         unit="원"
-        data={data.usdkrw}
+        data={usdkrwData}
         color="rgba(255,160,80,0.85)"
       />
-      {/* 금시세: 오를수록 좋음 → 초록 */}
       <ChartBlock
-        title="금 선물 (GC=F)"
-        unit="USD/oz"
-        data={data.gold}
+        title="국제 금시세"
+        unit="원/돈"
+        data={goldData}
         color="rgba(255,215,0,0.85)"
-        decimals={1}
       />
     </div>
   )
