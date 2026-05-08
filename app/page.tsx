@@ -6,6 +6,7 @@ import NewsPanel from '@/components/NewsPanel'
 import MarketBar from '@/components/MarketBar'
 import PerformanceCharts from '@/components/PerformanceCharts'
 import AIRecommendationPage from '@/components/AIRecommendationPage'
+import MacroCharts from '@/components/MacroCharts'
 import { DailyRecommendation } from '@/lib/supabase'
 
 type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
@@ -509,6 +510,7 @@ export default function Home() {
             </h2>
           </div>
           <NewsPanel />
+          <MacroCharts />
 
           {/* 면책 고지 */}
           <div
