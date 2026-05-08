@@ -119,9 +119,15 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
           </div>
         )}
         <div className="flex items-center gap-2 mb-2 pr-8">
-          <span className="font-bold text-lg leading-tight" style={{ color: 'var(--text-primary)' }}>
+          <a
+            href={`https://finance.naver.com/item/main.naver?code=${stock.ticker.split('.')[0]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-lg leading-tight hover:underline"
+            style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+          >
             {stock.name}
-          </span>
+          </a>
         </div>
         <div className="flex items-center gap-2">
           <span className="badge">{stock.ticker}</span>

@@ -163,9 +163,15 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
       {/* 종목명 + 버튼 */}
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-xs font-bold mr-2" style={{ color: 'var(--text-primary)' }}>
+          <a
+            href={`https://finance.naver.com/item/main.naver?code=${ticker.split('.')[0]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-bold mr-2 hover:underline"
+            style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+          >
             #{rank} {name}
-          </span>
+          </a>
           <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{ticker}</span>
         </div>
         <div className="flex items-center gap-1">

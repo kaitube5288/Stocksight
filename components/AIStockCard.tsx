@@ -106,9 +106,15 @@ export default function AIStockCard({ rec, index = 0 }: {
           >
             {rec.rank}
           </span>
-          <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+          <a
+            href={`https://finance.naver.com/item/main.naver?code=${rec.ticker.split('.')[0]}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-base font-bold hover:underline"
+            style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+          >
             {rec.name}
-          </span>
+          </a>
           <span className="mono text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
             ({rec.ticker})
           </span>
