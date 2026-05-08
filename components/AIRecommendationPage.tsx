@@ -35,6 +35,24 @@ export default function AIRecommendationPage() {
   const [savedAt, setSavedAt]         = useState('')
   const [fromCache, setFromCache]     = useState(false)
   const [cacheMsg, setCacheMsg]       = useState('')
+  const [marketIndex, setMarketIndex] = useState<{ kospi: number | null; kosdaq: number | null; kospiChg: number | null; kosdaqChg: number | null }>({
+    kospi: null, kosdaq: null, kospiChg: null, kosdaqChg: null,
+  })
+
+  // 코스피/코스닥 지수 조회
+  useEffect(() => {
+    fetch('/api/market')
+      .then(r => r.json())
+      .then(d => {
+        setMarketIndex({
+          kospi:     d.kospi?.price        ?? null,
+          kospiChg:  d.kospi?.changePercent ?? null,
+          kosdaq:    d.kosdaq?.price        ?? null,
+          kosdaqChg: d.kosdaq?.changePercent ?? null,
+        })
+      })
+      .catch(() => {})
+  }, [])
 
   // 마운트 시 localStorage에서 마지막 분석 복원
   useEffect(() => {
@@ -140,34 +158,74 @@ export default function AIRecommendationPage() {
         ))}
       </div>
 
-      {/* ── 입력창 + 분석 버튼 ── */}
-      <div className="flex items-center gap-2 mb-6">
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !loading && runAnalysis()}
-          placeholder="직접 요청: 예) 2차전지 눌림목 종목 추천해줘"
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm mono outline-none"
-          style={{
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.14)',
-            color: 'var(--text-primary)',
-          }}
-          disabled={loading}
-        />
-        <button
-          onClick={() => runAnalysis()}
-          disabled={loading}
-          className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap"
-          style={{ cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
-        >
-          {loading ? (
-            <span className="flex items-center gap-2">
-              <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
-            </span>
-          ) : '▶ AI 분석'}
-        </button>
+      {/* ── 입력창 + 분석 버튼 + 지수 ── */}
+      <div className="flex flex-col gap-2 mb-6">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !loading && runAnalysis()}
+            placeholder="직접 요청: 예) 2차전지 눌림목 종목 추천해줘"
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm mono outline-none"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              color: 'var(--text-primary)',
+            }}
+            disabled={loading}
+          />
+          <button
+            onClick={() => runAnalysis()}
+            disabled={loading}
+            className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap"
+            style={{ cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="mono text-xs animate-pulse">▶▶</span> AI 분석 중...
+              </span>
+            ) : '▶ AI 분석'}
+          </button>
+          {/* 코스피 / 코스닥 */}
+          {(marketIndex.kospi || marketIndex.kosdaq) && (
+            <div className="flex items-center gap-2 shrink-0">
+              {marketIndex.kospi && (
+                <div className="flex flex-col items-end">
+                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>코스피</span>
+                  <span className="mono text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {marketIndex.kospi.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
+                  </span>
+                  {marketIndex.kospiChg != null && (
+                    <span
+                      className="mono text-[9px] font-semibold"
+                      style={{ color: marketIndex.kospiChg >= 0 ? '#ff6b6b' : '#00e5aa' }}
+                    >
+                      {marketIndex.kospiChg >= 0 ? '+' : ''}{marketIndex.kospiChg.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              )}
+              <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: '10px' }}>|</span>
+              {marketIndex.kosdaq && (
+                <div className="flex flex-col items-end">
+                  <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>코스닥</span>
+                  <span className="mono text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {marketIndex.kosdaq.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
+                  </span>
+                  {marketIndex.kosdaqChg != null && (
+                    <span
+                      className="mono text-[9px] font-semibold"
+                      style={{ color: marketIndex.kosdaqChg >= 0 ? '#ff6b6b' : '#00e5aa' }}
+                    >
+                      {marketIndex.kosdaqChg >= 0 ? '+' : ''}{marketIndex.kosdaqChg.toFixed(2)}%
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 로딩 ── */}
