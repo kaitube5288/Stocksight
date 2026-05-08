@@ -81,8 +81,8 @@ export async function getMarketIndex(): Promise<{
   kosdaq: StockQuote | null
 }> {
   const [kospi, kosdaq] = await Promise.all([
-    fetchYahooQuote('%5EKS11'),
-    fetchYahooQuote('%5EKQ11'),
+    fetchYahooQuote('^KS11'),
+    fetchYahooQuote('^KQ11'),
   ])
   return { kospi, kosdaq }
 }
