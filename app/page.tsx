@@ -100,9 +100,7 @@ export default function Home() {
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [liveData, setLiveData] = useState<Record<string, { price: number | null; per: number | null; pbr: number | null; roe: number | null }>>({})
-  const [marketIdx, setMarketIdx] = useState<{ kospi: number | null; kospiChg: number | null; kosdaq: number | null; kosdaqChg: number | null }>({
-    kospi: null, kospiChg: null, kosdaq: null, kosdaqChg: null,
-  })
+
   const { permission, requestPermission, notify } = usePushNotification()
   const prevDateRef = useRef<string | null>(null)
 
@@ -151,17 +149,6 @@ export default function Home() {
     loadRecommendations()
   }, [loadRecommendations])
 
-  useEffect(() => {
-    fetch('/api/market')
-      .then(r => r.json())
-      .then(d => setMarketIdx({
-        kospi:     d.kospi?.price         ?? null,
-        kospiChg:  d.kospi?.changePercent  ?? null,
-        kosdaq:    d.kosdaq?.price         ?? null,
-        kosdaqChg: d.kosdaq?.changePercent ?? null,
-      }))
-      .catch(() => {})
-  }, [])
 
   const handleAnalysisClick = () => {
     setPwInput('')
@@ -349,38 +336,6 @@ export default function Home() {
                 <span className="text-xs animate-pulse" style={{ color: 'var(--text-muted)' }}>
                   뉴스 수집 → DART 공시 확인 → Gemini 분석 → 추천 생성 (30~60초 소요)
                 </span>
-              )}
-              {/* 코스피 / 코스닥 */}
-              {!analyzing && (marketIdx.kospi || marketIdx.kosdaq) && (
-                <div className="flex items-center gap-3">
-                  {marketIdx.kospi && (
-                    <div className="flex flex-col items-end">
-                      <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>코스피</span>
-                      <span className="mono text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                        {marketIdx.kospi.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
-                      </span>
-                      {marketIdx.kospiChg != null && (
-                        <span className="mono text-[9px] font-semibold" style={{ color: marketIdx.kospiChg >= 0 ? '#ff6b6b' : '#00e5aa' }}>
-                          {marketIdx.kospiChg >= 0 ? '+' : ''}{marketIdx.kospiChg.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <span style={{ color: 'rgba(255,255,255,0.15)', fontSize: '10px' }}>|</span>
-                  {marketIdx.kosdaq && (
-                    <div className="flex flex-col items-end">
-                      <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>코스닥</span>
-                      <span className="mono text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
-                        {marketIdx.kosdaq.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}
-                      </span>
-                      {marketIdx.kosdaqChg != null && (
-                        <span className="mono text-[9px] font-semibold" style={{ color: marketIdx.kosdaqChg >= 0 ? '#ff6b6b' : '#00e5aa' }}>
-                          {marketIdx.kosdaqChg >= 0 ? '+' : ''}{marketIdx.kosdaqChg.toFixed(2)}%
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
               )}
               {!analyzing && recommendation?.market_outlook?.startsWith('[하락장 위험]') && (
                 <div
