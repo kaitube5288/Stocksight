@@ -10,6 +10,7 @@ import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { fetchAndAnalyzeNews, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
 import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
+import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 
 export const maxDuration = 300
 
@@ -83,13 +84,18 @@ async function runDailyAnalysis() {
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights] = await Promise.all([
+    // 누적 수익률 미달 섹션 자기진단 (15% 미달 시 Gemini가 실패 패턴 분석 → DB 저장)
+    // 분석 완료 후 저장된 개선 방향을 읽어 프롬프트에 주입
+    void runStrategyImprovementIfNeeded()  // 비동기 실행 (cron 시간 절약, 다음 회차부터 반영)
+
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
       Promise.all(candidateTickers.map(t => fetchTechnicalIndicators(t))),
       buildPerformanceInsights(),
       buildMarketFeedbackInsights(),
+      buildStrategyImprovementContext(),  // 이전 회차 자기진단 결과 읽기
     ])
 
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
@@ -106,6 +112,7 @@ async function runDailyAnalysis() {
       candidatesContext: candidatesContext || undefined,
       performanceInsights: performanceInsights || undefined,
       marketFeedbackInsights: marketFeedbackInsights || undefined,
+      strategyImprovements: strategyImprovements || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)

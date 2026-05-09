@@ -117,6 +117,7 @@ export async function generateRecommendations(params: {
   candidatesContext?: string
   performanceInsights?: string
   marketFeedbackInsights?: string
+  strategyImprovements?: string
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -135,7 +136,7 @@ export async function generateRecommendations(params: {
 
 ## 오늘 날짜
 ${params.date}
-${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}${params.marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${params.marketFeedbackInsights}\n` : ''}
+${params.strategyImprovements ? `\n## 🛠 전략 자동 보완 (누적 수익률 미달 자기진단 — 최우선 적용)\n${params.strategyImprovements}\n` : ''}${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}${params.marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${params.marketFeedbackInsights}\n` : ''}
 ## 수집된 뉴스 (당일 08:40 KST 실시간 수집 — 임팩트 티어별 분류)
 ★ HIGH: 실적·수주·수급·정책 → 섹터/종목 즉각 반영 필수
 • MEDIUM: 일반 뉴스 → 참고 반영  ○ LOW: 전망·우려 → 배경 참고
