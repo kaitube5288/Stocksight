@@ -12,9 +12,9 @@ interface Props {
 }
 
 const TRADE_META = {
-  '단타': { label: '단타 수익률 추적', sub: '5분봉 · 3거래일',  color: 'var(--accent-red)'   },
-  '스윙': { label: '스윙 수익률 추적', sub: '30분봉 · 7거래일', color: 'var(--accent-blue)'  },
-  '중기': { label: '중기 수익률 추적', sub: '일봉 · 36거래일',  color: 'var(--accent-green)' },
+  '단타': { label: '단타 수익률 추적', sub: '5분봉 · 1거래일',  color: 'var(--accent-red)'   },
+  '스윙': { label: '스윙 수익률 추적', sub: '30분봉 · 5거래일', color: 'var(--accent-blue)'  },
+  '중기': { label: '중기 수익률 추적', sub: '일봉 · 20거래일',  color: 'var(--accent-green)' },
 }
 
 export default function TradeTypeChartSection({ tradeType, entries, onDismiss, cumulativeReturn }: Props) {
