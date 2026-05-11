@@ -4,7 +4,7 @@ import { addTradingDays } from '@/lib/trading-days'
 
 export const dynamic = 'force-dynamic'
 
-const TRADING_DAYS = { '단타': 3, '스윙': 7, '중기': 36 } as const
+const TRADING_DAYS = { '단타': 1, '스윙': 5, '중기': 20 } as const
 type TT = keyof typeof TRADING_DAYS
 
 export interface BuyPriceInstance {

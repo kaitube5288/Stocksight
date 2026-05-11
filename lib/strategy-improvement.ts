@@ -4,7 +4,7 @@ import axios from 'axios'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const START_DATE = '2026-05-04'
-const TRADING_DAYS_MAP = { '단타': 3, '스윙': 7, '중기': 36 } as const
+const TRADING_DAYS_MAP = { '단타': 1, '스윙': 5, '중기': 20 } as const
 type TT = keyof typeof TRADING_DAYS_MAP
 
 // 15% 미달 시 자기진단 트리거

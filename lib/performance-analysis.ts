@@ -4,7 +4,7 @@ import { addTradingDays } from './trading-days'
 import { MAJOR_STOCKS } from './major-stocks'
 
 const START_DATE = '2026-05-04'
-const PERIOD: Record<TT, number> = { '단타': 3, '스윙': 7, '중기': 36 }
+const PERIOD: Record<TT, number> = { '단타': 1, '스윙': 5, '중기': 20 }
 type TT = '단타' | '스윙' | '중기'
 
 const YF_HEADERS = {
