@@ -75,14 +75,33 @@ export async function getRealPrices(
   return map
 }
 
-// KOSPI/KOSDAQ 지수
+// KOSPI/KOSDAQ 지수 — 네이버 금융 실시간 API
+async function fetchNaverIndex(code: 'KOSPI' | 'KOSDAQ'): Promise<StockQuote | null> {
+  try {
+    const res = await axios.get(
+      `https://m.stock.naver.com/api/index/${code}/basic`,
+      { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }, timeout: 6000 }
+    )
+    const d = res.data
+    const price         = parseFloat(String(d.closePrice ?? '').replace(/,/g, ''))
+    const change        = parseFloat(String(d.compareToPreviousClosePrice ?? '').replace(/,/g, ''))
+    const changePct     = parseFloat(String(d.fluctuationsRatio ?? '').replace(/,/g, ''))
+    if (!price) return null
+    return {
+      ticker: code, name: code,
+      price, change, changePercent: changePct,
+      volume: 0, previousClose: price - change,
+    }
+  } catch { return null }
+}
+
 export async function getMarketIndex(): Promise<{
   kospi: StockQuote | null
   kosdaq: StockQuote | null
 }> {
   const [kospi, kosdaq] = await Promise.all([
-    fetchYahooQuote('^KS11'),
-    fetchYahooQuote('^KQ11'),
+    fetchNaverIndex('KOSPI'),
+    fetchNaverIndex('KOSDAQ'),
   ])
   return { kospi, kosdaq }
 }
