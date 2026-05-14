@@ -84,10 +84,9 @@ async function runDailyAnalysis() {
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
-    // 누적 수익률 미달 섹션 자기진단 (15% 미달 시 Gemini가 실패 패턴 분석 → DB 저장)
-    // 분석 완료 후 저장된 개선 방향을 읽어 프롬프트에 주입
-    void runStrategyImprovementIfNeeded()  // 비동기 실행 (cron 시간 절약, 다음 회차부터 반영)
-
+    // 누적 수익률 미달 섹션 자기진단 + 이전 개선 방향 읽기를 병렬 실행
+    // runStrategyImprovementIfNeeded: 오늘 분석 결과 저장 (다음 회차 반영)
+    // buildStrategyImprovementContext: 이전 회차 결과 읽기 (오늘 즉시 반영)
     const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
@@ -227,6 +226,9 @@ async function runDailyAnalysis() {
       .delete()
       .lt('fetched_at', cleanupDate.toISOString())
 
+    // 9. 누적 수익률 미달 섹션 자기진단 — 메인 작업 완료 후 실행 (다음 cron 회차에 반영)
+    const improvedSections = await runStrategyImprovementIfNeeded()
+
     return NextResponse.json({
       success: true,
       date: todayDate,
@@ -235,6 +237,7 @@ async function runDailyAnalysis() {
       newsMedium: analyzedNews.filter(n => n.impact === 'medium').length,
       detectedSectors: keywords.slice(0, 8),
       telegramSent: !!process.env.TELEGRAM_BOT_TOKEN,
+      strategyImproved: improvedSections,
       data,
     })
   } catch (error) {
