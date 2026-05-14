@@ -1,4 +1,4 @@
-import { getSupabase } from './supabase'
+import { getSupabase, getSupabaseAdmin } from './supabase'
 import { addTradingDays } from './trading-days'
 import { callGemini } from './gemini'
 import axios from 'axios'
@@ -223,7 +223,7 @@ export async function runStrategyImprovementIfNeeded(): Promise<string[]> {
       const analysis = await analyzeWithGemini(tt, cumulative, stocks)
       if (!analysis) continue
 
-      const supabase = getSupabase()
+      const supabase = getSupabaseAdmin()
       const { error } = await supabase.from('strategy_improvements').insert({
         trade_type: tt,
         cumulative_return: Math.round(cumulative * 100) / 100,
@@ -267,7 +267,7 @@ export async function runStrategyImprovementVerbose(): Promise<{
         continue
       }
 
-      const supabase = getSupabase()
+      const supabase = getSupabaseAdmin()
       const { error } = await supabase.from('strategy_improvements').insert({
         trade_type: tt,
         cumulative_return: Math.round(cumulative * 100) / 100,
