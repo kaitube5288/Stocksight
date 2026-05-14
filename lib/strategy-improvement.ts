@@ -19,21 +19,31 @@ async function getPriceNearDate(ticker: string, targetDate: Date): Promise<numbe
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
   const targetTs = Math.floor(targetDate.getTime() / 1000)
   for (const suffix of ['.KS', '.KQ']) {
-    try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=90d&interval=1d`
-      const res = await axios.get(url, { headers: YF_HEADERS, timeout: 10000 })
-      const result = res.data?.chart?.result?.[0]
-      if (!result) continue
-      const timestamps: number[] = result.timestamp ?? []
-      const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? []
-      let bestIdx = -1, bestTs = -Infinity
-      for (let i = 0; i < timestamps.length; i++) {
-        const ts = timestamps[i]
-        if (closes[i] == null || isNaN(closes[i]!)) continue
-        if (ts <= targetTs + 86400 && ts > bestTs) { bestTs = ts; bestIdx = i }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt))
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${code}${suffix}?range=90d&interval=1d`
+        const res = await axios.get(url, { headers: YF_HEADERS, timeout: 15000 })
+        const result = res.data?.chart?.result?.[0]
+        if (!result) break
+        const timestamps: number[] = result.timestamp ?? []
+        const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? []
+        let bestIdx = -1, bestTs = -Infinity
+        for (let i = 0; i < timestamps.length; i++) {
+          const ts = timestamps[i]
+          if (closes[i] == null || isNaN(closes[i]!)) continue
+          if (ts <= targetTs + 86400 && ts > bestTs) { bestTs = ts; bestIdx = i }
+        }
+        if (bestIdx >= 0) return closes[bestIdx]!
+        break
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : ''
+        if (msg.includes('429') || msg.includes('Too Many')) {
+          if (attempt < 2) continue
+        }
+        break
       }
-      if (bestIdx >= 0) return closes[bestIdx]!
-    } catch { continue }
+    }
   }
   return null
 }
@@ -86,18 +96,23 @@ async function getExpiredReturns(tt: TT): Promise<{ stocks: StockReturn[]; cumul
   }
   if (expired.length === 0) return { stocks: [], cumulative: 0 }
 
-  const exitPrices = await Promise.all(
-    expired.map(({ group, expiresAt }) => getPriceNearDate(group.ticker, expiresAt))
-  )
+  // 순차 요청 — Yahoo Finance rate limit 방지
+  const exitPrices: (number | null)[] = []
+  for (let i = 0; i < expired.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 1000))
+    exitPrices.push(await getPriceNearDate(expired[i].group.ticker, expired[i].expiresAt))
+  }
 
   const stocks: StockReturn[] = []
   let sum = 0
   expired.forEach(({ group }, i) => {
     const exitPrice = exitPrices[i]
-    if (exitPrice == null || !group.firstBuyPrice) return
-    const returnPct = ((exitPrice - group.firstBuyPrice) / group.firstBuyPrice) * 100
+    if (!group.firstBuyPrice) return
+    // 가격 미조회 시 buyPrice 그대로 사용 (0% 수익률로 보수적 집계)
+    const ep = exitPrice ?? group.firstBuyPrice
+    const returnPct = ((ep - group.firstBuyPrice) / group.firstBuyPrice) * 100
     sum += returnPct
-    stocks.push({ ticker: group.ticker, name: group.name, buyPrice: group.firstBuyPrice, exitPrice, returnPct })
+    stocks.push({ ticker: group.ticker, name: group.name, buyPrice: group.firstBuyPrice, exitPrice: ep, returnPct })
   })
 
   return { stocks, cumulative: stocks.length > 0 ? sum : 0 }
