@@ -237,10 +237,8 @@ export async function runStrategyImprovementIfNeeded(): Promise<string[]> {
   for (const tt of ['단타', '스윙', '중기'] as TT[]) {
     try {
       const { stocks, cumulative } = await getExpiredReturns(tt)
-      if (stocks.length < 1) continue           // 데이터 없음
-      if (cumulative >= IMPROVEMENT_THRESHOLD) continue  // 목표 달성
-
-      console.log(`[StrategyImprovement] ${tt} ${cumulative.toFixed(2)}% < ${IMPROVEMENT_THRESHOLD}% → 자기진단`)
+      if (stocks.length < 1) continue
+      if (cumulative >= IMPROVEMENT_THRESHOLD) continue
 
       const analysis = await analyzeWithGemini(tt, cumulative, stocks)
       if (!analysis) continue
@@ -253,16 +251,66 @@ export async function runStrategyImprovementIfNeeded(): Promise<string[]> {
         total_count: stocks.length,
         analysis,
       })
-      if (error) {
-        console.error('[StrategyImprovement] DB 저장 오류:', error.message)
-      } else {
-        triggered.push(tt)
-      }
+      if (!error) triggered.push(tt)
     } catch (e) {
-      console.error(`[StrategyImprovement] ${tt} 처리 오류:`, e instanceof Error ? e.message : e)
+      console.error(`[StrategyImprovement] ${tt}:`, e instanceof Error ? e.message : e)
     }
   }
   return triggered
+}
+
+// 진단용: 각 섹션별 스킵 사유 포함한 상세 실행
+export async function runStrategyImprovementVerbose(): Promise<{
+  triggered: string[]
+  reasons: Record<string, string>
+}> {
+  const triggered: string[] = []
+  const reasons: Record<string, string> = {}
+
+  const geminiKey = getGeminiKey()
+  if (!geminiKey) {
+    return { triggered, reasons: { error: 'Gemini API 키 없음' } }
+  }
+
+  for (const tt of ['단타', '스윙', '중기'] as TT[]) {
+    try {
+      const { stocks, cumulative } = await getExpiredReturns(tt)
+      if (stocks.length < 1) {
+        reasons[tt] = `스킵: 만료 종목 0개`
+        continue
+      }
+      if (cumulative >= IMPROVEMENT_THRESHOLD) {
+        reasons[tt] = `스킵: 누적 ${cumulative.toFixed(2)}% ≥ ${IMPROVEMENT_THRESHOLD}%`
+        continue
+      }
+
+      reasons[tt] = `분석 시작 — 종목 ${stocks.length}개, 누적 ${cumulative.toFixed(2)}%`
+
+      const analysis = await analyzeWithGemini(tt, cumulative, stocks)
+      if (!analysis) {
+        reasons[tt] += ` → Gemini 분석 실패(null)`
+        continue
+      }
+
+      const supabase = getSupabase()
+      const { error } = await supabase.from('strategy_improvements').insert({
+        trade_type: tt,
+        cumulative_return: Math.round(cumulative * 100) / 100,
+        failed_count: stocks.filter(s => s.returnPct < 0).length,
+        total_count: stocks.length,
+        analysis,
+      })
+      if (error) {
+        reasons[tt] += ` → DB 저장 오류: ${error.message}`
+      } else {
+        triggered.push(tt)
+        reasons[tt] += ` → DB 저장 성공 ✅`
+      }
+    } catch (e) {
+      reasons[tt] = `예외: ${e instanceof Error ? e.message : String(e)}`
+    }
+  }
+  return { triggered, reasons }
 }
 
 // 최근 자기진단 결과를 Gemini 프롬프트 주입용 텍스트로 반환

@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { runStrategyImprovementIfNeeded, debugExpiredReturns } from '@/lib/strategy-improvement'
+import { runStrategyImprovementVerbose, debugExpiredReturns } from '@/lib/strategy-improvement'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function GET() {
   const supabase = getSupabase()
 
-  // 1. 테이블 존재 여부 + 저장된 데이터 확인
   const { data: records, error: tableError } = await supabase
     .from('strategy_improvements')
     .select('id, created_at, trade_type, cumulative_return, failed_count, total_count')
@@ -18,8 +17,7 @@ export async function GET() {
   if (tableError) {
     return NextResponse.json({
       status: 'error',
-      message: '⚠️ strategy_improvements 테이블이 존재하지 않습니다. Supabase SQL Editor에서 테이블을 생성하세요.',
-      sql_needed: true,
+      message: '⚠️ strategy_improvements 테이블이 존재하지 않습니다.',
       error: tableError.message,
     })
   }
@@ -31,14 +29,14 @@ export async function GET() {
     records: records ?? [],
     message: records?.length
       ? `✅ 정상 작동 중 — ${records.length}개 자기진단 기록 있음`
-      : '⚠️ 테이블은 있지만 기록이 없음 — 아직 cron이 실행되지 않았거나 만료 종목 3개 미만',
+      : '⚠️ 테이블은 있지만 기록이 없음',
   })
 }
 
-// POST: 수동으로 자기진단 즉시 실행
+// POST: 수동으로 자기진단 즉시 실행 (상세 사유 포함)
 export async function POST() {
-  const [triggered, debug] = await Promise.all([
-    runStrategyImprovementIfNeeded(),
+  const [result, debug] = await Promise.all([
+    runStrategyImprovementVerbose(),
     debugExpiredReturns(),
   ])
 
@@ -50,10 +48,11 @@ export async function POST() {
     .limit(3)
 
   return NextResponse.json({
-    triggered_sections: triggered,
-    message: triggered.length
-      ? `✅ ${triggered.join(', ')} 섹션 자기진단 완료`
-      : '스킵 — 모든 섹션이 15% 이상이거나 만료 종목 없음',
+    triggered_sections: result.triggered,
+    reasons: result.reasons,
+    message: result.triggered.length
+      ? `✅ ${result.triggered.join(', ')} 섹션 자기진단 완료`
+      : '스킵됨 — reasons 필드 확인',
     latest_records: latest ?? [],
     debug,
   })
