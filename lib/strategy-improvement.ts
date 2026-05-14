@@ -170,7 +170,7 @@ export async function runStrategyImprovementIfNeeded(): Promise<string[]> {
   for (const tt of ['단타', '스윙', '중기'] as TT[]) {
     try {
       const { stocks, cumulative } = await getExpiredReturns(tt)
-      if (stocks.length < 3) continue           // 데이터 부족
+      if (stocks.length < 1) continue           // 데이터 없음
       if (cumulative >= IMPROVEMENT_THRESHOLD) continue  // 목표 달성
 
       console.log(`[StrategyImprovement] ${tt} ${cumulative.toFixed(2)}% < ${IMPROVEMENT_THRESHOLD}% → 자기진단`)

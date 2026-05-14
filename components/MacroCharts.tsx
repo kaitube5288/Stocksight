@@ -84,7 +84,7 @@ function ChartBlock({
       </div>
 
       {/* 차트 */}
-      <div style={{ height: '110px' }}>
+      <div style={{ height: '110px', minHeight: '110px', minWidth: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
