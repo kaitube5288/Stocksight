@@ -120,7 +120,7 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
         )}
         <div className="flex items-center gap-2 mb-2 pr-8">
           <a
-            href={`https://finance.naver.com/item/main.naver?code=${stock.ticker.split('.')[0]}`}
+            href={`https://m.stock.naver.com/domestic/stock/${stock.ticker.split('.')[0]}/total`}
             target="_blank"
             rel="noopener noreferrer"
             className="font-bold text-lg leading-tight hover:underline"

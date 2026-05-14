@@ -107,7 +107,7 @@ export default function AIStockCard({ rec, index = 0 }: {
             {rec.rank}
           </span>
           <a
-            href={`https://finance.naver.com/item/main.naver?code=${rec.ticker.split('.')[0]}`}
+            href={`https://m.stock.naver.com/domestic/stock/${rec.ticker.split('.')[0]}/total`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-base font-bold hover:underline"

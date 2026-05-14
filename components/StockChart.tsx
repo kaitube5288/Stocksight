@@ -164,7 +164,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
       <div className="flex items-center justify-between">
         <div>
           <a
-            href={`https://finance.naver.com/item/main.naver?code=${ticker.split('.')[0]}`}
+            href={`https://m.stock.naver.com/domestic/stock/${ticker.split('.')[0]}/total`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs font-bold mr-2 hover:underline"
