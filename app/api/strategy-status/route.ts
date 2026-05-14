@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { runStrategyImprovementIfNeeded } from '@/lib/strategy-improvement'
+import { runStrategyImprovementIfNeeded, debugExpiredReturns } from '@/lib/strategy-improvement'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -37,7 +37,10 @@ export async function GET() {
 
 // POST: 수동으로 자기진단 즉시 실행
 export async function POST() {
-  const triggered = await runStrategyImprovementIfNeeded()
+  const [triggered, debug] = await Promise.all([
+    runStrategyImprovementIfNeeded(),
+    debugExpiredReturns(),
+  ])
 
   const supabase = getSupabase()
   const { data: latest } = await supabase
@@ -50,7 +53,8 @@ export async function POST() {
     triggered_sections: triggered,
     message: triggered.length
       ? `✅ ${triggered.join(', ')} 섹션 자기진단 완료`
-      : '스킵 — 모든 섹션이 15% 이상이거나 만료 종목 3개 미만',
+      : '스킵 — 모든 섹션이 15% 이상이거나 만료 종목 없음',
     latest_records: latest ?? [],
+    debug,
   })
 }

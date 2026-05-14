@@ -179,6 +179,58 @@ JSON 형식 없이 자연어로, 간결하게 작성하세요.`
   }
 }
 
+// 디버그용: 각 섹션의 만료 종목 수집 현황 반환
+export async function debugExpiredReturns(): Promise<Record<string, unknown>> {
+  const supabase = getSupabase()
+  const now = new Date()
+  const { data: recs, error } = await supabase
+    .from('recommendations')
+    .select('id, date, stocks, created_at')
+    .gte('date', START_DATE)
+    .order('created_at', { ascending: true })
+
+  if (error || !recs) return { error: error?.message ?? 'no data', recCount: 0 }
+
+  const result: Record<string, unknown> = {
+    now: now.toISOString(),
+    recCount: recs.length,
+    sections: {} as Record<string, unknown>,
+  }
+
+  for (const tt of ['단타', '스윙', '중기'] as TT[]) {
+    const groups = new Map<string, Group>()
+    for (const rec of recs) {
+      const recDate = new Date(rec.created_at)
+      for (const stock of (rec.stocks ?? []) as StockRecord[]) {
+        if (stock.trade_type !== tt) continue
+        const ex = groups.get(stock.ticker)
+        if (!ex) {
+          groups.set(stock.ticker, { ticker: stock.ticker, name: stock.name, firstBuyPrice: stock.buy_price, latestRecDate: recDate })
+        } else if (recDate > ex.latestRecDate) {
+          ex.latestRecDate = recDate
+        }
+      }
+    }
+
+    const allGroups = Array.from(groups.values()).map(g => {
+      const expiresAt = addTradingDays(g.latestRecDate, TRADING_DAYS_MAP[tt])
+      return {
+        ticker: g.ticker, name: g.name,
+        latestRecDate: g.latestRecDate.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        expired: now > expiresAt,
+      }
+    })
+
+    ;(result.sections as Record<string, unknown>)[tt] = {
+      groupCount: groups.size,
+      expiredCount: allGroups.filter(g => g.expired).length,
+      groups: allGroups.slice(0, 5),
+    }
+  }
+  return result
+}
+
 // 15% 미달 섹션 자동 진단 후 DB 저장 — cron에서 호출
 export async function runStrategyImprovementIfNeeded(): Promise<string[]> {
   const triggered: string[] = []
