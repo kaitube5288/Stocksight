@@ -1,7 +1,7 @@
 import { getSupabase } from './supabase'
 import { addTradingDays } from './trading-days'
+import { callGemini } from './gemini'
 import axios from 'axios'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const START_DATE = '2026-05-04'
 const TRADING_DAYS_MAP = { '단타': 1, '스윙': 5, '중기': 20 } as const
@@ -118,21 +118,7 @@ async function getExpiredReturns(tt: TT): Promise<{ stocks: StockReturn[]; cumul
   return { stocks, cumulative: stocks.length > 0 ? sum : 0 }
 }
 
-function getGeminiKey(): string | null {
-  return ([
-    process.env.GEMINI_API_KEY_1,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEY_4,
-    process.env.GEMINI_API_KEY_5,
-    process.env.GEMINI_API_KEY,
-  ].filter(Boolean) as string[])[0] ?? null
-}
-
 async function analyzeWithGemini(tt: TT, cumulative: number, stocks: StockReturn[]): Promise<string | null> {
-  const key = getGeminiKey()
-  if (!key) return null
-
   const wins   = stocks.filter(s => s.returnPct >= 0)
   const losses = stocks.filter(s => s.returnPct < 0)
 
@@ -166,13 +152,7 @@ ${tt} 섹션의 다음 추천에 즉시 적용할 구체적 기준 3~5개를 작
 JSON 형식 없이 자연어로, 간결하게 작성하세요.`
 
   try {
-    const genAI = new GoogleGenerativeAI(key)
-    const model = genAI.getGenerativeModel(
-      { model: 'gemini-1.5-flash', generationConfig: { temperature: 0 } },
-      { apiVersion: 'v1beta' }
-    )
-    const result = await model.generateContent(prompt)
-    return result.response.text().trim()
+    return (await callGemini(prompt)).trim()
   } catch (e) {
     console.error('[StrategyImprovement] Gemini 실패:', e instanceof Error ? e.message : e)
     return null
@@ -266,11 +246,6 @@ export async function runStrategyImprovementVerbose(): Promise<{
 }> {
   const triggered: string[] = []
   const reasons: Record<string, string> = {}
-
-  const geminiKey = getGeminiKey()
-  if (!geminiKey) {
-    return { triggered, reasons: { error: 'Gemini API 키 없음' } }
-  }
 
   for (const tt of ['단타', '스윙', '중기'] as TT[]) {
     try {

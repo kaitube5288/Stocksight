@@ -49,7 +49,7 @@ const FALLBACK_MODELS = [
   'gemini-1.5-pro',
 ]
 
-async function callGemini(prompt: string): Promise<string> {
+export async function callGemini(prompt: string): Promise<string> {
   if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
 
   for (let ki = 0; ki < API_KEYS.length; ki++) {
