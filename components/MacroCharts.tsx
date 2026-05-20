@@ -11,7 +11,8 @@ interface DayPoint { date: string; value: number }
 interface MacroData {
   usdkrw: DayPoint[]
   gold: DayPoint[]
-  bond: DayPoint[]  // 미국 10년물 국채 금리 (%)
+  bond: DayPoint[]    // 미국 10년물 국채 금리 (%)
+  fedRate: DayPoint[] // 연준 기준금리 추종 (3개월 단기채)
 }
 
 function shortDate(d: string) {
@@ -140,6 +141,7 @@ export default function MacroCharts() {
   const [usdkrwData, setUsdkrwData] = useState<DayPoint[]>([])
   const [goldData,   setGoldData]   = useState<DayPoint[]>([])
   const [bondData,   setBondData]   = useState<DayPoint[]>([])
+  const [fedData,    setFedData]    = useState<DayPoint[]>([])
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -165,6 +167,7 @@ export default function MacroCharts() {
           value: toKrwPerDon(p.value, getNearestKrw(p.date)),
         }))
         setGoldData(converted)
+        setFedData(d.fedRate ?? [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -176,7 +179,7 @@ export default function MacroCharts() {
     </div>
   )
 
-  if (!usdkrwData.length && !goldData.length && !bondData.length) return null
+  if (!usdkrwData.length && !goldData.length && !bondData.length && !fedData.length) return null
 
   return (
     <div className="mt-5 flex flex-col gap-3">
@@ -201,6 +204,13 @@ export default function MacroCharts() {
         unit="%"
         data={bondData}
         color="rgba(130,180,255,0.85)"
+        decimals={2}
+      />
+      <ChartBlock
+        title="연준금리 (3개월 단기채)"
+        unit="%"
+        data={fedData}
+        color="rgba(180,130,255,0.85)"
         decimals={2}
       />
     </div>
