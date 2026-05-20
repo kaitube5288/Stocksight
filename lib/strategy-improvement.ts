@@ -103,19 +103,23 @@ async function getExpiredReturns(tt: TT): Promise<{ stocks: StockReturn[]; cumul
     exitPrices.push(await getPriceNearDate(expired[i].group.ticker, expired[i].expiresAt))
   }
 
-  const stocks: StockReturn[] = []
-  let sum = 0
+  const stocks: StockReturn[] = []   // Gemini 분석용 (가격 없으면 0%로 포함)
+  let realSum = 0
+  let realCount = 0
   expired.forEach(({ group }, i) => {
     const exitPrice = exitPrices[i]
     if (!group.firstBuyPrice) return
-    // 가격 미조회 시 buyPrice 그대로 사용 (0% 수익률로 보수적 집계)
     const ep = exitPrice ?? group.firstBuyPrice
-    const returnPct = ((ep - group.firstBuyPrice) / group.firstBuyPrice) * 100
-    sum += returnPct
+    const returnPct = exitPrice != null
+      ? ((exitPrice - group.firstBuyPrice) / group.firstBuyPrice) * 100
+      : 0
+    if (exitPrice != null) { realSum += returnPct; realCount++ }
     stocks.push({ ticker: group.ticker, name: group.name, buyPrice: group.firstBuyPrice, exitPrice: ep, returnPct })
   })
 
-  return { stocks, cumulative: stocks.length > 0 ? sum : 0 }
+  // 누적은 실제 가격 조회된 종목만 — 조회 실패 시 0으로 처리해 트리거 보장
+  const cumulative = realCount > 0 ? realSum : 0
+  return { stocks, cumulative }
 }
 
 async function analyzeWithGemini(tt: TT, cumulative: number, stocks: StockReturn[]): Promise<string | null> {
