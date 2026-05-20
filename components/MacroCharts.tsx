@@ -10,7 +10,8 @@ interface DayPoint { date: string; value: number }
 
 interface MacroData {
   usdkrw: DayPoint[]
-  gold: DayPoint[]  // USD/oz 원시값
+  gold: DayPoint[]
+  bond: DayPoint[]  // 미국 10년물 국채 금리 (%)
 }
 
 function shortDate(d: string) {
@@ -34,11 +35,13 @@ function ChartBlock({
   unit,
   data,
   color,
+  decimals = 0,
 }: {
   title: string
   unit: string
   data: DayPoint[]
   color: string
+  decimals?: number
 }) {
   if (!data.length) return null
 
@@ -54,7 +57,10 @@ function ChartBlock({
   const yMin = minV - pad
   const yMax = maxV + pad
 
-  const fmt = (v: number) => v.toLocaleString('ko-KR', { maximumFractionDigits: 0 })
+  const fmt = (v: number) =>
+    decimals > 0
+      ? v.toLocaleString('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+      : v.toLocaleString('ko-KR', { maximumFractionDigits: 0 })
 
   return (
     <div
@@ -133,6 +139,7 @@ function ChartBlock({
 export default function MacroCharts() {
   const [usdkrwData, setUsdkrwData] = useState<DayPoint[]>([])
   const [goldData,   setGoldData]   = useState<DayPoint[]>([])
+  const [bondData,   setBondData]   = useState<DayPoint[]>([])
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -140,12 +147,11 @@ export default function MacroCharts() {
       .then(r => r.json())
       .then((d: MacroData) => {
         setUsdkrwData(d.usdkrw ?? [])
+        setBondData(d.bond ?? [])
 
-        // 날짜 → 환율 맵으로 gold를 KRW/돈 변환 (텔레그램과 동일 공식)
         const krwMap: Record<string, number> = {}
         for (const p of d.usdkrw ?? []) krwMap[p.date] = p.value
 
-        // 날짜 정렬, 가장 가까운 환율 사용 (forward-fill)
         const sortedKrwDates = Object.keys(krwMap).sort()
         function getNearestKrw(date: string): number {
           if (krwMap[date]) return krwMap[date]
@@ -166,17 +172,17 @@ export default function MacroCharts() {
 
   if (loading) return (
     <div className="py-6 text-center" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-      환율·금시세 로딩 중...
+      환율·금시세·채권금리 로딩 중...
     </div>
   )
 
-  if (!usdkrwData.length && !goldData.length) return null
+  if (!usdkrwData.length && !goldData.length && !bondData.length) return null
 
   return (
     <div className="mt-5 flex flex-col gap-3">
       <div className="section-line" />
       <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-        환율·금시세 (90일)
+        환율·금시세·채권금리 (90일)
       </h2>
       <ChartBlock
         title="USD/KRW 환율"
@@ -189,6 +195,13 @@ export default function MacroCharts() {
         unit="원/돈"
         data={goldData}
         color="rgba(255,215,0,0.85)"
+      />
+      <ChartBlock
+        title="미국 10년물 국채금리"
+        unit="%"
+        data={bondData}
+        color="rgba(130,180,255,0.85)"
+        decimals={2}
       />
     </div>
   )

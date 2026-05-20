@@ -33,9 +33,10 @@ async function fetchHistory(symbol: string): Promise<DayPoint[]> {
 }
 
 export async function GET() {
-  const [usdkrw, gold] = await Promise.all([
+  const [usdkrw, gold, bond] = await Promise.all([
     fetchHistory('KRW=X'),
     fetchHistory('GC=F'),
+    fetchHistory('^TNX'),   // 미국 10년물 국채 금리 (%)
   ])
-  return NextResponse.json({ usdkrw, gold })
+  return NextResponse.json({ usdkrw, gold, bond })
 }
