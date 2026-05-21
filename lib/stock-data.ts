@@ -193,15 +193,15 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// 네이버 금융 메인 페이지에서 PER/PBR + 증권사 목표주가 + 외국인/기관 순매수 파싱
+// 네이버 금융 메인 페이지에서 PER/PBR/ROE + 증권사 목표주가 + 외국인/기관 순매수 파싱
 // invest 서브페이지는 JavaScript로 값을 채우므로 axios로는 N/A만 읽힘
 async function scrapeNaverMain(code: string): Promise<{
-  per: number|null; pbr: number|null;
+  per: number|null; pbr: number|null; roe: number|null;
   analystTarget: number|null;
   foreignNet: number|null;
   institutionNet: number|null;
 }> {
-  const empty = { per: null, pbr: null, analystTarget: null, foreignNet: null, institutionNet: null }
+  const empty = { per: null, pbr: null, roe: null, analystTarget: null, foreignNet: null, institutionNet: null }
   try {
     const res = await axios.get(
       `https://finance.naver.com/item/main.naver?code=${code}`,
@@ -235,9 +235,18 @@ async function scrapeNaverMain(code: string): Promise<{
       }
     }
 
+    // ROE(지배주주): th_cop_anal13 행의 첫 번째 td 숫자값
+    let roe: number | null = null
+    const mRoe = html.match(/ROE[\s\S]{0,400}?<td[^>]*>\s*([-\d.]+)\s*<\/td>/)
+    if (mRoe) {
+      const n = parseN(mRoe[1])
+      roe = n !== null && Math.abs(n) < 300 ? n : null
+    }
+
     return {
       per: mPer ? parseN(mPer[1]) : null,
       pbr: mPbr ? parseN(mPbr[1]) : null,
+      roe,
       analystTarget,
       foreignNet,
       institutionNet,
@@ -316,16 +325,20 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 
-  // Naver mobile API: PER/PBR/ROE/market 한번에 + ROE 전용 추가 소스 병렬 조회
-  const [naverData, apiRoe, scrapedRoe] = await Promise.all([
+  // Naver basic API + main.naver 스크래핑 병렬 조회
+  // (finance/ratios, investment, highlight API는 네이버가 폐기하여 404)
+  const [naverData, naverScrape] = await Promise.all([
     fetchNaverData(code),
-    fetchNaverROEFromAPI(code),
-    scrapeNaverROE(code),
+    scrapeNaverMain(code),
   ])
 
-  // ROE 우선순위: Naver basic API → 추가 API → HTML 스크래핑 → DART 재무제표
-  const naverRoe = naverData.roe ?? apiRoe ?? scrapedRoe
+  // ROE 우선순위: Naver basic API → main.naver 스크래핑 → DART 재무제표
+  const naverRoe = naverData.roe ?? naverScrape.roe
   const roe = naverRoe ?? await fetchROEFromDART(code).catch(() => null)
+
+  // PER/PBR: basic API 우선, 없으면 main.naver 스크래핑 값 사용
+  const per = naverData.per ?? naverScrape.per
+  const pbr = naverData.pbr ?? naverScrape.pbr
 
   // 시장 구분: Naver API 실패 시 Yahoo fallback
   let market = naverData.market
@@ -344,14 +357,6 @@ export async function getKoreanStockFundamentals(ticker: string): Promise<StockF
     market = quoteMarket(ks) ?? quoteMarket(kq) ??
       (ks && (ks.price > 0 || ks.previousClose > 0) ? 'KOSPI' :
        kq && (kq.price > 0 || kq.previousClose > 0) ? 'KOSDAQ' : null)
-  }
-
-  // PER/PBR: Naver API 우선, 없으면 HTML 스크래핑 fallback
-  let { per, pbr } = naverData
-  if (per == null || pbr == null) {
-    const scraped = await scrapeNaverMain(code)
-    per = per ?? scraped.per
-    pbr = pbr ?? scraped.pbr
   }
 
   return { per, pbr, roe, market }
