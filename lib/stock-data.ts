@@ -193,9 +193,15 @@ function parseN(s: string): number | null {
   return isNaN(n) ? null : Math.round(n * 100) / 100
 }
 
-// 네이버 금융 메인 페이지에서 id="_per", id="_pbr" 로 PER/PBR 추출
+// 네이버 금융 메인 페이지에서 PER/PBR + 증권사 목표주가 + 외국인/기관 순매수 파싱
 // invest 서브페이지는 JavaScript로 값을 채우므로 axios로는 N/A만 읽힘
-async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: number|null }> {
+async function scrapeNaverMain(code: string): Promise<{
+  per: number|null; pbr: number|null;
+  analystTarget: number|null;
+  foreignNet: number|null;
+  institutionNet: number|null;
+}> {
+  const empty = { per: null, pbr: null, analystTarget: null, foreignNet: null, institutionNet: null }
   try {
     const res = await axios.get(
       `https://finance.naver.com/item/main.naver?code=${code}`,
@@ -204,11 +210,39 @@ async function scrapeNaverMain(code: string): Promise<{ per: number|null; pbr: n
     const html: string = res.data
     const mPer = html.match(/id="_per"[^>]*>([\d,.]+)</)
     const mPbr = html.match(/id="_pbr"[^>]*>([\d,.]+)</)
+
+    // 증권사 컨센서스 목표주가: "목표주가</th>" 이후 첫 번째 4자리 이상 em 태그
+    const mTarget = html.match(/목표주가<\/th>[\s\S]{0,300}?<em>([\d,]{4,})<\/em>/)
+    const analystTarget = mTarget ? parseN(mTarget[1]) : null
+
+    // 외국인/기관 순매수: th_fo 테이블에서 최신 영업일 행 파싱
+    let foreignNet: number | null = null
+    let institutionNet: number | null = null
+    const foStart = html.indexOf('class="h_th th_fo"')
+    if (foStart > 0) {
+      const foEnd = html.indexOf('</table>', foStart)
+      const tableHtml = html.slice(foStart, foEnd)
+      const rowMatch = tableHtml.match(/<th scope="row">\d{2}\/\d{2}<\/th>([\s\S]*?)(?=<tr>|\s*<\/tbody>)/)
+      if (rowMatch) {
+        const row = rowMatch[1]
+        const tds = [...row.matchAll(/<td>([\s\S]*?)<\/td>/g)]
+        if (tds.length >= 4) {
+          const fMatch = tds[2][1].match(/([+\-]?[\d,]+)\s*\n?\s*<\/em>/)
+          const iMatch = tds[3][1].match(/([+\-]?[\d,]+)\s*\n?\s*<\/em>/)
+          foreignNet = fMatch ? parseN(fMatch[1]) : null
+          institutionNet = iMatch ? parseN(iMatch[1]) : null
+        }
+      }
+    }
+
     return {
       per: mPer ? parseN(mPer[1]) : null,
       pbr: mPbr ? parseN(mPbr[1]) : null,
+      analystTarget,
+      foreignNet,
+      institutionNet,
     }
-  } catch { return { per: null, pbr: null } }
+  } catch { return empty }
 }
 
 // Naver 추가 API 엔드포인트에서 ROE 시도 (/finance/ratios, /investment 등)
@@ -443,6 +477,8 @@ export type TechnicalIndicators = {
   supportLevel: number | null                       // 60일 저점(지지선)
   resistanceLevel: number | null                    // 60일 고점(저항선)
   candlePattern: 'hammer' | 'shooting_star' | 'doji' | 'bullish_engulfing' | 'bearish_engulfing' | null
+  foreignNet: number | null                         // 최신 영업일 외국인 순매수 (주)
+  institutionNet: number | null                     // 최신 영업일 기관 순매수 (주)
 }
 
 function calcSMA(prices: number[], period: number): number | null {
@@ -551,13 +587,18 @@ async function fetchOHLCV(ticker: string): Promise<OHLCV> {
 }
 
 export async function fetchTechnicalIndicators(ticker: string): Promise<TechnicalIndicators> {
+  const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
   const empty: TechnicalIndicators = {
     rsi14: null, macdSignal: null, trend: null,
     volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
     supportLevel: null, resistanceLevel: null, candlePattern: null,
+    foreignNet: null, institutionNet: null,
   }
   try {
-    const { opens, highs, lows, closes, volumes } = await fetchOHLCV(ticker)
+    const [{ opens, highs, lows, closes, volumes }, naverScrape] = await Promise.all([
+      fetchOHLCV(ticker),
+      scrapeNaverMain(code),
+    ])
     if (closes.length < 30) return empty
 
     // RSI
@@ -619,6 +660,8 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
       supportLevel: sr?.support ?? null,
       resistanceLevel: sr?.resistance ?? null,
       candlePattern,
+      foreignNet: naverScrape.foreignNet,
+      institutionNet: naverScrape.institutionNet,
     }
   } catch { return empty }
 }
@@ -670,6 +713,7 @@ export type DetailedTechnicals = TechnicalIndicators & {
   bollingerStatusText: string
   range52wSignal: string  // ex) "신고가 부근" / "중간 구간" / "저점 근접"
   priceSignal: string     // ex) "급등 후 조정" / "안정적 상승" / "횡보 중"
+  analystTarget: number | null  // 증권사 컨센서스 목표주가
 }
 
 async function fetchOHLCV1Y(ticker: string): Promise<OHLCV & { highs1y: number[]; lows1y: number[] }> {
@@ -700,16 +744,23 @@ async function fetchOHLCV1Y(ticker: string): Promise<OHLCV & { highs1y: number[]
 }
 
 export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedTechnicals> {
+  const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
   const base: DetailedTechnicals = {
     rsi14: null, macdSignal: null, trend: null,
     volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
     supportLevel: null, resistanceLevel: null, candlePattern: null,
+    foreignNet: null, institutionNet: null,
     ma5: null, ma20: null, ma60: null, high52w: null, low52w: null,
     ma5Signal: '데이터 없음', maAlignmentSignal: '데이터 없음',
     bollingerStatusText: '데이터 없음', range52wSignal: '데이터 없음', priceSignal: '데이터 없음',
+    analystTarget: null,
   }
   try {
-    const { opens, highs, lows, closes, volumes, highs1y, lows1y } = await fetchOHLCV1Y(ticker)
+    const [ohlcv1y, naverScrape] = await Promise.all([
+      fetchOHLCV1Y(ticker),
+      scrapeNaverMain(code),
+    ])
+    const { opens, highs, lows, closes, volumes, highs1y, lows1y } = ohlcv1y
     if (closes.length < 30) return base
 
     const last = closes[closes.length - 1]
@@ -842,11 +893,14 @@ export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedT
       supportLevel: sr?.support ?? null,
       resistanceLevel: sr?.resistance ?? null,
       candlePattern,
+      foreignNet: naverScrape.foreignNet,
+      institutionNet: naverScrape.institutionNet,
       ma5: ma5 ? Math.round(ma5) : null,
       ma20: ma20 ? Math.round(ma20) : null,
       ma60: ma60 ? Math.round(ma60) : null,
       high52w, low52w,
       ma5Signal, maAlignmentSignal, bollingerStatusText, range52wSignal, priceSignal,
+      analystTarget: naverScrape.analystTarget,
     }
   } catch { return base }
 }

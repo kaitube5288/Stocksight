@@ -153,6 +153,8 @@ export async function POST(request: Request) {
       if (t?.trend)       parts.push(t.trend === 'up' ? '추세↑' : t.trend === 'down' ? '추세↓' : '')
       if (t?.bollingerSignal === 'buy') parts.push('BB하단')
       if (t?.volumeSurge != null && t.volumeSurge >= 1.5) parts.push(`거래량${t.volumeSurge.toFixed(1)}x`)
+      if (t?.foreignNet != null) parts.push(`외국인${t.foreignNet > 0 ? '+' : ''}${Math.round(t.foreignNet / 1000)}K주`)
+      if (t?.institutionNet != null) parts.push(`기관${t.institutionNet > 0 ? '+' : ''}${Math.round(t.institutionNet / 1000)}K주`)
       return parts.filter(Boolean).join(' | ')
     }).join('\n')
 
@@ -193,13 +195,13 @@ ${candidateLines}
 - target_low: buy_high × 1.05~1.10 (5~10% 목표)
 - target_high: buy_high × 1.10~1.20 (10~20% 목표)
 - stop_loss: buy_low × 0.92~0.95 (5~8% 손절)
-- analyst_target: 최근 증권사 리포트 기준 (없으면 target_high × 1.1로 추정)
+- analyst_target: null로 고정 (증권사 리포트 데이터는 별도 수집됨)
 
-**수급 신호 추정 방법:**
-- 거래량 급증(1.5x 이상) + 가격 상승 → "기관↑" 또는 "외국인↑"
-- 거래량 급증 + 가격 하락 → "외국인 매도·기관 매수" 또는 반대
-- 거래량 보통 + 상승 → "개인 매수 우세"
-- 거래량 보통 + 횡보 → "관망세"
+**수급 신호 (실제 데이터 기반):**
+- 후보 종목 데이터에 실제 외국인/기관 순매수 수치가 포함됨 (양수=순매수, 음수=순매도)
+- supply_signal: 가장 지배적인 수급 방향을 1줄로 요약
+- supply_detail: 실제 수치 포함 (예: "외국인 +3,672K주 / 기관 +2,608K주")
+- 외국인/기관 데이터 없는 경우만 거래량 패턴으로 추정
 
 반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
 {
@@ -242,6 +244,25 @@ ${candidateLines}
       const p = realPrices[r.ticker]
       const t = techMap[r.ticker]
       const currentPrice = p?.price ?? p?.previousClose ?? null
+
+      // 수급 신호: 실제 기관/외국인 데이터로 교체
+      const fn = t?.foreignNet ?? null
+      const inst = t?.institutionNet ?? null
+      const supplySignal = (() => {
+        if (fn == null && inst == null) return r.supply_signal
+        if ((fn ?? 0) > 0 && (inst ?? 0) > 0) return '기관·외인 동반매수'
+        if ((fn ?? 0) < 0 && (inst ?? 0) < 0) return '기관·외인 동반매도'
+        if ((fn ?? 0) > 0) return '외국인↑'
+        if ((inst ?? 0) > 0) return '기관↑'
+        return '기관·외인 동반매도'
+      })()
+      const supplyDetail = (() => {
+        const parts: string[] = []
+        if (fn != null) parts.push(`외국인 ${fn > 0 ? '+' : ''}${Math.round(fn / 1000)}K주`)
+        if (inst != null) parts.push(`기관 ${inst > 0 ? '+' : ''}${Math.round(inst / 1000)}K주`)
+        return parts.length > 0 ? parts.join(' / ') : r.supply_detail
+      })()
+
       return {
         ...r,
         current_price: currentPrice,
@@ -257,6 +278,9 @@ ${candidateLines}
         price_vs_ma5:     r.price_vs_ma5     || (t?.ma5Signal      ?? '데이터 없음'),
         ma_alignment:     r.ma_alignment     || (t?.maAlignmentSignal ?? '데이터 없음'),
         bollinger_status: r.bollinger_status || (t?.bollingerStatusText ?? '데이터 없음'),
+        supply_signal: supplySignal,
+        supply_detail: supplyDetail,
+        analyst_target: t?.analystTarget ?? null,
         // from 미설정 — 차트 API 기본 range(10d 스윙) 사용. today ISO를 넘기면 period1=오늘이 되어 데이터 없음
       }
     })

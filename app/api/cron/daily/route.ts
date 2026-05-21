@@ -298,6 +298,8 @@ function formatCandidatesContext(
       }
       parts.push(cpLabel[t.candlePattern] ?? t.candlePattern)
     }
+    if (t?.foreignNet != null) parts.push(`외국인${t.foreignNet > 0 ? '+' : ''}${Math.round(t.foreignNet / 1000)}K주`)
+    if (t?.institutionNet != null) parts.push(`기관${t.institutionNet > 0 ? '+' : ''}${Math.round(t.institutionNet / 1000)}K주`)
     lines.push(parts.join(' | '))
   }
   return lines.join('\n')
