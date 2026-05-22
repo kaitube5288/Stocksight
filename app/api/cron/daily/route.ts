@@ -53,7 +53,7 @@ async function runDailyAnalysis() {
     const todayDate = getKSTDate()
     const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
-    // 1. 뉴스 직접 수집 + 임팩트 분석 (07:00 KST 실시간)
+    // 1. 뉴스 직접 수집 + 임팩트 분석 (08:00 KST 실시간)
     //    기존 news_cache DB 읽기(09:00 크론 의존) 방식을 대체 — 뉴스가 분석 전에 반드시 수집됨을 보장
     const { news: freshNews, analyzed: analyzedNews } = await fetchAndAnalyzeNews()
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
