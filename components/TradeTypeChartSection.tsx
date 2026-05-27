@@ -4,11 +4,18 @@ import { useState } from 'react'
 import StockChart from './StockChart'
 import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 
+interface ReturnStats {
+  cumulative: number | null
+  average:    number | null
+  winRate:    number | null
+  count:      number
+}
+
 interface Props {
-  tradeType:        '단타' | '스윙' | '중기'
-  entries:          ActiveChartEntry[]
-  onDismiss:        (entry: ActiveChartEntry) => void
-  cumulativeReturn: number | null
+  tradeType:   '단타' | '스윙' | '중기'
+  entries:     ActiveChartEntry[]
+  onDismiss:   (entry: ActiveChartEntry) => void
+  returnStats: ReturnStats
 }
 
 const TRADE_META = {
@@ -17,17 +24,18 @@ const TRADE_META = {
   '중기': { label: '중기 수익률 추적', sub: '일봉 · 20거래일',  color: 'var(--accent-green)' },
 }
 
-export default function TradeTypeChartSection({ tradeType, entries, onDismiss, cumulativeReturn }: Props) {
+export default function TradeTypeChartSection({ tradeType, entries, onDismiss, returnStats }: Props) {
   const [open, setOpen] = useState(false)
   const meta = TRADE_META[tradeType]
 
-  if (!entries.length && cumulativeReturn == null) return null
+  const hasStats = returnStats.average != null
+  if (!entries.length && !hasStats) return null
 
   // 한국 주식 색상 관례: 수익=빨강, 손실=파랑
-  const isProfit = cumulativeReturn != null && cumulativeReturn >= 0
-  const cumColor   = isProfit ? '#ff4d4d' : '#4d94ff'
-  const cumBg      = isProfit ? 'rgba(255,77,77,0.12)' : 'rgba(77,148,255,0.12)'
-  const cumBorder  = isProfit ? 'rgba(255,77,77,0.35)' : 'rgba(77,148,255,0.35)'
+  const isProfit = returnStats.average != null && returnStats.average >= 0
+  const statColor  = isProfit ? '#ff4d4d' : '#4d94ff'
+  const statBg     = isProfit ? 'rgba(255,77,77,0.12)' : 'rgba(77,148,255,0.12)'
+  const statBorder = isProfit ? 'rgba(255,77,77,0.35)' : 'rgba(77,148,255,0.35)'
 
   return (
     <div
@@ -64,14 +72,26 @@ export default function TradeTypeChartSection({ tradeType, entries, onDismiss, c
           )}
         </div>
 
-        {/* 누적 수익률 + 펼치기 버튼 */}
+        {/* 수익률 통계 + 펼치기 버튼 */}
         <div className="flex items-center gap-2">
-          {cumulativeReturn != null && (
+          {returnStats.average != null && (
             <span
               className="mono text-xs font-bold px-2 py-0.5 rounded-md"
-              style={{ background: cumBg, color: cumColor, border: `1px solid ${cumBorder}` }}
+              style={{ background: statBg, color: statColor, border: `1px solid ${statBorder}` }}
             >
-              누적 {isProfit ? '+' : ''}{cumulativeReturn.toFixed(2)}%
+              평균 {isProfit ? '+' : ''}{returnStats.average.toFixed(2)}%
+            </span>
+          )}
+          {returnStats.winRate != null && (
+            <span
+              className="mono text-xs px-2 py-0.5 rounded-md"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                color: 'rgba(255,255,255,0.45)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
+              승률 {returnStats.winRate.toFixed(0)}% ({returnStats.count}건)
             </span>
           )}
           {entries.length > 0 && (

@@ -134,12 +134,13 @@ async function runDailyAnalysis() {
     // 거래중단/상폐 종목 제거
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
-    // B: 기술적 지표 필터링 — RSI 과매수(>75) 또는 MACD 데드크로스 종목 제거
+    // B: 기술적 지표 필터링 — RSI 극과매수(>85) 또는 MACD 데드크로스 종목 제거
+    // 불장에서 주도주는 RSI 75~85 구간을 유지하므로 상한을 85로 완화
     result.recommendations = result.recommendations.filter(r => {
       const tech = techMap[r.ticker]
       if (!tech) return true
-      if (tech.rsi14 !== null && tech.rsi14 > 75) {
-        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 과매수 제거`)
+      if (tech.rsi14 !== null && tech.rsi14 > 85) {
+        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 극과매수 제거`)
         return false
       }
       if (tech.macdSignal === 'sell') {

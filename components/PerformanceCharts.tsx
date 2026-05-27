@@ -7,6 +7,13 @@ import type { ActiveChartEntry } from '@/app/api/active-charts/route'
 type TT = '단타' | '스윙' | '중기'
 type Sections = Record<TT, ActiveChartEntry[]>
 
+interface ReturnStats {
+  cumulative: number | null
+  average:    number | null
+  winRate:    number | null
+  count:      number
+}
+
 interface DismissedRecord {
   key:       string
   tradeType: TT
@@ -48,9 +55,11 @@ export default function PerformanceCharts() {
   const [dismissed, setDismissed]   = useState<Map<string, DismissedRecord>>(new Map())
   const [showDismissed, setShowDismissed] = useState(false)
 
-  // 만료 종목 누적 수익률 (서버 계산)
-  const [cumulative, setCumulative] = useState<Record<TT, number | null>>({
-    '단타': null, '스윙': null, '중기': null,
+  // 만료 종목 수익률 통계 (서버 계산)
+  const [returnStats, setReturnStats] = useState<Record<TT, ReturnStats>>({
+    '단타': { cumulative: null, average: null, winRate: null, count: 0 },
+    '스윙': { cumulative: null, average: null, winRate: null, count: 0 },
+    '중기': { cumulative: null, average: null, winRate: null, count: 0 },
   })
 
   useEffect(() => { setDismissed(loadDismissed()) }, [])
@@ -59,7 +68,9 @@ export default function PerformanceCharts() {
   useEffect(() => {
     fetch('/api/expired-returns')
       .then(r => r.json())
-      .then(d => { if (d.cumulative) setCumulative(d.cumulative) })
+      .then(d => {
+        if (d.stats) setReturnStats(d.stats)
+      })
       .catch(() => {})
   }, [])
 
@@ -193,9 +204,9 @@ export default function PerformanceCharts() {
         </div>
       ) : (
         <>
-          <TradeTypeChartSection tradeType="단타" entries={filtered['단타']} onDismiss={(e) => dismiss('단타', e)} cumulativeReturn={cumulative['단타']} />
-          <TradeTypeChartSection tradeType="스윙" entries={filtered['스윙']} onDismiss={(e) => dismiss('스윙', e)} cumulativeReturn={cumulative['스윙']} />
-          <TradeTypeChartSection tradeType="중기" entries={filtered['중기']} onDismiss={(e) => dismiss('중기', e)} cumulativeReturn={cumulative['중기']} />
+          <TradeTypeChartSection tradeType="단타" entries={filtered['단타']} onDismiss={(e) => dismiss('단타', e)} returnStats={returnStats['단타']} />
+          <TradeTypeChartSection tradeType="스윙" entries={filtered['스윙']} onDismiss={(e) => dismiss('스윙', e)} returnStats={returnStats['스윙']} />
+          <TradeTypeChartSection tradeType="중기" entries={filtered['중기']} onDismiss={(e) => dismiss('중기', e)} returnStats={returnStats['중기']} />
         </>
       )}
     </div>

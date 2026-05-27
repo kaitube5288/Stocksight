@@ -49,7 +49,8 @@ async function getPriceNearDate(ticker: string, targetDate: Date): Promise<numbe
 }
 
 type StockRecord = { ticker: string; name: string; buy_price: number; trade_type: string }
-type Group = { ticker: string; name: string; firstBuyPrice: number; latestRecDate: Date }
+// latestBuyPrice: 재추천 시 최신 추천가로 갱신 → 최신 추천 기준 수익률 측정
+type Group = { ticker: string; name: string; firstBuyPrice: number; latestBuyPrice: number; latestRecDate: Date }
 
 export async function GET() {
   const supabase = getSupabase()
@@ -63,7 +64,7 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // 거래유형별로 ticker 기준 그룹핑 (active-charts와 동일한 dedup 로직)
+  // 거래유형별로 ticker 기준 그룹핑
   const groups: Record<TT, Map<string, Group>> = {
     '단타': new Map(), '스윙': new Map(), '중기': new Map(),
   }
@@ -77,10 +78,13 @@ export async function GET() {
       if (!existing) {
         groups[tt].set(stock.ticker, {
           ticker: stock.ticker, name: stock.name,
-          firstBuyPrice: stock.buy_price, latestRecDate: recDate,
+          firstBuyPrice: stock.buy_price,
+          latestBuyPrice: stock.buy_price,
+          latestRecDate: recDate,
         })
       } else if (recDate > existing.latestRecDate) {
         existing.latestRecDate = recDate
+        existing.latestBuyPrice = stock.buy_price  // 재추천 시 최신 추천가로 갱신
       }
     }
   }
@@ -102,20 +106,45 @@ export async function GET() {
     expiredItems.map(({ group, expiresAt }) => getPriceNearDate(group.ticker, expiresAt))
   )
 
-  // 섹션별 수익률 집계
+  // 섹션별 수익률 집계 — 최신 추천가(latestBuyPrice) 기준
   const returnsByTT: Record<TT, number[]> = { '단타': [], '스윙': [], '중기': [] }
   expiredItems.forEach(({ tt, group }, i) => {
     const exitPrice = exitPrices[i]
-    if (exitPrice == null || !group.firstBuyPrice) return
-    const returnPct = ((exitPrice - group.firstBuyPrice) / group.firstBuyPrice) * 100
+    if (exitPrice == null || !group.latestBuyPrice) return
+    const returnPct = ((exitPrice - group.latestBuyPrice) / group.latestBuyPrice) * 100
     returnsByTT[tt].push(returnPct)
   })
 
-  const cumulative: Record<TT, number | null> = { '단타': null, '스윙': null, '중기': null }
-  for (const tt of ['단타', '스윙', '중기'] as TT[]) {
-    const arr = returnsByTT[tt]
-    if (arr.length > 0) cumulative[tt] = arr.reduce((a, b) => a + b, 0)
+  type Stats = { cumulative: number | null; average: number | null; winRate: number | null; count: number }
+  const stats: Record<TT, Stats> = {
+    '단타': { cumulative: null, average: null, winRate: null, count: 0 },
+    '스윙': { cumulative: null, average: null, winRate: null, count: 0 },
+    '중기': { cumulative: null, average: null, winRate: null, count: 0 },
   }
 
-  return NextResponse.json({ cumulative, expiredCount: expiredItems.length })
+  for (const tt of ['단타', '스윙', '중기'] as TT[]) {
+    const arr = returnsByTT[tt]
+    if (arr.length === 0) continue
+    const sum = arr.reduce((a, b) => a + b, 0)
+    const wins = arr.filter(r => r >= 0).length
+    stats[tt] = {
+      cumulative: sum,                          // 단순합산 (기존 호환)
+      average: sum / arr.length,               // 평균 수익률
+      winRate: (wins / arr.length) * 100,      // 승률 (%)
+      count: arr.length,
+    }
+  }
+
+  // 기존 필드 호환 유지
+  const cumulative: Record<TT, number | null> = {
+    '단타': stats['단타'].cumulative,
+    '스윙': stats['스윙'].cumulative,
+    '중기': stats['중기'].cumulative,
+  }
+
+  return NextResponse.json({
+    cumulative,
+    stats,
+    expiredCount: expiredItems.length,
+  })
 }

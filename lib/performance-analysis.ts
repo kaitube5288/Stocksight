@@ -77,10 +77,10 @@ export async function buildPerformanceInsights(): Promise<string> {
 
     if (!recs?.length) return ''
 
-    // ticker+tradeType 기준 dedup (최신 추천일 기준 만기 계산)
+    // ticker+tradeType 기준 dedup (최신 추천일 기준 만기 및 기준가 계산)
     type Group = {
       ticker: string; name: string; tradeType: TT
-      firstBuyPrice: number; latestRecDate: Date
+      latestBuyPrice: number; latestRecDate: Date
       rsi14: number | null; macdSignal: string | null; trend: string | null
     }
     const groups = new Map<string, Group>()
@@ -95,11 +95,15 @@ export async function buildPerformanceInsights(): Promise<string> {
         if (!ex) {
           groups.set(key, {
             ticker: s.ticker, name: s.name, tradeType: tt,
-            firstBuyPrice: s.buy_price, latestRecDate: recDate,
+            latestBuyPrice: s.buy_price, latestRecDate: recDate,
             rsi14: s.rsi14 ?? null, macdSignal: s.macd_signal ?? null, trend: s.trend ?? null,
           })
         } else if (recDate > ex.latestRecDate) {
           ex.latestRecDate = recDate
+          ex.latestBuyPrice = s.buy_price  // 재추천 시 최신 추천가로 갱신
+          ex.rsi14 = s.rsi14 ?? ex.rsi14
+          ex.macdSignal = s.macd_signal ?? ex.macdSignal
+          ex.trend = s.trend ?? ex.trend
         }
       }
     }
@@ -120,12 +124,12 @@ export async function buildPerformanceInsights(): Promise<string> {
     const expired: ExpiredStock[] = []
     expiredGroups.forEach((g, i) => {
       const exitPrice = exitPrices[i]
-      if (!exitPrice || !g.firstBuyPrice) return
+      if (!exitPrice || !g.latestBuyPrice) return
       expired.push({
         ticker: g.ticker, name: g.name, tradeType: g.tradeType,
         sector: TICKER_SECTOR.get(g.ticker) ?? null,
-        buyPrice: g.firstBuyPrice,
-        returnPct: ((exitPrice - g.firstBuyPrice) / g.firstBuyPrice) * 100,
+        buyPrice: g.latestBuyPrice,
+        returnPct: ((exitPrice - g.latestBuyPrice) / g.latestBuyPrice) * 100,
         rsi14: g.rsi14, macdSignal: g.macdSignal, trend: g.trend,
       })
     })
@@ -216,23 +220,24 @@ export async function buildPerformanceInsights(): Promise<string> {
       if (bot.length) L.push(`  • 성과 부진 섹터 기피 (부득이 추천 시 reasoning에 명시): ${bot.join(', ')}`)
     }
 
-    // 거래유형별 조건 강화/완화
+    // 거래유형별 조건 조정 — RSI 범위를 과도하게 좁히지 않음 (불장 악순환 방지)
     for (const [tt, s] of typeStats) {
       const wr  = s.wins / s.total * 100
       const avg = s.sumReturn / s.total
       if (wr < 35) {
-        L.push(`  • [${tt}] 승률 위험(${Math.round(wr)}%) — 진입 기준 최강화: RSI 40~55, MACD↑ 필수, BB하단 근접 필수`)
+        // 승률 위험 시에도 RSI를 40~55로 제한하지 않음 — 대신 모멘텀/뉴스 기준 강화
+        L.push(`  • [${tt}] 승률 위험(${Math.round(wr)}%) — MACD↑ 필수, BB하단 근접 우선, 뉴스/공시 모멘텀 필수 (RSI 범위는 유지)`)
       } else if (wr < 50) {
-        L.push(`  • [${tt}] 승률 저조(${Math.round(wr)}%) — 진입 조건 강화: MACD↑ 필수, 추세↑ 우선`)
+        L.push(`  • [${tt}] 승률 저조(${Math.round(wr)}%) — MACD↑ 우선, 추세↑ 필수, 기관/외국인 수급 확인`)
       } else if (wr >= 65 && avg > 1.5) {
         L.push(`  • [${tt}] 고성과(승률 ${Math.round(wr)}%, 평균 +${avg.toFixed(1)}%) — 현재 조건 유지`)
       }
     }
 
-    // RSI 상한 동적 조정
+    // RSI 상한 — 불장 주도주 배제 방지: 하한은 75 이상 유지
     if (winnersRsi != null && losersRsi != null && losersRsi > winnersRsi + 5) {
-      const optCap = Math.min(65, Math.round(winnersRsi) + 8)
-      L.push(`  • RSI 상한 ${optCap}로 하향 조정 (수익 평균 ${winnersRsi.toFixed(1)} vs 손실 평균 ${losersRsi.toFixed(1)})`)
+      const optCap = Math.max(75, Math.round(winnersRsi) + 10)  // 최소 75 이상 유지
+      L.push(`  • RSI 상한 참고값 ${optCap} (수익 평균 ${winnersRsi.toFixed(1)} vs 손실 평균 ${losersRsi.toFixed(1)}) — 85 초과만 배제`)
     }
 
     // MACD 필터 조정
