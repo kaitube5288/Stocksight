@@ -18,3 +18,6 @@ ALTER TABLE strategy_improvements ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "public read" ON strategy_improvements
   FOR SELECT USING (true);
+
+-- 2026-10-30 Supabase 정책 변경 대응: public 스키마 테이블에 명시적 GRANT 부여
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.strategy_improvements TO anon, authenticated;

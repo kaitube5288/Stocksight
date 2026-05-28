@@ -102,3 +102,11 @@ CREATE POLICY "Public read historical_patterns" ON historical_patterns FOR SELEC
 CREATE POLICY "Public read dart_disclosures" ON dart_disclosures FOR SELECT USING (true);
 CREATE POLICY "Public read market_events" ON market_events FOR SELECT USING (true);
 CREATE POLICY "Public read market_feedback" ON market_feedback FOR SELECT USING (true);
+
+-- 2026-10-30 Supabase 정책 변경 대응: public 스키마 테이블에 명시적 GRANT 부여
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.recommendations TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.news_cache TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.historical_patterns TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.dart_disclosures TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_events TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_feedback TO anon, authenticated;
