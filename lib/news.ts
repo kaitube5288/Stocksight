@@ -213,11 +213,16 @@ export async function fetchNaverFinanceRSS(): Promise<NewsItem[]> {
 // 전날 저녁 ~ 당일 아침 뉴스 수집 (기존 함수, 하위호환)
 export async function fetchOvernightNews(): Promise<NewsItem[]> {
   const queries = [
-    '한국 주식 증시',
-    '코스피 코스닥',
-    '반도체 주가',
-    '2차전지 주가',
-    '바이오 주가',
+    '코스피 코스닥 급등 오늘',
+    '외국인 기관 순매수 종목',
+    '반도체 HBM AI칩 주가',
+    '2차전지 전고체 배터리 주가',
+    '바이오 신약 임상 FDA',
+    '방산 조선 원자력 수주',
+    '로봇 자동화 휴머노이드 주가',
+    '전선 전력망 데이터센터 주가',
+    '미국 관세 무역 한국 주식',
+    '코스닥 테마주 급등 주도주',
   ]
 
   const allNews: NewsItem[] = []
@@ -240,16 +245,16 @@ export async function fetchOvernightNews(): Promise<NewsItem[]> {
 // 실시간 뉴스 수집 + 분석 (크론 직접 호출용)
 export async function fetchAndAnalyzeNews(): Promise<{ news: NewsItem[]; analyzed: AnalyzedNews[] }> {
   const queries = [
-    '코스피 코스닥 오늘',
-    '한국 주식 급등',
-    '반도체 AI 주가',
-    '2차전지 전기차 주가',
-    '바이오 제약 임상',
-    '원자력 방산 조선 주가',
+    '코스피 코스닥 급등 오늘',
+    '외국인 기관 순매수 급등',
+    '반도체 HBM AI칩 주가',
+    '2차전지 전고체 배터리 주가',
+    '바이오 신약 임상 FDA',
+    '원자력 방산 조선 수주',
     '금융 보험 증권 주가',
-    '전선 전력망 케이블 주가',
-    '레이저 광학 수소 연료전지 주가',
-    '경제 뉴스 오늘',
+    '전선 전력망 데이터센터 주가',
+    '로봇 자동화 휴머노이드 주가',
+    '미국 관세 무역 한국 주식',
   ]
 
   const all: NewsItem[] = []
