@@ -8,7 +8,7 @@ import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
-import { fetchAndAnalyzeNews, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
+import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
 import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 
@@ -53,19 +53,9 @@ async function runDailyAnalysis() {
     const todayDate = getKSTDate()
     const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
-    // 1. 뉴스 직접 수집 + 임팩트 분석 (08:00 KST 실시간)
-    //    기존 news_cache DB 읽기(09:00 크론 의존) 방식을 대체 — 뉴스가 분석 전에 반드시 수집됨을 보장
-    const { news: freshNews, analyzed: analyzedNews } = await fetchAndAnalyzeNews()
+    // 1. 뉴스 수집: 07:30 크론이 채운 news_cache DB를 우선 읽고, 없으면 직접 수집 fallback
+    const { news: freshNews, analyzed: analyzedNews } = await getNewsFromCacheOrFetch()
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
-
-    // 수집한 뉴스를 news_cache에 저장 (이력 보관 — 실패해도 분석 계속)
-    if (freshNews.length > 0) {
-      void (async () => {
-        try {
-          await supabaseAdmin.from('news_cache').insert({ news: freshNews, fetched_at: new Date().toISOString() })
-        } catch { /* ignore */ }
-      })()
-    }
 
     // 2. DART 공시 + 시장 지표 + 환율/금시세 병렬 수집
     const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice] = await Promise.all([

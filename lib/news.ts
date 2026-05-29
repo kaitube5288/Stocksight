@@ -1,6 +1,7 @@
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import Parser from 'rss-parser'
+import { getSupabaseAdmin } from '@/lib/supabase'
 
 const rssParser = new Parser({ timeout: 10000 })
 
@@ -281,6 +282,27 @@ export async function fetchAndAnalyzeNews(): Promise<{ news: NewsItem[]; analyze
 // 하위호환 — app/api/news/route.ts 에서 사용
 export async function fetchLiveEconomicNews(): Promise<NewsItem[]> {
   return fetchOvernightNews()
+}
+
+// news_cache DB에서 최신 뉴스 읽기 (2시간 이내). 캐시 미존재 시 직접 수집 fallback.
+export async function getNewsFromCacheOrFetch(): Promise<{ news: NewsItem[]; analyzed: AnalyzedNews[] }> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    const { data: cached } = await supabase
+      .from('news_cache')
+      .select('news, fetched_at')
+      .gte('fetched_at', twoHoursAgo)
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .single()
+    if (cached?.news && Array.isArray(cached.news) && (cached.news as NewsItem[]).length > 0) {
+      const news = cached.news as NewsItem[]
+      const analyzed = analyzeNews(news)
+      return { news, analyzed }
+    }
+  } catch { /* cache miss — fallback */ }
+  return fetchAndAnalyzeNews()
 }
 
 export function formatNewsForPrompt(news: NewsItem[]): string {
