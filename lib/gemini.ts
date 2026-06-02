@@ -172,6 +172,14 @@ ${params.dartDisclosures}
 
 ## 현재 시장 지표 (KOSPI / KOSDAQ / USD-KRW)
 ${params.marketContext}
+${params.marketContext.includes('[🚀 불장 감지]') ? `
+⚠️ 불장 모멘텀 전략 (강세장 전용 — 위 필터보다 우선 적용):
+- 🚀신고가돌파 태그 종목을 단타/스윙 우선 후보로 선택
+- RSI 75 초과여도 추세↑ + 거래량급증 + 신고가 돌파이면 단타/스윙 추천 가능 (RSI 80 상한)
+- 저점매수(볼린저 하단) 전략 대신 고점돌파 모멘텀 전략 우선 적용
+- AI/IT 플랫폼 뉴스 기반 수혜주(NAVER·LG전자·통신사 등)는 RSI 무관하게 단타 우선 검토
+- expected_return 목표를 +3~5%로 상향 가능 (강세장 모멘텀은 더 크게 움직임)
+` : ''}
 
 ## 유사 과거 패턴
 ${params.historicalPatterns}

@@ -66,7 +66,15 @@ async function runDailyAnalysis() {
     ])
 
     const dartText = formatDisclosuresForPrompt(disclosures)
-    const marketText = formatMarketContext({ kospi, kosdaq, usdkrw })
+
+    // 불장 여부를 Gemini 호출 전에 먼저 판단 (마켓 컨텍스트에 주입)
+    const kospiChangePct = (kospi && kospi.previousClose > 0) ? (kospi.price - kospi.previousClose) / kospi.previousClose * 100 : 0
+    const kosdaqChangePct = (kosdaq && kosdaq.previousClose > 0) ? (kosdaq.price - kosdaq.previousClose) / kosdaq.previousClose * 100 : 0
+    const isBullMarket = kospiChangePct >= 1 || kosdaqChangePct >= 1
+    const bullMarketNote = isBullMarket
+      ? `\n[🚀 불장 감지] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% — 강세장 모멘텀 전략 적용: 신고가 돌파 종목 우선, RSI 상한 80까지 예외 허용`
+      : ''
+    const marketText = formatMarketContext({ kospi, kosdaq, usdkrw }) + bullMarketNote
 
     // 3. 섹터 키워드 추출 (분석된 뉴스 임팩트 가중치 기반: high 3점, medium 1점)
     //    과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
@@ -130,12 +138,9 @@ async function runDailyAnalysis() {
     // 거래중단/상폐 종목 제거
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
-    // 불장 여부 판단: KOSPI 또는 KOSDAQ 당일 +1% 이상이면 불장으로 간주 → RSI 상한 80까지 허용
-    const kospiChange = (kospi && kospi.previousClose > 0) ? (kospi.price - kospi.previousClose) / kospi.previousClose * 100 : 0
-    const kosdaqChange = (kosdaq && kosdaq.previousClose > 0) ? (kosdaq.price - kosdaq.previousClose) / kosdaq.previousClose * 100 : 0
-    const isBullMarket = kospiChange >= 1 || kosdaqChange >= 1
+    // isBullMarket은 Gemini 호출 전에 이미 계산됨 (marketText에 주입됨)
     const rsiThreshold = isBullMarket ? 80 : 75
-    console.log(`[불장판단] KOSPI ${kospiChange.toFixed(2)}% / KOSDAQ ${kosdaqChange.toFixed(2)}% → RSI 임계 ${rsiThreshold} (불장: ${isBullMarket})`)
+    console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → RSI 임계 ${rsiThreshold} (불장: ${isBullMarket})`)
 
     // B: 기술적 지표 필터링 — RSI 과매수(>75, 불장 시 >80) 또는 MACD 데드크로스 종목 제거
     result.recommendations = result.recommendations.filter(r => {
@@ -263,10 +268,10 @@ async function runDailyAnalysis() {
 
 // 후보 종목 풀 선정 — 뉴스 관련 섹터 + 방어주
 const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
-  '반도체': ['반도체'], 'AI': ['반도체', '로봇', 'IT'], '2차전지': ['2차전지'],
+  '반도체': ['반도체'], 'AI': ['반도체', '로봇', 'IT', '통신'], '2차전지': ['2차전지'],
   '바이오': ['바이오', '제약'], '자동차': ['자동차'], '철강': ['철강'],
   '화학': ['화학'], '금융': ['금융', '보험'], '부동산': ['건설'],
-  '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT'], '게임': ['게임'],
+  '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT', '통신'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
   '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
   '반도체소재': ['반도체소재'], '전자부품': ['전자부품'], '전장': ['전장'],
@@ -303,6 +308,7 @@ function formatCandidatesContext(
     if (t?.volumeSurge != null && t.volumeSurge >= 1.5) parts.push(`거래량${t.volumeSurge.toFixed(1)}x`)
     if (t?.bollingerSignal === 'buy')  parts.push('BB하단근접')
     if (t?.bollingerSignal === 'sell') parts.push('BB상단근접')
+    if (t?.isNearHighBreakout) parts.push('🚀신고가돌파')
     if (t?.supportLevel != null)    parts.push(`지지${t.supportLevel.toLocaleString()}`)
     if (t?.resistanceLevel != null) parts.push(`저항${t.resistanceLevel.toLocaleString()}`)
     if (t?.candlePattern) {

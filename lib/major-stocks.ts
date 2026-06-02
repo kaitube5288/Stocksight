@@ -24,9 +24,10 @@ export const MAJOR_STOCKS = [
   { ticker: '005380', name: '현대차', sector: '자동차' },
   { ticker: '000270', name: '기아', sector: '자동차' },
   { ticker: '012330', name: '현대모비스', sector: '자동차' },
-  // IT/인터넷
+  // IT/인터넷/AI 플랫폼
   { ticker: '035420', name: 'NAVER', sector: 'IT' },
   { ticker: '035720', name: '카카오', sector: 'IT' },
+  { ticker: '066570', name: 'LG전자', sector: 'IT' },
   { ticker: '037030', name: '파워넷', sector: 'IT' },
   // 게임
   { ticker: '251270', name: '넷마블', sector: '게임' },

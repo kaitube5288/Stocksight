@@ -481,6 +481,7 @@ export type TechnicalIndicators = {
   bollingerWidth: number | null                     // 밴드폭 % (변동성 지표)
   supportLevel: number | null                       // 60일 저점(지지선)
   resistanceLevel: number | null                    // 60일 고점(저항선)
+  isNearHighBreakout: boolean                       // 현재가 >= 60일 고점의 98% → 신고가 돌파 신호
   candlePattern: 'hammer' | 'shooting_star' | 'doji' | 'bullish_engulfing' | 'bearish_engulfing' | null
   foreignNet: number | null                         // 최신 영업일 외국인 순매수 (주)
   institutionNet: number | null                     // 최신 영업일 기관 순매수 (주)
@@ -596,7 +597,7 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
   const empty: TechnicalIndicators = {
     rsi14: null, macdSignal: null, trend: null,
     volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
-    supportLevel: null, resistanceLevel: null, candlePattern: null,
+    supportLevel: null, resistanceLevel: null, isNearHighBreakout: false, candlePattern: null,
     foreignNet: null, institutionNet: null,
   }
   try {
@@ -659,11 +660,14 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
       ? detectCandlePattern(opens, highs, lows, closes)
       : null
 
+    const isNearHighBreakout = sr != null && last > 0 && last >= sr.resistance * 0.98
+
     return {
       rsi14, macdSignal, trend,
       volumeSurge, bollingerSignal, bollingerWidth,
       supportLevel: sr?.support ?? null,
       resistanceLevel: sr?.resistance ?? null,
+      isNearHighBreakout,
       candlePattern,
       foreignNet: naverScrape.foreignNet,
       institutionNet: naverScrape.institutionNet,
@@ -753,7 +757,7 @@ export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedT
   const base: DetailedTechnicals = {
     rsi14: null, macdSignal: null, trend: null,
     volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
-    supportLevel: null, resistanceLevel: null, candlePattern: null,
+    supportLevel: null, resistanceLevel: null, isNearHighBreakout: false, candlePattern: null,
     foreignNet: null, institutionNet: null,
     ma5: null, ma20: null, ma60: null, high52w: null, low52w: null,
     ma5Signal: '데이터 없음', maAlignmentSignal: '데이터 없음',
@@ -892,11 +896,14 @@ export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedT
       else priceSignal = '안정적 흐름'
     }
 
+    const isNearHighBreakout = sr != null && last > 0 && last >= sr.resistance * 0.98
+
     return {
       rsi14, macdSignal, trend,
       volumeSurge, bollingerSignal, bollingerWidth,
       supportLevel: sr?.support ?? null,
       resistanceLevel: sr?.resistance ?? null,
+      isNearHighBreakout,
       candlePattern,
       foreignNet: naverScrape.foreignNet,
       institutionNet: naverScrape.institutionNet,
