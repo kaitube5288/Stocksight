@@ -20,10 +20,10 @@ jobs:
       - name: Create Vercel project settings
         run: |
           mkdir -p .vercel
-          echo '{"projectId":"${{ secrets.VERCEL_PROJECT_ID }}","orgId":"${{ secrets.VERCEL_ORG_ID }}"}' > .vercel/project.json
+          echo '{"projectId":"prj_jC7wCHEbBkyO997r3wY7fqZWG3r3","orgId":"team_3OM4y3AS1j8DnuGgPoehfcwK"}' > .vercel/project.json
 
       - name: Deploy to Vercel Production
         run: vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: team_3OM4y3AS1j8DnuGgPoehfcwK
+          VERCEL_PROJECT_ID: prj_jC7wCHEbBkyO997r3wY7fqZWG3r3
