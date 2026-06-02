@@ -17,6 +17,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel@latest
 
+      - name: Create Vercel project settings
+        run: |
+          mkdir -p .vercel
+          echo '{"projectId":"${{ secrets.VERCEL_PROJECT_ID }}","orgId":"${{ secrets.VERCEL_ORG_ID }}"}' > .vercel/project.json
+
       - name: Deploy to Vercel Production
         run: vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
         env:
