@@ -112,25 +112,37 @@ async function runDailyAnalysis() {
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 
-    // 4-2. 현재가 + 펀더멘털 + 기술적 지표 병렬 조회
+    // 4-2. 현재가 + 펀더멘털 + 기술적 지표 + 전일 급등 종목 병렬 조회
     const tickers = result.recommendations.map(r => r.ticker)
-    const [realPrices, fundamentals, technicals] = await Promise.all([
+    // 전일 KST 날짜 계산
+    const kstYesterday = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    kstYesterday.setDate(kstYesterday.getDate() - 1)
+    const yesterdayStr = kstYesterday.toISOString().slice(0, 10)
+    const [realPrices, fundamentals, technicals, prevDayFeedbackRes] = await Promise.all([
       getRealPrices(tickers),
       getFundamentalsMap(tickers),
       Promise.all(tickers.map(t => fetchTechnicalIndicators(t))),
+      supabaseAdmin.from('market_feedback').select('ticker').eq('date', yesterdayStr),
     ])
+    const prevDayGainerTickers = new Set((prevDayFeedbackRes.data ?? []).map((f: { ticker: string }) => f.ticker))
     const techMap = Object.fromEntries(tickers.map((t, i) => [t, technicals[i]]))
 
     // 거래중단/상폐 종목 제거
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
-    // B: 기술적 지표 필터링 — RSI 극과매수(>85) 또는 MACD 데드크로스 종목 제거
-    // 불장에서 주도주는 RSI 75~85 구간을 유지하므로 상한을 85로 완화
+    // 불장 여부 판단: KOSPI 또는 KOSDAQ 당일 +1% 이상이면 불장으로 간주 → RSI 상한 80까지 허용
+    const kospiChange = (kospi && kospi.previousClose > 0) ? (kospi.price - kospi.previousClose) / kospi.previousClose * 100 : 0
+    const kosdaqChange = (kosdaq && kosdaq.previousClose > 0) ? (kosdaq.price - kosdaq.previousClose) / kosdaq.previousClose * 100 : 0
+    const isBullMarket = kospiChange >= 1 || kosdaqChange >= 1
+    const rsiThreshold = isBullMarket ? 80 : 75
+    console.log(`[불장판단] KOSPI ${kospiChange.toFixed(2)}% / KOSDAQ ${kosdaqChange.toFixed(2)}% → RSI 임계 ${rsiThreshold} (불장: ${isBullMarket})`)
+
+    // B: 기술적 지표 필터링 — RSI 과매수(>75, 불장 시 >80) 또는 MACD 데드크로스 종목 제거
     result.recommendations = result.recommendations.filter(r => {
       const tech = techMap[r.ticker]
       if (!tech) return true
-      if (tech.rsi14 !== null && tech.rsi14 > 85) {
-        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 극과매수 제거`)
+      if (tech.rsi14 !== null && tech.rsi14 > rsiThreshold) {
+        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 과매수 제거 (임계: ${rsiThreshold})`)
         return false
       }
       if (tech.macdSignal === 'sell') {
@@ -139,6 +151,17 @@ async function runDailyAnalysis() {
       }
       return true
     })
+
+    // C: 전일 급등 종목 단타 제외 (갭상승 고점 진입 방지 — 이미 시장에 뉴스 반영됨)
+    if (prevDayGainerTickers.size > 0) {
+      result.recommendations = result.recommendations.filter(r => {
+        if (r.trade_type === '단타' && prevDayGainerTickers.has(r.ticker)) {
+          console.log(`[필터-전일급등] ${r.name}(${r.ticker}) 전일 급등 단타 제외`)
+          return false
+        }
+        return true
+      })
+    }
 
     // 확률 상한 95% 캡핑
     result.recommendations = result.recommendations.map(r => ({

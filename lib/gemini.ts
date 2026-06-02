@@ -122,11 +122,11 @@ export async function generateRecommendations(params: {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
 ⚠️ 핵심 필터 규칙 (반드시 준수):
-1. RSI > 70 종목은 과매수 구간 — 절대 추천 금지
+1. RSI > 75 종목은 과매수 구간 — 추천 금지 (KOSPI/KOSDAQ 당일 +1%↑ 강세장에서는 RSI 80까지 예외 허용)
 2. MACD↓(데드크로스) 종목은 하락 모멘텀 — 추천 금지
 3. 추세↓(하락추세) 종목은 중기 추천 금지
 4. PBR > 5 이상 고평가 종목은 중기 추천 금지
-
+${params.strategyImprovements ? `\n⚠️ 전략 보완 규칙 (이전 손실 자기진단 기반 — 위 핵심 필터와 동일 수준으로 반드시 준수):\n${params.strategyImprovements}\n` : ''}
 ⚠️ 하락장 판단 기준 및 대응 규칙:
 
 아래 4개 영역 중 2개 이상 해당하거나 1개라도 강도가 강하면 "[하락장 위험]"으로 판단한다.
@@ -161,7 +161,7 @@ export async function generateRecommendations(params: {
 
 ## 오늘 날짜
 ${params.date}
-${params.strategyImprovements ? `\n## 🛠 전략 자동 보완 (누적 수익률 미달 자기진단 — 최우선 적용)\n${params.strategyImprovements}\n` : ''}${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}${params.marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${params.marketFeedbackInsights}\n` : ''}
+${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}${params.marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${params.marketFeedbackInsights}\n` : ''}
 ## 수집된 뉴스 (당일 08:40 KST 실시간 수집 — 임팩트 티어별 분류)
 ★ HIGH: 실적·수주·수급·정책 → 섹터/종목 즉각 반영 필수
 • MEDIUM: 일반 뉴스 → 참고 반영  ○ LOW: 전망·우려 → 배경 참고
@@ -190,7 +190,7 @@ ${params.candidatesContext ? `\n## 후보 종목 실제 데이터 (PER·PBR·ROE
 - 경쟁 우위(Moat) 유무 / 시장 점유율 / 경영진 신뢰도
 
 ### 3. 기술적 분석 (0~25점) — 핵심 필터 적용
-- RSI: 30~80 구간이 유효 (85↑만 추천 금지 — 불장에서 주도주는 RSI 70~85 구간 유지)
+- RSI: 30~75 구간이 유효 (75↑만 추천 금지 — 불장 강세장에서는 RSI 80까지 예외 허용)
 - MACD: 골든크로스(MACD↑) 우선, 상승추세이면 중립도 허용
 - 추세: 상승추세(추세↑) 우선, 하락추세(추세↓) 기피
 
@@ -200,12 +200,13 @@ ${params.candidatesContext ? `\n## 후보 종목 실제 데이터 (PER·PBR·ROE
 ---
 
 ## 투자 유형별 추천 (총 9종목)
-- 단타 (1일 목표): RSI 35~80 + (MACD↑ 우선 또는 거래량급증↑) + 강한 뉴스/공시 모멘텀, 매수가 = 당일 시가 예상
+- 단타 (1일 목표): RSI 35~65 + (MACD↑ 우선 또는 거래량급증↑) + 강한 뉴스/공시 모멘텀, 매수가 = 당일 시가 예상
   * 볼린저밴드 하단 근접(buy) 종목 우선 / 캔들패턴 hammer·doji 우선
   * 추세↓ 종목 단타도 금지
-- 스윙 (3~5일 목표): 추세↑ + RSI 45~80 + MACD↑ 또는 거래량급증, 매수가 = 전일 종가
-  * 지지선 근접 종목 우선 / 불장 모멘텀 종목은 RSI 80까지 허용
-- 중기 (2~4주 목표): ROE 8%↑ + PBR 3 이하 + 추세↑ + RSI 85 미만, 매수가 = 전일 종가
+  * RSI 65 초과 종목은 단타 절대 금지 — 이미 오른 종목 고점 진입 위험
+- 스윙 (3~5일 목표): 추세↑ + RSI 45~75 + MACD↑ 또는 거래량급증, 매수가 = 전일 종가
+  * 지지선 근접 종목 우선 / 불장 강세장에서만 RSI 80까지 예외 허용
+- 중기 (2~4주 목표): ROE 8%↑ + PBR 3 이하 + 추세↑ + RSI 70 미만, 매수가 = 전일 종가
   * PER 낮고 PBR 1 이하면 가산점
 
 각 유형별 3종목씩, probability 높은 순. 동일 종목 중복 금지.
