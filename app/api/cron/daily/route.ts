@@ -114,7 +114,7 @@ async function runDailyAnalysis() {
           getFundamentalsMap(extraTickers),
           Promise.all(extraTickers.map(t => fetchTechnicalIndicators(t))),
         ])
-      : [{}  as Record<string, import('@/lib/stock-data').StockFundamentals>, [] as TechnicalIndicators[]]
+      : [{} as Record<string, StockFundamentals>, [] as TechnicalIndicators[]]
 
     const extraTechMap = Object.fromEntries(extraTickers.map((t, i) => [t, extraTechRaw[i]]))
 
