@@ -29,6 +29,7 @@ export const MAJOR_STOCKS = [
   { ticker: '035720', name: '카카오', sector: 'IT' },
   { ticker: '066570', name: 'LG전자', sector: 'IT' },
   { ticker: '037030', name: '파워넷', sector: 'IT' },
+  { ticker: '385490', name: 'LG CNS', sector: 'IT' },
   // 게임
   { ticker: '251270', name: '넷마블', sector: '게임' },
   { ticker: '036570', name: 'NC소프트', sector: '게임' },

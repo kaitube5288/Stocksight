@@ -51,7 +51,7 @@ const SECTOR_KEYWORDS: Record<string, string[]> = {
     '젠슨황', 'Jensen Huang', '엔비디아 방한', 'NVIDIA 방한', 'NVIDIA CEO',
     'AI 협력', 'AI 협약', 'AI 파트너십', 'AI 소프트웨어', 'AI 플랫폼',
     '빅테크 방한', 'CEO 방한', 'MS 방한', '마이크로소프트', '구글 방한',
-    'LG전자', 'LG AI', 'KT AI', 'SKT AI', 'AI 클라우드',
+    'LG전자', 'LG AI', 'KT AI', 'SKT AI', 'AI 클라우드', 'LG CNS',
   ],
   '게임':   ['게임', '넥슨', '엔씨소프트', '크래프톤', '넷마블'],
   '조선':   ['조선', '선박', 'LNG선', '수주잔량', 'HD현대중공업', '삼성중공업'],

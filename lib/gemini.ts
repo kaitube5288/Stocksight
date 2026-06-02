@@ -118,6 +118,7 @@ export async function generateRecommendations(params: {
   performanceInsights?: string
   marketFeedbackInsights?: string
   strategyImprovements?: string
+  eventBeneficiaryContext?: string
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -162,7 +163,7 @@ ${params.strategyImprovements ? `\n⚠️ 전략 보완 규칙 (이전 손실 �
 ## 오늘 날짜
 ${params.date}
 ${params.performanceInsights ? `\n## 🔄 과거 추천 성과 피드백 (자동 학습 — 최우선 반영)\n${params.performanceInsights}\n` : ''}${params.marketFeedbackInsights ? `\n## 📈 전일 장마감 급등 패턴 분석 (수혜주 우선 반영)\n${params.marketFeedbackInsights}\n` : ''}
-## 수집된 뉴스 (당일 08:40 KST 실시간 수집 — 임팩트 티어별 분류)
+${params.eventBeneficiaryContext ? `## 🎯 이벤트 수혜주 사전 분석 (시장 기대감 반영 — 최우선 참고)\n${params.eventBeneficiaryContext}\n` : ''}## 수집된 뉴스 (당일 08:40 KST 실시간 수집 — 임팩트 티어별 분류)
 ★ HIGH: 실적·수주·수급·정책 → 섹터/종목 즉각 반영 필수
 • MEDIUM: 일반 뉴스 → 참고 반영  ○ LOW: 전망·우려 → 배경 참고
 ${params.todayNews}
@@ -249,6 +250,99 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
   if (!parsed.market_outlook) parsed.market_outlook = '시장 전망 데이터 없음'
   if (!parsed.risk_factors)   parsed.risk_factors   = '위험 요소 데이터 없음'
   return parsed
+}
+
+export type EventBeneficiaryResult = {
+  additionalTickers: Array<{ ticker: string; name: string; reason: string }>
+  analysisText: string
+}
+
+export async function analyzeEventBeneficiaries(highImpactNewsText: string): Promise<EventBeneficiaryResult> {
+  const empty: EventBeneficiaryResult = { additionalTickers: [], analysisText: '' }
+  if (!highImpactNewsText.trim()) return empty
+
+  const prompt = `당신은 한국 주식시장 이벤트 분석 전문가입니다.
+아래 HIGH 임팩트 뉴스를 읽고, 시장이 "기대감"으로 선반영할 수혜주를 추론하세요.
+
+핵심 원칙:
+1. 주식시장은 "현실"보다 "기대"를 먼저 삼는다. 계약이 없어도 협력 가능성만으로 주가가 선행한다.
+2. 직접 수혜(뉴스에 직접 언급된 기업)와 생태계 간접 수혜(공급망·파트너·유사 섹터)를 모두 분석하라.
+3. CEO 방한/면담: 면담 당사자 기업 + 해당 기술 생태계 연관 기업
+4. 정책 발표: 수혜 섹터 기업
+5. 기술 발표/협력: 부품·소재·소프트웨어 연관 기업
+
+HIGH 임팩트 뉴스:
+${highImpactNewsText}
+
+반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
+{
+  "events": [
+    {
+      "summary": "이벤트 1줄 요약",
+      "scenario": "왜 이 기업들이 수혜받는지 시나리오 (2문장 이내)",
+      "direct": [{"ticker": "6자리 종목코드", "name": "종목명", "reason": "직접 수혜 이유 한 줄"}],
+      "indirect": [{"ticker": "6자리 종목코드", "name": "종목명", "reason": "간접 수혜 이유 한 줄"}]
+    }
+  ],
+  "market_expectation_note": "시장이 이 이벤트들을 어떻게 해석하는지 1-2문장"
+}
+
+규칙:
+- ticker는 반드시 6자리 숫자 코드 (예: 035420)
+- 전체 종목 수 최대 8개 (direct + indirect 합산)
+- 확실한 수혜 근거가 없으면 포함 금지
+- 모르는 종목코드는 추측 금지`
+
+  try {
+    const text = await callGemini(prompt)
+    const jsonMatch = text.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return empty
+
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      events: Array<{
+        summary: string
+        scenario: string
+        direct: Array<{ ticker: string; name: string; reason: string }>
+        indirect: Array<{ ticker: string; name: string; reason: string }>
+      }>
+      market_expectation_note: string
+    }
+
+    if (!parsed.events || !Array.isArray(parsed.events)) return empty
+
+    // 6자리 숫자 종목코드만 유효
+    const allTickers: Array<{ ticker: string; name: string; reason: string }> = []
+    const seen = new Set<string>()
+    for (const ev of parsed.events) {
+      for (const item of [...(ev.direct ?? []), ...(ev.indirect ?? [])]) {
+        if (/^\d{6}$/.test(item.ticker) && !seen.has(item.ticker)) {
+          seen.add(item.ticker)
+          allTickers.push({ ticker: item.ticker, name: item.name, reason: item.reason })
+        }
+      }
+    }
+
+    // analysisText 생성 (메인 Gemini 프롬프트 주입용)
+    const lines: string[] = ['🎯 이벤트 수혜주 사전 분석 (시장 기대감 선반영 — 최우선 참고):']
+    for (const ev of parsed.events) {
+      lines.push(`• ${ev.summary}`)
+      lines.push(`  시나리오: ${ev.scenario}`)
+      if (ev.direct?.length) {
+        lines.push(`  직접 수혜: ${ev.direct.map(d => `${d.name}(${d.ticker}): ${d.reason}`).join(' / ')}`)
+      }
+      if (ev.indirect?.length) {
+        lines.push(`  간접 수혜: ${ev.indirect.map(d => `${d.name}(${d.ticker}): ${d.reason}`).join(' / ')}`)
+      }
+    }
+    if (parsed.market_expectation_note) {
+      lines.push(`💡 시장 해석: ${parsed.market_expectation_note}`)
+    }
+    lines.push('→ 직접 수혜주는 기술적 지표에 관계없이 단타/스윙 우선 후보로 검토하라.')
+
+    return { additionalTickers: allTickers.slice(0, 8), analysisText: lines.join('\n') }
+  } catch {
+    return empty
+  }
 }
 
 export async function analyzeNewsSimilarity(params: {

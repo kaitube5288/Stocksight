@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { generateRecommendations } from '@/lib/gemini'
+import { generateRecommendations, analyzeEventBeneficiaries } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
@@ -82,10 +82,17 @@ async function runDailyAnalysis() {
     const candidatePool = buildCandidatePool(keywords)
     const candidateTickers = candidatePool.map(c => c.ticker)
 
+    // HIGH 임팩트 뉴스 텍스트 (이벤트 수혜주 사전 분석용)
+    const highImpactNewsText = analyzedNews
+      .filter(n => n.impact === 'high')
+      .slice(0, 6)
+      .map(n => `• ${n.title}`)
+      .join('\n')
+
     // 누적 수익률 미달 섹션 자기진단 + 이전 개선 방향 읽기를 병렬 실행
     // runStrategyImprovementIfNeeded: 오늘 분석 결과 저장 (다음 회차 반영)
     // buildStrategyImprovementContext: 이전 회차 결과 읽기 (오늘 즉시 반영)
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
@@ -93,12 +100,37 @@ async function runDailyAnalysis() {
       buildPerformanceInsights(),
       buildMarketFeedbackInsights(),
       buildStrategyImprovementContext(),  // 이전 회차 자기진단 결과 읽기
+      highImpactNewsText ? analyzeEventBeneficiaries(highImpactNewsText) : Promise.resolve({ additionalTickers: [], analysisText: '' }),
     ])
 
-    const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
-    const candidatesContext = formatCandidatesContext(candidatePool, candidateFundamentals, candidateTechMap)
+    // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
+    const existingTickerSet = new Set(candidateTickers)
+    const extraTickers = eventBeneficiary.additionalTickers
+      .filter(t => /^\d{6}$/.test(t.ticker) && !existingTickerSet.has(t.ticker))
+      .map(t => t.ticker)
 
-    // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백)
+    const [extraFundamentals, extraTechRaw] = extraTickers.length > 0
+      ? await Promise.all([
+          getFundamentalsMap(extraTickers),
+          Promise.all(extraTickers.map(t => fetchTechnicalIndicators(t))),
+        ])
+      : [{}  as Record<string, import('@/lib/stock-data').StockFundamentals>, [] as TechnicalIndicators[]]
+
+    const extraTechMap = Object.fromEntries(extraTickers.map((t, i) => [t, extraTechRaw[i]]))
+
+    // 후보 풀 확장: 이벤트 수혜 종목 추가 (MAJOR_STOCKS에 없는 경우 sector='이벤트수혜'로 표시)
+    const extraCandidatePool = eventBeneficiary.additionalTickers
+      .filter(t => !existingTickerSet.has(t.ticker))
+      .map(t => ({ ticker: t.ticker, name: t.name, sector: '이벤트수혜' }))
+
+    const fullCandidatePool = [...candidatePool, ...extraCandidatePool]
+    const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
+    const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
+    const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
+
+    const candidatesContext = formatCandidatesContext(fullCandidatePool, fullCandidateFundamentals, fullCandidateTechMap)
+
+    // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 + 이벤트수혜주 컨텍스트)
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
@@ -110,6 +142,7 @@ async function runDailyAnalysis() {
       performanceInsights: performanceInsights || undefined,
       marketFeedbackInsights: marketFeedbackInsights || undefined,
       strategyImprovements: strategyImprovements || undefined,
+      eventBeneficiaryContext: eventBeneficiary.analysisText || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
