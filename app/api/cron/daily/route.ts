@@ -100,7 +100,9 @@ async function runDailyAnalysis() {
       buildPerformanceInsights(),
       buildMarketFeedbackInsights(),
       buildStrategyImprovementContext(),  // 이전 회차 자기진단 결과 읽기
-      highImpactNewsText ? analyzeEventBeneficiaries(highImpactNewsText) : Promise.resolve({ additionalTickers: [], analysisText: '' }),
+      highImpactNewsText
+        ? analyzeEventBeneficiaries(highImpactNewsText).catch(() => ({ additionalTickers: [], analysisText: '' }))
+        : Promise.resolve({ additionalTickers: [], analysisText: '' }),
     ])
 
     // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
