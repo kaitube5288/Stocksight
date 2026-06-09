@@ -350,6 +350,21 @@ export default function Home() {
                   <span className="text-xs" style={{ color: 'rgba(255,107,107,0.7)' }}>— 오늘 투자 자제 권고</span>
                 </div>
               )}
+              {!analyzing && recommendation?.market_outlook &&
+                (recommendation.market_outlook.includes('불장') || recommendation.market_outlook.includes('강세장')) &&
+                !recommendation.market_outlook.startsWith('[하락장 위험]') && (
+                <div
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+                  style={{
+                    background: 'rgba(34,197,94,0.15)',
+                    border: '1px solid rgba(74,222,128,0.45)',
+                  }}
+                >
+                  <span style={{ fontSize: '13px' }}>🚀</span>
+                  <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지</span>
+                  <span className="text-xs" style={{ color: 'rgba(74,222,128,0.7)' }}>— 모멘텀 전략 적용 중</span>
+                </div>
+              )}
             </div>
             {error && (
               <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)', paddingLeft: '2px' }}>
@@ -481,6 +496,14 @@ export default function Home() {
                       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'rgba(220,38,38,0.18)', border: '2px solid rgba(255,80,80,0.5)' }}>
                         <span style={{ fontSize: '16px' }}>⚠️</span>
                         <span className="text-xs font-bold" style={{ color: '#ff6b6b' }}>하락장 위험 — 오늘 투자 자제 권고</span>
+                      </div>
+                    )}
+                    {recommendation.market_outlook &&
+                      (recommendation.market_outlook.includes('불장') || recommendation.market_outlook.includes('강세장')) &&
+                      !recommendation.market_outlook.startsWith('[하락장 위험]') && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'rgba(34,197,94,0.18)', border: '2px solid rgba(74,222,128,0.5)' }}>
+                        <span style={{ fontSize: '16px' }}>🚀</span>
+                        <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지 — 모멘텀 전략 적용 중</span>
                       </div>
                     )}
                     <div>
