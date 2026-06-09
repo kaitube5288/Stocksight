@@ -938,3 +938,37 @@ export function formatMarketContext(params: {
   }
   return lines.join('\n') || '시장 데이터 없음'
 }
+
+// 네이버 금융 거래량 상위 페이지 스크래핑 — KOSPI(sosok=0) + KOSDAQ(sosok=1)
+export async function fetchVolumeTopStocks(limitPerMarket = 15): Promise<{ ticker: string; name: string }[]> {
+  const iconv = (await import('iconv-lite')).default
+  const results: { ticker: string; name: string }[] = []
+
+  for (const sosok of ['0', '1']) {
+    try {
+      const res = await axios.get(
+        `https://finance.naver.com/sise/sise_quant.nhn?sosok=${sosok}`,
+        {
+          headers: { ...HTML_HEADERS, 'Accept-Charset': 'euc-kr' },
+          responseType: 'arraybuffer',
+          timeout: 8000,
+        }
+      )
+      const html = iconv.decode(Buffer.from(res.data), 'euc-kr')
+      const seen = new Set<string>()
+      const codeMatches = html.matchAll(/\/item\/main\.nhn\?code=(\d{6})[^"]*"[^>]*>([^<]+)</g)
+      for (const m of codeMatches) {
+        const ticker = m[1]
+        const name = m[2].trim()
+        if (!ticker || !name || seen.has(ticker)) continue
+        seen.add(ticker)
+        results.push({ ticker, name })
+        if (seen.size >= limitPerMarket) break
+      }
+    } catch {
+      // 스크래핑 실패 시 해당 시장 건너뜀
+    }
+  }
+
+  return results
+}

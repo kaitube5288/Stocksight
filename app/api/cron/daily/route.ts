@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations, analyzeEventBeneficiaries } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -57,12 +57,13 @@ async function runDailyAnalysis() {
     const { news: freshNews, analyzed: analyzedNews } = await getNewsFromCacheOrFetch()
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
 
-    // 2. DART 공시 + 시장 지표 + 환율/금시세 병렬 수집
-    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice] = await Promise.all([
+    // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 병렬 수집
+    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks] = await Promise.all([
       getTodayDisclosures(),
       getMarketIndex(),
       getUSDKRW(),
       getGoldPrice(),
+      fetchVolumeTopStocks(15),
     ])
 
     const dartText = formatDisclosuresForPrompt(disclosures)
@@ -80,7 +81,15 @@ async function runDailyAnalysis() {
     //    과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
     const keywords = extractSectorsFromNews(analyzedNews)
     const candidatePool = buildCandidatePool(keywords)
-    const candidateTickers = candidatePool.map(c => c.ticker)
+
+    // 거래량 상위 종목 병합 (MAJOR_STOCKS에 없는 당일 급등 종목 최대 10개 추가)
+    const poolTickerSet = new Set(candidatePool.map(c => c.ticker))
+    const volumeCandidates = volumeTopStocks
+      .filter(s => !poolTickerSet.has(s.ticker))
+      .slice(0, 10)
+      .map(s => ({ ...s, sector: '거래량상위' }))
+    const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
+    const candidateTickers = mergedCandidatePool.map(c => c.ticker)
 
     // HIGH 임팩트 뉴스 텍스트 (이벤트 수혜주 사전 분석용)
     const highImpactNewsText = analyzedNews
@@ -125,7 +134,7 @@ async function runDailyAnalysis() {
       .filter(t => !existingTickerSet.has(t.ticker))
       .map(t => ({ ticker: t.ticker, name: t.name, sector: '이벤트수혜' }))
 
-    const fullCandidatePool = [...candidatePool, ...extraCandidatePool]
+    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool]
     const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
@@ -303,13 +312,22 @@ async function runDailyAnalysis() {
 
 // 후보 종목 풀 선정 — 뉴스 관련 섹터 + 방어주
 const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
-  '반도체': ['반도체'], 'AI': ['반도체', '로봇', 'IT', '통신'], '2차전지': ['2차전지'],
+  '반도체': ['반도체', '반도체소재'], 'AI': ['반도체', '로봇', 'IT', 'AI', '통신'], '2차전지': ['2차전지'],
   '바이오': ['바이오', '제약'], '자동차': ['자동차'], '철강': ['철강'],
-  '화학': ['화학'], '금융': ['금융', '보험'], '부동산': ['건설'],
-  '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT', '통신'], '게임': ['게임'],
+  '화학': ['화학'], '금융': ['금융', '보험', '증권'], '부동산': ['건설'],
+  '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT', 'AI', '통신'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
   '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
   '반도체소재': ['반도체소재'], '전자부품': ['전자부품'], '전장': ['전장'],
+  '화장품': ['화장품'], 'K뷰티': ['화장품'], '뷰티': ['화장품'],
+  '엔터': ['엔터'], '아이돌': ['엔터'], 'K팝': ['엔터'], '드라마': ['엔터'], '음악': ['엔터'],
+  '음식료': ['음식료'], '식품': ['음식료'], '라면': ['음식료'], '주류': ['음식료'],
+  '항공': ['항공해운'], '해운': ['항공해운'], '물류': ['항공해운'],
+  '의료기기': ['의료기기'], '헬스케어': ['의료기기', '바이오'],
+  '핀테크': ['핀테크'], '인터넷은행': ['핀테크'],
+  '클라우드': ['AI', 'IT'], 'SaaS': ['AI', 'IT'],
+  '신재생': ['신재생'], '풍력': ['신재생'], '태양광': ['태양광', '신재생'],
+  '증권': ['증권', '금융'],
 }
 
 function buildCandidatePool(keywords: string[]): { ticker: string; name: string; sector: string }[] {
@@ -321,7 +339,7 @@ function buildCandidatePool(keywords: string[]): { ticker: string; name: string;
     ['금융', '보험', '통신', '제약', '유통'].includes(s.sector) &&
     !related.find(r => r.ticker === s.ticker)
   )
-  return [...related, ...defensive].slice(0, 22)
+  return [...related, ...defensive].slice(0, 35)
 }
 
 function formatCandidatesContext(
