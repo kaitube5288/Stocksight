@@ -82,11 +82,11 @@ async function runDailyAnalysis() {
     const keywords = extractSectorsFromNews(analyzedNews)
     const candidatePool = buildCandidatePool(keywords)
 
-    // 거래량 상위 종목 병합 (MAJOR_STOCKS에 없는 당일 급등 종목 최대 10개 추가)
+    // 거래량 상위 종목 병합 (MAJOR_STOCKS에 없는 당일 급등 종목 최대 5개 추가)
     const poolTickerSet = new Set(candidatePool.map(c => c.ticker))
     const volumeCandidates = volumeTopStocks
       .filter(s => !poolTickerSet.has(s.ticker))
-      .slice(0, 10)
+      .slice(0, 5)
       .map(s => ({ ...s, sector: '거래량상위' }))
     const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
     const candidateTickers = mergedCandidatePool.map(c => c.ticker)
@@ -339,7 +339,7 @@ function buildCandidatePool(keywords: string[]): { ticker: string; name: string;
     ['금융', '보험', '통신', '제약', '유통'].includes(s.sector) &&
     !related.find(r => r.ticker === s.ticker)
   )
-  return [...related, ...defensive].slice(0, 35)
+  return [...related, ...defensive].slice(0, 25)
 }
 
 function formatCandidatesContext(
