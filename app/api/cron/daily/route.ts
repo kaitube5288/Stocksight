@@ -63,7 +63,7 @@ async function runDailyAnalysis() {
       getMarketIndex(),
       getUSDKRW(),
       getGoldPrice(),
-      fetchVolumeTopStocks(15),
+      fetchVolumeTopStocks(15).catch(() => [] as { ticker: string; name: string }[]),
     ])
 
     const dartText = formatDisclosuresForPrompt(disclosures)

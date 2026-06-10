@@ -940,8 +940,10 @@ export function formatMarketContext(params: {
 }
 
 // 네이버 금융 거래량 상위 페이지 스크래핑 — KOSPI(sosok=0) + KOSDAQ(sosok=1)
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const iconv = require('iconv-lite') as typeof import('iconv-lite')
+
 export async function fetchVolumeTopStocks(limitPerMarket = 15): Promise<{ ticker: string; name: string }[]> {
-  const iconv = (await import('iconv-lite')).default
   const results: { ticker: string; name: string }[] = []
 
   for (const sosok of ['0', '1']) {
