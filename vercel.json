@@ -8,10 +8,6 @@
     {
       "path": "/api/cron/market-close",
       "schedule": "0 7 * * 1-5"
-    },
-    {
-      "path": "/api/news",
-      "schedule": "30 22 * * *"
     }
   ]
 }

@@ -351,7 +351,7 @@ export default function Home() {
                 </div>
               )}
               {!analyzing && recommendation?.market_outlook &&
-                (recommendation.market_outlook.includes('불장') || recommendation.market_outlook.includes('강세장')) &&
+                recommendation.market_outlook.includes('불장 감지') &&
                 !recommendation.market_outlook.startsWith('[하락장 위험]') && (
                 <div
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl"

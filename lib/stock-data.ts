@@ -940,9 +940,6 @@ export function formatMarketContext(params: {
 }
 
 // 네이버 금융 거래량 상위 페이지 스크래핑 — KOSPI(sosok=0) + KOSDAQ(sosok=1)
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const iconv = require('iconv-lite') as typeof import('iconv-lite')
-
 export async function fetchVolumeTopStocks(limitPerMarket = 15): Promise<{ ticker: string; name: string }[]> {
   const results: { ticker: string; name: string }[] = []
 
@@ -956,7 +953,7 @@ export async function fetchVolumeTopStocks(limitPerMarket = 15): Promise<{ ticke
           timeout: 8000,
         }
       )
-      const html = iconv.decode(Buffer.from(res.data), 'euc-kr')
+      const html = new TextDecoder('euc-kr').decode(res.data as ArrayBuffer)
       const seen = new Set<string>()
       const codeMatches = html.matchAll(/\/item\/main\.nhn\?code=(\d{6})[^"]*"[^>]*>([^<]+)</g)
       for (const m of codeMatches) {
