@@ -243,6 +243,11 @@ async function runDailyAnalysis() {
       }
     })
 
+    // 불장 감지 시 market_outlook 앞에 태그 삽입 (Gemini가 자유롭게 쓰는 표현에 의존하지 않고 확정적으로 붙임)
+    if (isBullMarket && !result.market_outlook.startsWith('[불장 감지]')) {
+      result.market_outlook = `[불장 감지] ${result.market_outlook}`
+    }
+
     // 5. Supabase 저장
     await supabaseAdmin.from('recommendations').delete().eq('date', todayDate)
     const { data, error } = await supabaseAdmin
