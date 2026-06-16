@@ -150,19 +150,6 @@ export default function Home() {
     loadRecommendations()
   }, [loadRecommendations])
 
-  useEffect(() => {
-    const fetchMarket = async () => {
-      try {
-        const res = await fetch('/api/market')
-        const data = await res.json()
-        setMarketData(data)
-      } catch { /* 실패 무시 */ }
-    }
-    fetchMarket()
-    const interval = setInterval(fetchMarket, 60 * 1000)
-    return () => clearInterval(interval)
-  }, [])
-
   const isBullMarket = (marketData?.kospi?.changePercent ?? 0) >= 1 || (marketData?.kosdaq?.changePercent ?? 0) >= 1
 
 
@@ -288,7 +275,7 @@ export default function Home() {
 
       {/* 마켓 바 */}
       <div className="mb-5">
-        <MarketBar />
+        <MarketBar onData={setMarketData} />
       </div>
 
       {/* 분석 실행 버튼 / 인라인 비밀번호 입력 */}

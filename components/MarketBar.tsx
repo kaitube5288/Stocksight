@@ -8,7 +8,11 @@ type MarketData = {
   usdkrw: number | null
 }
 
-export default function MarketBar() {
+type Props = {
+  onData?: (data: MarketData) => void
+}
+
+export default function MarketBar({ onData }: Props) {
   const [market, setMarket] = useState<MarketData>({ kospi: null, kosdaq: null, usdkrw: null })
   const [time, setTime] = useState('')
 
@@ -18,6 +22,7 @@ export default function MarketBar() {
         const res = await fetch('/api/market')
         const data = await res.json()
         setMarket(data)
+        onData?.(data)
       } catch {
         // 실패 무시
       }
@@ -26,7 +31,7 @@ export default function MarketBar() {
     fetchMarket()
     const interval = setInterval(fetchMarket, 60 * 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [onData])
 
   useEffect(() => {
     const tick = () => {
