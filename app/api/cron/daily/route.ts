@@ -183,15 +183,21 @@ async function runDailyAnalysis() {
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
     // isBullMarket은 Gemini 호출 전에 이미 계산됨 (marketText에 주입됨)
-    const rsiThreshold = isBullMarket ? 80 : 75
-    console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → RSI 임계 ${rsiThreshold} (불장: ${isBullMarket})`)
+    // 거래유형별 RSI 상한 — 프롬프트 규칙을 코드 레벨에서 강제 적용
+    const rsiMaxByType: Record<string, number> = {
+      '단타': isBullMarket ? 70 : 65,  // 단타: RSI 65 초과 금지 (불장 시 70까지)
+      '스윙': isBullMarket ? 80 : 75,
+      '중기': isBullMarket ? 75 : 70,
+    }
+    console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → 단타RSI≤${rsiMaxByType['단타']} / 스윙RSI≤${rsiMaxByType['스윙']} / 중기RSI≤${rsiMaxByType['중기']} (불장: ${isBullMarket})`)
 
-    // B: 기술적 지표 필터링 — RSI 과매수(>75, 불장 시 >80) 또는 MACD 데드크로스 종목 제거
+    // B: 기술적 지표 필터링 — 거래유형별 RSI 상한 초과 또는 MACD 데드크로스 종목 제거
     result.recommendations = result.recommendations.filter(r => {
       const tech = techMap[r.ticker]
       if (!tech) return true
-      if (tech.rsi14 !== null && tech.rsi14 > rsiThreshold) {
-        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 과매수 제거 (임계: ${rsiThreshold})`)
+      const maxRsi = rsiMaxByType[r.trade_type ?? '단타'] ?? 75
+      if (tech.rsi14 !== null && tech.rsi14 > maxRsi) {
+        console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 제거 (${r.trade_type} 상한: ${maxRsi})`)
         return false
       }
       if (tech.macdSignal === 'sell') {
