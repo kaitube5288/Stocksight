@@ -150,7 +150,10 @@ export default function Home() {
     loadRecommendations()
   }, [loadRecommendations])
 
-  const isBullMarket = (marketData?.kospi?.changePercent ?? 0) >= 1 || (marketData?.kosdaq?.changePercent ?? 0) >= 1
+  // 불장 감지: 라이브 지수 +1% 이상 OR 저장된 AI 분석이 강세장 판단
+  const isBullMarketLive = (marketData?.kospi?.changePercent ?? 0) >= 1 || (marketData?.kosdaq?.changePercent ?? 0) >= 1
+  const isBullMarketStored = !!(recommendation?.market_outlook?.includes('불장') || recommendation?.market_outlook?.includes('강세장'))
+  const isBullMarket = isBullMarketLive || isBullMarketStored
 
 
   const handleAnalysisClick = () => {
