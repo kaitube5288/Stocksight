@@ -100,6 +100,7 @@ export default function Home() {
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [liveData, setLiveData] = useState<Record<string, { price: number | null; per: number | null; pbr: number | null; roe: number | null }>>({})
+  const [marketData, setMarketData] = useState<{ kospi: { changePercent: number } | null; kosdaq: { changePercent: number } | null } | null>(null)
 
   const { permission, requestPermission, notify } = usePushNotification()
   const prevDateRef = useRef<string | null>(null)
@@ -148,6 +149,21 @@ export default function Home() {
   useEffect(() => {
     loadRecommendations()
   }, [loadRecommendations])
+
+  useEffect(() => {
+    const fetchMarket = async () => {
+      try {
+        const res = await fetch('/api/market')
+        const data = await res.json()
+        setMarketData(data)
+      } catch { /* 실패 무시 */ }
+    }
+    fetchMarket()
+    const interval = setInterval(fetchMarket, 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const isBullMarket = (marketData?.kospi?.changePercent ?? 0) >= 1 || (marketData?.kosdaq?.changePercent ?? 0) >= 1
 
 
   const handleAnalysisClick = () => {
@@ -350,9 +366,8 @@ export default function Home() {
                   <span className="text-xs" style={{ color: 'rgba(255,107,107,0.7)' }}>— 오늘 투자 자제 권고</span>
                 </div>
               )}
-              {!analyzing && recommendation?.market_outlook &&
-                recommendation.market_outlook.includes('불장 감지') &&
-                !recommendation.market_outlook.startsWith('[하락장 위험]') && (
+              {!analyzing && isBullMarket &&
+                !recommendation?.market_outlook?.startsWith('[하락장 위험]') && (
                 <div
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
                   style={{
