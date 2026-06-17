@@ -106,6 +106,79 @@ export async function getMarketIndex(): Promise<{
   return { kospi, kosdaq }
 }
 
+// ─── 불장 강도 분석 ───────────────────────────────────────────────────────────
+
+export type BullCategory = {
+  indexMomentum: boolean  // 거시/수급 — KOSPI or KOSDAQ >= +1%
+  volatility: boolean     // 변동성/공포 — VIX < 20
+  trend: boolean          // 연속성/추세 — KOSPI > 20일 이동평균
+  breadth: boolean        // 섹터 확산  — KOSPI & KOSDAQ 동반 플러스
+  global: boolean         // 글로벌 연동 — NASDAQ 전일 +1% 이상 or 원화 강세
+}
+
+export type BullStrength = {
+  score: number
+  grade: 'S' | 'A' | 'B' | null
+  categories: BullCategory
+}
+
+async function fetchSimpleQuote(symbol: string): Promise<{ price: number; changePercent: number } | null> {
+  try {
+    const res = await axios.get(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+      { headers: YF_HEADERS, timeout: 8000 }
+    )
+    const meta = res.data?.chart?.result?.[0]?.meta
+    if (!meta) return null
+    return { price: meta.regularMarketPrice ?? 0, changePercent: meta.regularMarketChangePercent ?? 0 }
+  } catch { return null }
+}
+
+async function fetchKospiMA20(): Promise<{ price: number; ma20: number } | null> {
+  try {
+    const res = await axios.get(
+      'https://query1.finance.yahoo.com/v8/finance/chart/%5EKS11?interval=1d&range=60d',
+      { headers: YF_HEADERS, timeout: 10000 }
+    )
+    const result = res.data?.chart?.result?.[0]
+    if (!result) return null
+    const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? []
+    const valid = closes.filter((c): c is number => c != null && !isNaN(c))
+    if (valid.length < 20) return null
+    const ma20 = valid.slice(-20).reduce((a, b) => a + b, 0) / 20
+    return { price: valid[valid.length - 1], ma20 }
+  } catch { return null }
+}
+
+export async function getBullStrength(
+  kospi: StockQuote | null,
+  kosdaq: StockQuote | null,
+): Promise<BullStrength> {
+  const [vix, nasdaq, kospiTrend, usdkrwQuote] = await Promise.all([
+    fetchSimpleQuote('^VIX').catch(() => null),
+    fetchSimpleQuote('^IXIC').catch(() => null),
+    fetchKospiMA20().catch(() => null),
+    fetchSimpleQuote('KRW=X').catch(() => null),  // USD/KRW: changePercent < 0 = 원화 강세
+  ])
+
+  const kospiPct  = kospi?.changePercent ?? 0
+  const kosdaqPct = kosdaq?.changePercent ?? 0
+
+  const categories: BullCategory = {
+    indexMomentum: kospiPct >= 1 || kosdaqPct >= 1,
+    volatility:    vix != null ? vix.price < 20 : false,
+    trend:         kospiTrend != null ? kospiTrend.price > kospiTrend.ma20 : false,
+    breadth:       kospiPct > 0 && kosdaqPct > 0,
+    global:        (nasdaq != null && nasdaq.changePercent >= 1) ||
+                   (usdkrwQuote != null && usdkrwQuote.changePercent < -0.3),
+  }
+
+  const score = Object.values(categories).filter(Boolean).length
+  const grade: BullStrength['grade'] = score === 5 ? 'S' : score === 4 ? 'A' : score >= 3 ? 'B' : null
+
+  return { score, grade, categories }
+}
+
 // USD/KRW 환율
 export async function getUSDKRW(): Promise<number | null> {
   try {

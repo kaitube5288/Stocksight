@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import RecommendationCard from '@/components/RecommendationCard'
 import NewsPanel from '@/components/NewsPanel'
-import MarketBar from '@/components/MarketBar'
+import MarketBar, { MarketData } from '@/components/MarketBar'
 import PerformanceCharts from '@/components/PerformanceCharts'
 import AIRecommendationPage from '@/components/AIRecommendationPage'
 import MacroCharts from '@/components/MacroCharts'
@@ -100,7 +100,7 @@ export default function Home() {
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [liveData, setLiveData] = useState<Record<string, { price: number | null; per: number | null; pbr: number | null; roe: number | null }>>({})
-  const [marketData, setMarketData] = useState<{ kospi: { changePercent: number } | null; kosdaq: { changePercent: number } | null } | null>(null)
+  const [marketData, setMarketData] = useState<MarketData | null>(null)
 
   const { permission, requestPermission, notify } = usePushNotification()
   const prevDateRef = useRef<string | null>(null)
@@ -150,10 +150,18 @@ export default function Home() {
     loadRecommendations()
   }, [loadRecommendations])
 
-  // 불장 감지: 라이브 지수 +1% 이상 OR 저장된 AI 분석이 강세장 판단
-  const isBullMarketLive = (marketData?.kospi?.changePercent ?? 0) >= 1 || (marketData?.kosdaq?.changePercent ?? 0) >= 1
+  // 불장 등급: 라이브 5개 카테고리 점수 기반 (S/A/B) — 라이브 미로드 시 저장된 AI 판단으로 폴백
+  const bullGrade = marketData?.bullStrength?.grade ?? null
+  const bullScore = marketData?.bullStrength?.score ?? 0
   const isBullMarketStored = !!(recommendation?.market_outlook?.includes('불장') || recommendation?.market_outlook?.includes('강세장'))
-  const isBullMarket = isBullMarketLive || isBullMarketStored
+  const showBullBadge = (bullGrade !== null || isBullMarketStored) &&
+    !recommendation?.market_outlook?.startsWith('[하락장 위험]')
+
+  const BULL_BADGE = {
+    S: { icon: '🔥', label: 'S급 불장', sub: `전 항목 강세 (${bullScore}/5)`, bg: 'rgba(251,146,60,0.15)', border: 'rgba(251,146,60,0.5)', color: '#fb923c', pulse: true },
+    A: { icon: '🚀', label: 'A급 불장', sub: `강세 신호 (${bullScore}/5)`,    bg: 'rgba(34,197,94,0.15)',  border: 'rgba(74,222,128,0.45)', color: '#4ade80', pulse: false },
+    B: { icon: '📈', label: 'B급 불장', sub: `부분 강세 (${bullScore}/5)`,    bg: 'rgba(6,182,212,0.12)',  border: 'rgba(34,211,238,0.4)',  color: '#22d3ee', pulse: false },
+  } as const
 
 
   const handleAnalysisClick = () => {
@@ -356,20 +364,25 @@ export default function Home() {
                   <span className="text-xs" style={{ color: 'rgba(255,107,107,0.7)' }}>— 오늘 투자 자제 권고</span>
                 </div>
               )}
-              {!analyzing && isBullMarket &&
-                !recommendation?.market_outlook?.startsWith('[하락장 위험]') && (
-                <div
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
-                  style={{
-                    background: 'rgba(34,197,94,0.15)',
-                    border: '1px solid rgba(74,222,128,0.45)',
-                  }}
-                >
-                  <span style={{ fontSize: '13px' }}>🚀</span>
-                  <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지</span>
-                  <span className="text-xs" style={{ color: 'rgba(74,222,128,0.7)' }}>— 모멘텀 전략 적용 중</span>
-                </div>
-              )}
+              {!analyzing && showBullBadge && (() => {
+                const b = bullGrade ? BULL_BADGE[bullGrade] : null
+                if (b) return (
+                  <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl${b.pulse ? ' animate-pulse' : ''}`}
+                    style={{ background: b.bg, border: `1px solid ${b.border}` }}>
+                    <span style={{ fontSize: '13px' }}>{b.icon}</span>
+                    <span className="text-xs font-bold" style={{ color: b.color }}>{b.label}</span>
+                    <span className="text-xs" style={{ color: `${b.color}B0` }}>{b.sub}</span>
+                  </div>
+                )
+                return (
+                  <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+                    style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(74,222,128,0.3)' }}>
+                    <span style={{ fontSize: '13px' }}>🚀</span>
+                    <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지</span>
+                    <span className="text-xs" style={{ color: 'rgba(74,222,128,0.6)' }}>— 모멘텀 전략 적용 중</span>
+                  </div>
+                )
+              })()}
             </div>
             {error && (
               <span className="text-xs" style={{ color: 'rgba(255,150,150,0.8)', paddingLeft: '2px' }}>
@@ -503,14 +516,24 @@ export default function Home() {
                         <span className="text-xs font-bold" style={{ color: '#ff6b6b' }}>하락장 위험 — 오늘 투자 자제 권고</span>
                       </div>
                     )}
-                    {recommendation.market_outlook &&
-                      (recommendation.market_outlook.includes('불장') || recommendation.market_outlook.includes('강세장')) &&
-                      !recommendation.market_outlook.startsWith('[하락장 위험]') && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'rgba(34,197,94,0.18)', border: '2px solid rgba(74,222,128,0.5)' }}>
-                        <span style={{ fontSize: '16px' }}>🚀</span>
-                        <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지 — 모멘텀 전략 적용 중</span>
-                      </div>
-                    )}
+                    {showBullBadge && (() => {
+                      const b = bullGrade ? BULL_BADGE[bullGrade] : null
+                      if (b) return (
+                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl${b.pulse ? ' animate-pulse' : ''}`}
+                          style={{ background: b.bg.replace('0.15', '0.18').replace('0.12', '0.15'), border: `2px solid ${b.border}` }}>
+                          <span style={{ fontSize: '16px' }}>{b.icon}</span>
+                          <span className="text-sm font-bold" style={{ color: b.color }}>{b.label} — 모멘텀 전략 적용 중</span>
+                          <span className="text-xs" style={{ color: `${b.color}99` }}>{b.sub}</span>
+                        </div>
+                      )
+                      return (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                          style={{ background: 'rgba(34,197,94,0.18)', border: '2px solid rgba(74,222,128,0.5)' }}>
+                          <span style={{ fontSize: '16px' }}>🚀</span>
+                          <span className="text-xs font-bold" style={{ color: '#4ade80' }}>불장 감지 — 모멘텀 전략 적용 중</span>
+                        </div>
+                      )
+                    })()}
                     <div>
                       <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>전망</div>
                       <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getMarketIndex, getUSDKRW } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getBullStrength } from '@/lib/stock-data'
 
 export async function GET() {
   try {
@@ -7,8 +7,9 @@ export async function GET() {
       getMarketIndex(),
       getUSDKRW(),
     ])
+    const bullStrength = await getBullStrength(kospi, kosdaq).catch(() => null)
 
-    return NextResponse.json({ kospi, kosdaq, usdkrw })
+    return NextResponse.json({ kospi, kosdaq, usdkrw, bullStrength })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })
   }

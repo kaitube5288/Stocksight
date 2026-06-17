@@ -2,10 +2,21 @@
 
 import { useEffect, useState } from 'react'
 
-type MarketData = {
+export type MarketData = {
   kospi: { price: number; changePercent: number } | null
   kosdaq: { price: number; changePercent: number } | null
   usdkrw: number | null
+  bullStrength: {
+    score: number
+    grade: 'S' | 'A' | 'B' | null
+    categories: {
+      indexMomentum: boolean
+      volatility: boolean
+      trend: boolean
+      breadth: boolean
+      global: boolean
+    }
+  } | null
 }
 
 type Props = {
