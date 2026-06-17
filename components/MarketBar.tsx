@@ -24,7 +24,7 @@ type Props = {
 }
 
 export default function MarketBar({ onData }: Props) {
-  const [market, setMarket] = useState<MarketData>({ kospi: null, kosdaq: null, usdkrw: null })
+  const [market, setMarket] = useState<MarketData>({ kospi: null, kosdaq: null, usdkrw: null, bullStrength: null })
   const [time, setTime] = useState('')
 
   useEffect(() => {
