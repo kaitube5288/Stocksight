@@ -16,12 +16,15 @@ export const MAJOR_STOCKS = [
   { ticker: '222800', name: '심텍', sector: '반도체' },
   { ticker: '036200', name: '유니셈', sector: '반도체' },
   { ticker: '095340', name: 'ISC', sector: '반도체' },
-  // 반도체 소재 (FCCL·동박·식각액 등)
+  { ticker: '080220', name: '제주반도체', sector: '반도체' },
+  { ticker: '007660', name: '이수페타시스', sector: '반도체' },
+  // 반도체 소재 (FCCL·동박·식각액·특수가스 등)
   { ticker: '011790', name: 'SKC', sector: '반도체소재' },
   { ticker: '112290', name: '와이씨켐', sector: '반도체소재' },
   { ticker: '426550', name: '이엔에프테크놀로지', sector: '반도체소재' },
   { ticker: '357780', name: '솔브레인', sector: '반도체소재' },
   { ticker: '005290', name: '동진쎄미켐', sector: '반도체소재' },
+  { ticker: '104830', name: '원익머트리얼즈', sector: '반도체소재' },
   // 2차전지
   { ticker: '373220', name: 'LG에너지솔루션', sector: '2차전지' },
   { ticker: '051910', name: 'LG화학', sector: '2차전지' },
@@ -172,11 +175,13 @@ export const MAJOR_STOCKS = [
   { ticker: '265520', name: 'AP시스템', sector: '레이저' },
   { ticker: '076610', name: '해성옵틱스', sector: '레이저' },
   { ticker: '038060', name: '루멘스', sector: '레이저' },
-  // 전자부품 (커패시터·PCB·전장 부품)
+  // 전자부품 (커패시터·PCB·FPCB·전장 부품)
   { ticker: '012340', name: '뉴인텍', sector: '전자부품' },
   { ticker: '079190', name: '케스피온', sector: '전자부품' },
   { ticker: '089010', name: '켐트로닉스', sector: '전자부품' },
   { ticker: '065350', name: '신성델타테크', sector: '전자부품' },
+  { ticker: '090460', name: '비에이치', sector: '전자부품' },
+  { ticker: '012200', name: '계양전기', sector: '전자부품' },
   // 전장/차량전자 (ADAS·블랙박스·AI 비전)
   { ticker: '049120', name: '파인디지털', sector: '전장' },
   { ticker: '469750', name: '아이비전웍스', sector: '전장' },
@@ -222,6 +227,8 @@ export const MAJOR_STOCKS = [
   { ticker: '028670', name: '팬오션', sector: '항공해운' },
   // 신재생에너지
   { ticker: '112610', name: '씨에스윈드', sector: '신재생' },
+  // 바이오/제약
+  { ticker: '347890', name: '디앤디파마텍', sector: '바이오' },
 ]
 
 export const STOCK_MAP = Object.fromEntries(
