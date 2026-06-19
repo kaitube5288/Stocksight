@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/daily",
-      "schedule": "0 23 * * 0-4"
+      "schedule": "45 22 * * 0-4"
     },
     {
       "path": "/api/cron/market-close",
