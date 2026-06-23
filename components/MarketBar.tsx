@@ -9,6 +9,7 @@ export type MarketData = {
   bullStrength: {
     score: number
     grade: 'S' | 'A' | 'B' | null
+    vixPrice: number | null
     categories: {
       indexMomentum: boolean
       volatility: boolean
@@ -67,13 +68,29 @@ export default function MarketBar({ onData }: Props) {
     return `${sign}${v.toFixed(2)}%`
   }
 
+  const vix = market.bullStrength?.vixPrice ?? null
+  const vixColor =
+    vix == null ? 'var(--text-muted)' :
+    vix < 15   ? 'rgba(74,222,128,0.9)'   :
+    vix < 20   ? 'rgba(134,239,172,0.85)' :
+    vix < 25   ? 'rgba(250,204,21,0.9)'   :
+    vix < 30   ? 'rgba(251,146,60,0.9)'   :
+                 'rgba(248,113,113,0.9)'
+  const vixLabel =
+    vix == null ? '' :
+    vix < 15   ? '극안정' :
+    vix < 20   ? '안정'   :
+    vix < 25   ? '보통'   :
+    vix < 30   ? '불안'   :
+                 '공포'
+
   return (
     <div
       className="glass flex items-center justify-between px-5 py-2.5 rounded-xl"
       style={{ borderColor: 'rgba(255,255,255,0.05)' }}
     >
       {/* 좌: 지수 */}
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-5 flex-wrap">
         {market.kospi && (
           <div className="flex items-center gap-2">
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>KOSPI</span>
@@ -101,6 +118,21 @@ export default function MarketBar({ onData }: Props) {
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>USD/KRW</span>
             <span className="mono text-sm" style={{ color: 'var(--text-secondary)' }}>
               {market.usdkrw.toFixed(1)}
+            </span>
+          </div>
+        )}
+        {vix != null && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>VIX</span>
+            <span className="mono text-sm font-medium" style={{ color: vixColor }}>
+              {vix.toFixed(2)}
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md" style={{
+              background: `${vixColor}18`,
+              border: `1px solid ${vixColor}40`,
+              color: vixColor,
+            }}>
+              {vixLabel}
             </span>
           </div>
         )}

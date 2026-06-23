@@ -120,6 +120,7 @@ export type BullStrength = {
   score: number
   grade: 'S' | 'A' | 'B' | null
   categories: BullCategory
+  vixPrice: number | null
 }
 
 async function fetchSimpleQuote(symbol: string): Promise<{ price: number; changePercent: number } | null> {
@@ -176,7 +177,7 @@ export async function getBullStrength(
   const score = Object.values(categories).filter(Boolean).length
   const grade: BullStrength['grade'] = score === 5 ? 'S' : score === 4 ? 'A' : score >= 3 ? 'B' : null
 
-  return { score, grade, categories }
+  return { score, grade, categories, vixPrice: vix?.price ?? null }
 }
 
 // USD/KRW 환율

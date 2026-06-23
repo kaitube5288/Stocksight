@@ -7,6 +7,7 @@ import MarketBar, { MarketData } from '@/components/MarketBar'
 import PerformanceCharts from '@/components/PerformanceCharts'
 import AIRecommendationPage from '@/components/AIRecommendationPage'
 import MacroCharts from '@/components/MacroCharts'
+import EarningsCalendar from '@/components/EarningsCalendar'
 import { DailyRecommendation } from '@/lib/supabase'
 
 type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
@@ -563,6 +564,7 @@ export default function Home() {
             </h2>
           </div>
           <NewsPanel />
+          <EarningsCalendar />
           <MacroCharts />
 
           {/* 면책 고지 */}

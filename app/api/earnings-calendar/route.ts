@@ -1,0 +1,278 @@
+import { NextResponse } from 'next/server'
+import axios from 'axios'
+import Parser from 'rss-parser'
+import { getKSTDate } from '@/lib/date'
+
+const rssParser = new Parser({ timeout: 10000 })
+
+const DART_BASE = 'https://opendart.fss.or.kr/api'
+const DART_KEY  = process.env.DART_API_KEY
+
+const EARNINGS_KW = [
+  '잠정실적', '잠정공시', '영업(잠정)실적', '연결재무제표기준영업',
+  '매출액또는손익구조', '분기보고서', '반기보고서', '영업실적',
+  '실적발표', '손익구조', '영업이익', '당기순이익',
+]
+
+const RATE_KW = [
+  '금리', '기준금리', 'FOMC', '연준', '한국은행', '금통위',
+  'Fed', '통화정책', '국채금리', '채권금리', '금리인상', '금리인하',
+]
+const POLICY_KW = [
+  '정책발표', '경제정책', '기재부', '산업부', '정부발표', '규제완화',
+  '세제', '부양책', '재정정책', '정책금리', '추경', '무역정책',
+]
+
+export type EarningsItem = {
+  corp_name: string
+  report_nm: string
+  rcept_dt: string
+  rcept_no?: string
+}
+
+export type ScheduledItem = {
+  name: string
+  date: string
+  note?: string
+}
+
+export type RateNewsItem = {
+  title: string
+  link: string
+  pubDate: string
+  source: string
+  category: 'rate' | 'policy'
+}
+
+export type CalendarData = {
+  todayEarnings: EarningsItem[]
+  scheduledEarnings: ScheduledItem[]
+  rateNews: RateNewsItem[]
+  policyNews: RateNewsItem[]
+  fetchedAt: string
+}
+
+// 30분 서버 캐시
+let _cache: { data: CalendarData; ts: number } | null = null
+const TTL = 30 * 60 * 1000
+
+// KST 날짜 오프셋 헬퍼 (YYYYMMDD)
+function kstDateOffset(days: number): string {
+  const d = new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
+
+// DART 공시 목록 → 실적 키워드 필터
+async function dartEarnings(dateStr: string): Promise<EarningsItem[]> {
+  if (!DART_KEY) return []
+  try {
+    const res = await axios.get(`${DART_BASE}/list.json`, {
+      params: {
+        crtfc_key: DART_KEY,
+        bgn_de: dateStr,
+        end_de: dateStr,
+        sort: 'date',
+        sort_mth: 'desc',
+        page_no: 1,
+        page_count: 100,
+      },
+      timeout: 10000,
+    })
+    if (res.data.status !== '000') return []
+    const list: EarningsItem[] = res.data.list || []
+    return list.filter(d => EARNINGS_KW.some(kw => d.report_nm?.includes(kw)))
+  } catch { return [] }
+}
+
+// 네이버 금융 모바일 API — 실적발표 일정
+async function naverEarningsSchedule(): Promise<ScheduledItem[]> {
+  const kstToday = getKSTDate() // YYYY-MM-DD
+  const kstTomorrow = (() => {
+    const d = new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().slice(0, 10)
+  })()
+
+  const endpoints = [
+    `https://m.stock.naver.com/api/market/earning/schedule?date=${kstToday}`,
+    `https://m.stock.naver.com/api/market/earning/schedule?date=${kstTomorrow}`,
+    `https://m.stock.naver.com/api/market/earning`,
+  ]
+
+  for (const url of endpoints) {
+    try {
+      const res = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)',
+          Referer: 'https://m.stock.naver.com/',
+          Accept: 'application/json',
+        },
+        timeout: 6000,
+      })
+      const data = res.data
+      // 배열 응답이면 직접 파싱, 객체면 items/list 찾기
+      const items: unknown[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.items) ? data.items
+        : Array.isArray(data?.list)  ? data.list
+        : []
+
+      if (items.length > 0) {
+        return items.slice(0, 20).map((item: unknown) => {
+          const i = item as Record<string, unknown>
+          return {
+            name: String(i.stockName ?? i.name ?? i.corp_name ?? i.corpName ?? ''),
+            date: String(i.date ?? i.expectedDate ?? i.rcept_dt ?? ''),
+            note: i.eps ? `EPS: ${i.eps}` : undefined,
+          }
+        }).filter(s => s.name.length > 0)
+      }
+    } catch { /* 다음 엔드포인트 시도 */ }
+  }
+  return []
+}
+
+// 네이버 금융 실적발표 캘린더 HTML 스크래핑 (JSON fallback)
+async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
+  try {
+    const res = await axios.get(
+      'https://finance.naver.com/market/earning.naver',
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept-Charset': 'euc-kr',
+          Referer: 'https://finance.naver.com/',
+        },
+        responseType: 'arraybuffer',
+        timeout: 8000,
+      }
+    )
+    const html = new TextDecoder('euc-kr').decode(res.data as ArrayBuffer)
+
+    const results: ScheduledItem[] = []
+    const seen = new Set<string>()
+
+    // 기업명 링크 + 인접 날짜 셀 파싱
+    const rowRe = /<tr[^>]*class="[^"]*type_1[^"]*"[^>]*>([\s\S]*?)<\/tr>|<tr[^>]*>([\s\S]*?)<\/tr>/g
+    for (const rowM of html.matchAll(rowRe)) {
+      const row = rowM[1] ?? rowM[2]
+      if (!row) continue
+      const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
+      if (cells.length < 2) continue
+
+      // 기업명 추출
+      const nameM =
+        cells[0][1].match(/code=\d{6}[^"]*"[^>]*>([^<]{2,20})<\/a>/) ??
+        cells[0][1].match(/>\s*([가-힣A-Za-z][가-힣A-Za-z0-9\s]{1,18})\s*<\/a>/)
+      if (!nameM) continue
+
+      // 날짜 추출 (YYYY.MM.DD 또는 MM/DD 형식)
+      const dateM = cells[1][1].match(/(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/) ??
+                    cells[1][1].match(/(\d{1,2}[\/]\d{1,2})/)
+      if (!dateM) continue
+
+      const name = nameM[1].trim()
+      const date = dateM[1].trim()
+      if (!seen.has(name)) {
+        seen.add(name)
+        results.push({ name, date })
+      }
+      if (results.length >= 20) break
+    }
+    return results
+  } catch { return [] }
+}
+
+// Google News RSS — 금리/정책 뉴스
+async function fetchRateAndPolicyNews(): Promise<{ rate: RateNewsItem[]; policy: RateNewsItem[] }> {
+  const rateItems: RateNewsItem[] = []
+  const policyItems: RateNewsItem[] = []
+  const seenTitles = new Set<string>()
+
+  const queries = [
+    { q: '금리 기준금리 FOMC 연준', type: 'rate' as const },
+    { q: '한국은행 금통위 통화정책', type: 'rate' as const },
+    { q: '경제정책 기재부 재정정책', type: 'policy' as const },
+  ]
+
+  await Promise.all(queries.map(async ({ q, type }) => {
+    try {
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ko&gl=KR&ceid=KR:ko`
+      const feed = await rssParser.parseURL(url)
+      for (const item of (feed.items ?? []).slice(0, 8)) {
+        const title = item.title ?? ''
+        if (!title || seenTitles.has(title)) continue
+
+        const isRate   = RATE_KW.some(k => title.includes(k))
+        const isPolicy = POLICY_KW.some(k => title.includes(k))
+        if (!isRate && !isPolicy) continue
+
+        seenTitles.add(title)
+        const entry: RateNewsItem = {
+          title,
+          link: item.link ?? '',
+          pubDate: item.pubDate ?? '',
+          source: item.creator ?? feed.title ?? 'Google 뉴스',
+          category: type === 'rate' && isRate ? 'rate' : 'policy',
+        }
+        if (entry.category === 'rate') rateItems.push(entry)
+        else policyItems.push(entry)
+      }
+    } catch { /* 쿼리 실패 무시 */ }
+  }))
+
+  return {
+    rate:   rateItems.slice(0, 8),
+    policy: policyItems.slice(0, 8),
+  }
+}
+
+export async function GET() {
+  const now = Date.now()
+  if (_cache && now - _cache.ts < TTL) {
+    return NextResponse.json(_cache.data)
+  }
+
+  const today     = kstDateOffset(0)
+  const yesterday = kstDateOffset(-1)
+
+  const [todayDart, yesterdayDart, scheduled1, scheduled2, { rate, policy }] = await Promise.all([
+    dartEarnings(today),
+    dartEarnings(yesterday),
+    naverEarningsSchedule(),
+    scrapeNaverEarningCalendar(),
+    fetchRateAndPolicyNews(),
+  ])
+
+  // 오늘+어제 실적 병합 (중복 제거)
+  const seenCorp = new Set<string>()
+  const todayEarnings: EarningsItem[] = []
+  for (const item of [...todayDart, ...yesterdayDart]) {
+    if (!seenCorp.has(item.corp_name)) {
+      seenCorp.add(item.corp_name)
+      todayEarnings.push(item)
+    }
+  }
+
+  // 예정 일정 병합 (API 우선, HTML scrape fallback)
+  const seenSched = new Set<string>()
+  const scheduledEarnings: ScheduledItem[] = []
+  for (const item of [...scheduled1, ...scheduled2]) {
+    if (!seenSched.has(item.name)) {
+      seenSched.add(item.name)
+      scheduledEarnings.push(item)
+    }
+  }
+
+  const data: CalendarData = {
+    todayEarnings: todayEarnings.slice(0, 20),
+    scheduledEarnings: scheduledEarnings.slice(0, 20),
+    rateNews: rate,
+    policyNews: policy,
+    fetchedAt: new Date().toISOString(),
+  }
+
+  _cache = { data, ts: now }
+  return NextResponse.json(data)
+}
