@@ -215,7 +215,7 @@ export default function EarningsCalendar() {
 
   useEffect(() => {
     fetchData()
-    const id = setInterval(fetchData, 30 * 60 * 1000)
+    const id = setInterval(fetchData, 4 * 60 * 60 * 1000)
     return () => clearInterval(id)
   }, [fetchData])
 

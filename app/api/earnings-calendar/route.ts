@@ -62,7 +62,7 @@ export type CalendarData = {
 
 // 30분 서버 캐시
 let _cache: { data: CalendarData; ts: number } | null = null
-const TTL = 30 * 60 * 1000
+const TTL = 4 * 60 * 60 * 1000
 
 function kstDateOffset(days: number): string {
   const d = new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
