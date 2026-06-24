@@ -205,33 +205,50 @@ async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
   } catch { return [] }
 }
 
-// Google News RSS — 금리/정책 뉴스
+// 타이틀 끝 " - 언론사명" 추출 (Google News RSS 포맷)
+function extractSource(title: string, fallback: string): string {
+  const m = title.match(/ - ([^-]{2,30})$/)
+  return m ? m[1].trim() : fallback
+}
+
+// Google News RSS — 금리/정책 뉴스 (최근 7일 이내만)
 async function fetchRateAndPolicyNews(): Promise<{ rate: RateNewsItem[]; policy: RateNewsItem[] }> {
   const rateItems: RateNewsItem[] = []
   const policyItems: RateNewsItem[] = []
   const seen = new Set<string>()
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000  // 7일 전
 
   await Promise.all([
-    { q: '금리 기준금리 FOMC 연준', type: 'rate' as const },
-    { q: '한국은행 금통위 통화정책', type: 'rate' as const },
-    { q: '경제정책 기재부 재정정책', type: 'policy' as const },
+    { q: '금리 기준금리 FOMC 연준 when:7d',    type: 'rate'   as const },
+    { q: '한국은행 금통위 통화정책 when:7d',    type: 'rate'   as const },
+    { q: '경제정책 기재부 재정정책 when:7d',    type: 'policy' as const },
   ].map(async ({ q, type }) => {
     try {
       const feed = await rssParser.parseURL(
         `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ko&gl=KR&ceid=KR:ko`
       )
-      for (const item of (feed.items ?? []).slice(0, 8)) {
+      for (const item of (feed.items ?? []).slice(0, 10)) {
         const title = item.title ?? ''
         if (!title || seen.has(title)) continue
+
+        // 7일 이내 기사만 허용
+        const pub = item.pubDate ? new Date(item.pubDate).getTime() : 0
+        if (pub > 0 && pub < cutoff) continue
+
         const isRate   = RATE_KW.some(k => title.includes(k))
         const isPolicy = POLICY_KW.some(k => title.includes(k))
         if (!isRate && !isPolicy) continue
         seen.add(title)
+
+        // 타이틀에서 " - 언론사" 분리해서 실제 source 추출
+        const cleanTitle = title.replace(/ - [^-]{2,30}$/, '').trim()
+        const source = extractSource(title, 'Google 뉴스')
+
         const entry: RateNewsItem = {
-          title,
+          title: cleanTitle,
           link: item.link ?? '',
           pubDate: item.pubDate ?? '',
-          source: item.creator ?? feed.title ?? 'Google 뉴스',
+          source,
           category: type === 'rate' && isRate ? 'rate' : 'policy',
         }
         if (entry.category === 'rate') rateItems.push(entry)
@@ -240,7 +257,11 @@ async function fetchRateAndPolicyNews(): Promise<{ rate: RateNewsItem[]; policy:
     } catch { /* 무시 */ }
   }))
 
-  return { rate: rateItems.slice(0, 8), policy: policyItems.slice(0, 8) }
+  // pubDate 최신순 정렬
+  const sortByDate = (arr: RateNewsItem[]) =>
+    arr.sort((a, b) => new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime())
+
+  return { rate: sortByDate(rateItems).slice(0, 8), policy: sortByDate(policyItems).slice(0, 8) }
 }
 
 export async function GET() {
