@@ -25,6 +25,7 @@ export const MAJOR_STOCKS = [
   { ticker: '357780', name: '솔브레인', sector: '반도체소재' },
   { ticker: '005290', name: '동진쎄미켐', sector: '반도체소재' },
   { ticker: '104830', name: '원익머트리얼즈', sector: '반도체소재' },
+  { ticker: '213380', name: '덕산네오룩스', sector: '반도체소재' },
   // 2차전지
   { ticker: '373220', name: 'LG에너지솔루션', sector: '2차전지' },
   { ticker: '051910', name: 'LG화학', sector: '2차전지' },
@@ -86,6 +87,7 @@ export const MAJOR_STOCKS = [
   { ticker: '298380', name: '에이비엘바이오', sector: '바이오' },
   { ticker: '091990', name: '셀트리온헬스케어', sector: '바이오' },
   { ticker: '328130', name: '루닛', sector: '바이오' },
+  { ticker: '420780', name: '오가노이드사이언스', sector: '바이오' },
   { ticker: '128940', name: '한미약품', sector: '제약' },
   { ticker: '000100', name: '유한양행', sector: '제약' },
   { ticker: '006280', name: '녹십자', sector: '제약' },
@@ -182,6 +184,7 @@ export const MAJOR_STOCKS = [
   { ticker: '065350', name: '신성델타테크', sector: '전자부품' },
   { ticker: '090460', name: '비에이치', sector: '전자부품' },
   { ticker: '012200', name: '계양전기', sector: '전자부품' },
+  { ticker: '012205', name: '계양전기우', sector: '전자부품' },
   // 전장/차량전자 (ADAS·블랙박스·AI 비전)
   { ticker: '049120', name: '파인디지털', sector: '전장' },
   { ticker: '469750', name: '아이비전웍스', sector: '전장' },
