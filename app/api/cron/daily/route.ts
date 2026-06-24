@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations, analyzeEventBeneficiaries } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -57,14 +57,16 @@ async function runDailyAnalysis() {
     const { news: freshNews, analyzed: analyzedNews } = await getNewsFromCacheOrFetch()
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
 
-    // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 병렬 수집
-    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks] = await Promise.all([
+    // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 + 미국 국채 금리 병렬 수집
+    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks, interestRatesRaw] = await Promise.all([
       getTodayDisclosures(),
       getMarketIndex(),
       getUSDKRW(),
       getGoldPrice(),
       fetchVolumeTopStocks(15).catch(() => [] as { ticker: string; name: string }[]),
+      fetchInterestRates().catch(() => ({ us10Y: null, us3M: null, yieldSpread: null, isInverted: false })),
     ])
+    const interestRatesText = formatInterestRatesForPrompt(interestRatesRaw)
 
     const dartText = formatDisclosuresForPrompt(disclosures)
 
@@ -141,7 +143,18 @@ async function runDailyAnalysis() {
 
     const candidatesContext = formatCandidatesContext(fullCandidatePool, fullCandidateFundamentals, fullCandidateTechMap)
 
-    // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 + 이벤트수혜주 컨텍스트)
+    // 금리·정책 뉴스: 기존 analyzedNews에서 키워드 필터링 (추가 API 호출 없음)
+    const RATE_POLICY_KW = [
+      '금리', '기준금리', 'FOMC', '연준', '한국은행', '금통위',
+      'Fed', '통화정책', '기재부', '경제정책', '재정정책', '정책발표',
+    ]
+    const ratePolicyNewsText = analyzedNews
+      .filter(n => RATE_POLICY_KW.some(k => n.title.includes(k)))
+      .slice(0, 8)
+      .map(n => `• [${n.source}] ${n.title}`)
+      .join('\n')
+
+    // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 + 이벤트수혜주 + 금리 컨텍스트)
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
@@ -154,6 +167,8 @@ async function runDailyAnalysis() {
       marketFeedbackInsights: marketFeedbackInsights || undefined,
       strategyImprovements: strategyImprovements || undefined,
       eventBeneficiaryContext: eventBeneficiary.analysisText || undefined,
+      interestRates: interestRatesText || undefined,
+      ratePolicyNews: ratePolicyNewsText || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)

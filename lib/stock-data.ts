@@ -193,6 +193,39 @@ export async function getUSDKRW(): Promise<number | null> {
   }
 }
 
+// 미국 국채 금리 — 장단기 역전(경기 침체 선행 신호) 판단용
+export type InterestRates = {
+  us10Y: number | null       // 10년물 (%)
+  us3M: number | null        // 3개월 단기채 (%)
+  yieldSpread: number | null // 10Y - 3M (음수 = 역전)
+  isInverted: boolean
+}
+
+export async function fetchInterestRates(): Promise<InterestRates> {
+  const [r10Y, r3M] = await Promise.all([
+    fetchSimpleQuote('^TNX').catch(() => null),  // 10년물
+    fetchSimpleQuote('^IRX').catch(() => null),  // 3개월 단기채
+  ])
+  const us10Y = r10Y?.price ?? null
+  const us3M  = r3M?.price  ?? null
+  const spread = us10Y != null && us3M != null ? Math.round((us10Y - us3M) * 100) / 100 : null
+  return { us10Y, us3M, yieldSpread: spread, isInverted: spread != null && spread < 0 }
+}
+
+export function formatInterestRatesForPrompt(rates: InterestRates): string {
+  const lines: string[] = []
+  if (rates.us10Y != null) lines.push(`- 미국 10년물 국채금리: ${rates.us10Y.toFixed(2)}%`)
+  if (rates.us3M  != null) lines.push(`- 미국 3개월 단기채금리: ${rates.us3M.toFixed(2)}%`)
+  if (rates.yieldSpread != null) {
+    lines.push(
+      rates.isInverted
+        ? `- ⚠️ 장단기 금리 역전 중 (스프레드 ${rates.yieldSpread.toFixed(2)}%p) — 경기 침체 선행 신호`
+        : `- 금리 곡선 정상 (스프레드 +${rates.yieldSpread.toFixed(2)}%p)`
+    )
+  }
+  return lines.length ? lines.join('\n') : '금리 데이터 없음'
+}
+
 // 금(Gold) 가격 (USD/oz) - 국제 가격
 export async function getGoldPrice(): Promise<number | null> {
   try {

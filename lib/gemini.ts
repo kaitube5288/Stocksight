@@ -119,6 +119,8 @@ export async function generateRecommendations(params: {
   marketFeedbackInsights?: string
   strategyImprovements?: string
   eventBeneficiaryContext?: string
+  interestRates?: string   // 미국 국채 금리 + 장단기 역전 여부
+  ratePolicyNews?: string  // 금리·정책 관련 뉴스 필터링 결과
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -181,7 +183,13 @@ ${params.marketContext.includes('[🚀 불장 감지]') ? `
 - AI/IT 플랫폼 뉴스 기반 수혜주(NAVER·LG전자·통신사 등)는 RSI 무관하게 단타 우선 검토
 - expected_return 목표를 +3~5%로 상향 가능 (강세장 모멘텀은 더 크게 움직임)
 ` : ''}
-
+${params.interestRates ? `
+## 금리 현황 (장단기 역전 = 하락장 [1. 거시 경제 지표] 직접 반영)
+${params.interestRates}
+` : ''}${params.ratePolicyNews ? `
+## 금리·정책 뉴스 (거시 환경 판단 — 하락장 기준 [1][3] 영역 체크)
+${params.ratePolicyNews}
+` : ''}
 ## 유사 과거 패턴
 ${params.historicalPatterns}
 ${params.technicalContext ? `\n## 뉴스 관련 섹터 기술적 지표 (실시간)\n${params.technicalContext}` : ''}
