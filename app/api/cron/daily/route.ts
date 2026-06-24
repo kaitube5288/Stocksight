@@ -198,16 +198,20 @@ async function runDailyAnalysis() {
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
     // isBullMarket은 Gemini 호출 전에 이미 계산됨 (marketText에 주입됨)
+    // 하락장 판단: 어제 KOSPI·KOSDAQ 모두 하락했으면 하락장
+    const isBearMarket = kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5
     // 거래유형별 RSI 상한 — 프롬프트 규칙을 코드 레벨에서 강제 적용
     const rsiMaxByType: Record<string, number> = {
-      '단타': isBullMarket ? 70 : 65,  // 단타: RSI 65 초과 금지 (불장 시 70까지)
+      '단타': isBullMarket ? 65 : 60,  // 단타: RSI 60 초과 금지 (불장 시 65까지)
       '스윙': isBullMarket ? 80 : 75,
       '중기': isBullMarket ? 75 : 70,
     }
-    console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → 단타RSI≤${rsiMaxByType['단타']} / 스윙RSI≤${rsiMaxByType['스윙']} / 중기RSI≤${rsiMaxByType['중기']} (불장: ${isBullMarket})`)
+    console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → 단타RSI≤${rsiMaxByType['단타']} / 스윙RSI≤${rsiMaxByType['스윙']} / 중기RSI≤${rsiMaxByType['중기']} (불장: ${isBullMarket} / 하락장: ${isBearMarket})`)
 
-    // B: 기술적 지표 필터링 — 거래유형별 RSI 상한 초과 또는 MACD 데드크로스 종목 제거
+    // B: 기술적 지표 필터링 — RSI 상한 초과 / MACD 데드크로스 / 하락추세 종목 제거
     result.recommendations = result.recommendations.filter(r => {
+      // 하락장 현금보유 슬롯 (ticker=000000) 은 필터 통과
+      if (r.ticker === '000000') return true
       const tech = techMap[r.ticker]
       if (!tech) return true
       const maxRsi = rsiMaxByType[r.trade_type ?? '단타'] ?? 75
@@ -217,6 +221,11 @@ async function runDailyAnalysis() {
       }
       if (tech.macdSignal === 'sell') {
         console.log(`[필터-MACD] ${r.name}(${r.ticker}) MACD 데드크로스 제거`)
+        return false
+      }
+      // 하락추세 종목: 단타·스윙 코드 레벨 강제 제거
+      if (tech.trend === 'down' && (r.trade_type === '단타' || r.trade_type === '스윙')) {
+        console.log(`[필터-추세] ${r.name}(${r.ticker}) 하락추세 제거 (${r.trade_type})`)
         return false
       }
       return true
@@ -239,7 +248,12 @@ async function runDailyAnalysis() {
       probability: Math.min(r.probability, 95),
     }))
 
+    // 거래유형별 기본 손절 비율 (Gemini가 제공 안 할 경우 fallback)
+    const stopLossPct: Record<string, number> = { '단타': 0.97, '스윙': 0.95, '중기': 0.92 }
+
     result.recommendations = result.recommendations.map(r => {
+      // 하락장 현금보유 슬롯은 그대로 통과
+      if (r.ticker === '000000') return r
       const real = realPrices[r.ticker]
       const fund = fundamentals[r.ticker]
       const tech = techMap[r.ticker]
@@ -249,11 +263,15 @@ async function runDailyAnalysis() {
       const sellPrice = real
         ? Math.round(buyPrice * (1 + r.expected_return / 100))
         : r.sell_price
+      const stopLoss = (r.stop_loss && r.stop_loss > 0)
+        ? r.stop_loss
+        : Math.round(buyPrice * (stopLossPct[r.trade_type] ?? 0.95))
       return {
         ...r,
         current_price: real?.price ?? buyPrice,
         buy_price: buyPrice,
         sell_price: sellPrice,
+        stop_loss: stopLoss,
         per: fund?.per ?? null,
         pbr: fund?.pbr ?? null,
         roe: fund?.roe ?? null,

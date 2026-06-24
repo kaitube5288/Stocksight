@@ -88,6 +88,7 @@ export async function buildPerformanceInsights(): Promise<string> {
     for (const rec of recs) {
       const recDate = new Date(rec.created_at)
       for (const s of rec.stocks ?? []) {
+        if (s.ticker === '000000') continue  // 현금보유 슬롯 제외
         const tt = s.trade_type as TT
         if (!PERIOD[tt]) continue
         const key = `${s.ticker}:${tt}`

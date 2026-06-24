@@ -92,6 +92,34 @@ function MacdBadge({ value }: { value: 'buy' | 'sell' | 'neutral' | null | undef
 
 export default function RecommendationCard({ stock, rank, animate }: Props) {
   const rankClass = rank <= 3 ? `rank-${rank}` : ''
+  const isCash = stock.ticker === '000000'
+
+  // 현금보유 슬롯 (하락장 감지 시 Gemini가 생성)
+  if (isCash) {
+    return (
+      <div
+        className={`glass relative rounded-2xl p-5 flex flex-col gap-3 transition-all duration-300 ${animate ? 'animate-slide-up' : ''}`}
+        style={{ animationDelay: `${rank * 100}ms`, border: '1px solid rgba(255,201,77,0.25)', background: 'rgba(255,201,77,0.04)' }}
+      >
+        {stock.trade_type && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md self-start" style={TRADE_TYPE_STYLE[stock.trade_type]}>
+            {stock.trade_type}
+          </span>
+        )}
+        <div className="flex items-center gap-3">
+          <span style={{ fontSize: '2rem' }}>🏦</span>
+          <div>
+            <div className="font-bold text-base" style={{ color: 'var(--accent-gold)' }}>현금 보유 권고</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>하락장 위험 — 매수 보류</div>
+          </div>
+        </div>
+        <div className="text-xs leading-relaxed p-3 rounded-xl"
+          style={{ background: 'rgba(255,201,77,0.06)', color: 'var(--text-muted)', border: '1px solid rgba(255,201,77,0.15)' }}>
+          {stock.reasoning}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -146,7 +174,7 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
         </div>
       </div>
 
-      {/* 가격 정보: 2×2 그리드 — 현재가/매수가(행1) | 목표가/예상수익(행2) */}
+      {/* 가격 정보: 2행 그리드 — 현재가/매수가 | 목표가/예상수익 | 손절가 */}
       <div className="grid grid-cols-2 gap-2">
         <div className="text-center p-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
           <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>현재가</div>
@@ -169,6 +197,21 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
           <div className="mono text-lg font-bold" style={{ color: '#ff6b6b' }}>+{stock.expected_return.toFixed(1)}%</div>
         </div>
       </div>
+      {/* 손절가 */}
+      {stock.stop_loss != null && stock.stop_loss > 0 && (
+        <div className="flex items-center justify-between px-3 py-1.5 rounded-xl"
+          style={{ background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.2)' }}>
+          <span className="text-[10px]" style={{ color: 'rgba(248,113,113,0.7)' }}>손절가 (리스크 관리)</span>
+          <span className="mono text-xs font-bold" style={{ color: '#f87171' }}>
+            ₩{stock.stop_loss.toLocaleString()}
+            {stock.buy_price > 0 && (
+              <span className="text-[9px] ml-1" style={{ color: 'rgba(248,113,113,0.6)' }}>
+                ({(((stock.stop_loss - stock.buy_price) / stock.buy_price) * 100).toFixed(1)}%)
+              </span>
+            )}
+          </span>
+        </div>
+      )}
 
       {/* PER / PBR / ROE */}
       <div className="grid grid-cols-3 gap-2">

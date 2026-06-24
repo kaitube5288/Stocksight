@@ -43,6 +43,7 @@ export type StockRecommendation = {
   ticker: string
   buy_price: number
   sell_price: number
+  stop_loss?: number | null
   expected_return: number
   probability: number
   reasoning: string
