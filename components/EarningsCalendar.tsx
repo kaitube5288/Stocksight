@@ -42,9 +42,15 @@ function EarningsRow({ item }: { item: EarningsItem }) {
   const opColor        = item.operatingProfit == null ? 'var(--text-muted)'
     : item.operatingProfit >= 0 ? 'rgba(74,222,128,0.85)' : 'rgba(248,113,113,0.85)'
 
-  return (
-    <div className="flex flex-col gap-1 py-2 px-3 rounded-xl"
-      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
+  // DART 공시 원문 우선, 없으면 네이버 종목 페이지
+  const href = item.rcept_no
+    ? `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${item.rcept_no}`
+    : item.stock_code
+    ? `https://finance.naver.com/item/main.naver?code=${item.stock_code}`
+    : undefined
+
+  const inner = (
+    <>
       {/* 1행: 기업명 + 뱃지 + 날짜 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
@@ -62,9 +68,12 @@ function EarningsRow({ item }: { item: EarningsItem }) {
             {reportLabel}
           </span>
         </div>
-        <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-          {formatDate(item.rcept_dt)}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            {formatDate(item.rcept_dt)}
+          </span>
+          {href && <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>↗</span>}
+        </div>
       </div>
       {/* 2행: 실적 숫자 (있을 때만) */}
       {hasNumbers && (
@@ -89,14 +98,43 @@ function EarningsRow({ item }: { item: EarningsItem }) {
           )}
         </div>
       )}
+    </>
+  )
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex flex-col gap-1 py-2 px-3 rounded-xl transition-opacity duration-150 hover:opacity-80"
+        style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)', textDecoration: 'none' }}
+      >
+        {inner}
+      </a>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1 py-2 px-3 rounded-xl"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
+      {inner}
     </div>
   )
 }
 
 function ScheduledRow({ item }: { item: ScheduledItem }) {
+  const href = item.ticker
+    ? `https://finance.naver.com/item/main.naver?code=${item.ticker}`
+    : 'https://finance.naver.com/market/earning.naver'
+
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-xl"
-      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center justify-between py-2 px-3 rounded-xl transition-opacity duration-150 hover:opacity-80"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)', textDecoration: 'none' }}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-xs truncate" style={{ color: 'var(--text-secondary)', maxWidth: '130px' }}>
           {item.name}
@@ -105,10 +143,13 @@ function ScheduledRow({ item }: { item: ScheduledItem }) {
           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.note}</span>
         )}
       </div>
-      <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-        {formatDate(item.date)}
-      </span>
-    </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          {formatDate(item.date)}
+        </span>
+        <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>↗</span>
+      </div>
+    </a>
   )
 }
 

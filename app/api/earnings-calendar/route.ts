@@ -41,6 +41,7 @@ export type ScheduledItem = {
   name: string
   date: string
   note?: string
+  ticker?: string
 }
 
 export type RateNewsItem = {
@@ -150,10 +151,12 @@ async function naverEarningsSchedule(): Promise<ScheduledItem[]> {
       if (items.length > 0) {
         return items.slice(0, 20).map((item: unknown) => {
           const i = item as Record<string, unknown>
+          const ticker = String(i.stockCode ?? i.stock_code ?? i.code ?? i.symbolCode ?? '')
           return {
             name: String(i.stockName ?? i.name ?? i.corp_name ?? i.corpName ?? ''),
             date: String(i.date ?? i.expectedDate ?? i.rcept_dt ?? ''),
             note: i.eps ? `EPS: ${i.eps}` : undefined,
+            ticker: /^\d{6}$/.test(ticker) ? ticker : undefined,
           }
         }).filter(s => s.name.length > 0)
       }
@@ -184,6 +187,7 @@ async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
       const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
       if (cells.length < 2) continue
 
+      const codeM = cells[0][1].match(/code=(\d{6})/)
       const nameM = cells[0][1].match(/code=\d{6}[^"]*"[^>]*>([^<]{2,20})<\/a>/)
         ?? cells[0][1].match(/>\s*([가-힣A-Za-z][가-힣A-Za-z0-9\s]{1,18})\s*<\/a>/)
       const dateM = cells[1][1].match(/(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/)
@@ -193,7 +197,7 @@ async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
       const name = nameM[1].trim()
       if (!seen.has(name)) {
         seen.add(name)
-        results.push({ name, date: dateM[1].trim() })
+        results.push({ name, date: dateM[1].trim(), ticker: codeM?.[1] })
       }
       if (results.length >= 20) break
     }
