@@ -396,6 +396,64 @@ async function scrapeNaverROE(code: string): Promise<number | null> {
   } catch { return null }
 }
 
+export type QuarterlyEarnings = {
+  quarter: string           // 최신 분기 헤더 (예: 2025.03)
+  revenue: number | null    // 매출액 (억원)
+  operatingProfit: number | null  // 영업이익 (억원)
+  netIncome: number | null  // 당기순이익 (억원)
+}
+
+// 네이버 금융 분기 재무 요약 페이지(finsum_Q) 스크래핑
+// scrapeNaverROE와 동일한 URL 패턴 — axios text 모드로 작동 확인됨
+export async function scrapeNaverQuarterlyEarnings(code: string): Promise<QuarterlyEarnings | null> {
+  try {
+    const res = await axios.get(
+      `https://finance.naver.com/item/coinfo.naver?code=${code}&target=finsum_Q`,
+      {
+        headers: { ...HTML_HEADERS, Referer: `https://finance.naver.com/item/main.naver?code=${code}` },
+        responseType: 'text',
+        timeout: 10000,
+      }
+    )
+    const html = res.data as string
+
+    // 분기 헤더 추출 (YYYY.MM 형식, "(E)" 예측치 제외)
+    const qHeaders = [...html.matchAll(/(\d{4}\.\d{2})(?!\d)(?!\(E\))/g)].map(m => m[1])
+    const latestQuarter = qHeaders.length > 0 ? qHeaders[qHeaders.length - 1] : ''
+
+    // 행 키워드 → 해당 <tr> 마지막 숫자 값 추출 (가장 최근 분기)
+    const extractRow = (keyword: string): number | null => {
+      const idx = html.indexOf(keyword)
+      if (idx === -1) return null
+      const trStart = html.lastIndexOf('<tr', idx)
+      const trEnd   = html.indexOf('</tr>', idx)
+      if (trStart === -1 || trEnd === -1) return null
+      const rowHtml = html.slice(trStart, trEnd + 5)
+
+      // num 클래스 td 우선
+      const numTds = [...rowHtml.matchAll(/<td[^>]*class="[^"]*num[^"]*"[^>]*>\s*(-?[\d,]+)\s*<\/td>/g)]
+      for (let i = numTds.length - 1; i >= 0; i--) {
+        const n = parseN(numTds[i][1])
+        if (n !== null) return n
+      }
+      // fallback: 일반 td
+      const allTds = [...rowHtml.matchAll(/<td[^>]*>\s*(-?[\d,]+)\s*<\/td>/g)]
+      for (let i = allTds.length - 1; i >= 0; i--) {
+        const n = parseN(allTds[i][1])
+        if (n !== null && Math.abs(n) > 0) return n
+      }
+      return null
+    }
+
+    const revenue         = extractRow('매출액')
+    const operatingProfit = extractRow('영업이익')
+    const netIncome       = extractRow('당기순이익')
+
+    if (revenue == null && operatingProfit == null) return null
+    return { quarter: latestQuarter, revenue, operatingProfit, netIncome }
+  } catch { return null }
+}
+
 export async function getKoreanStockFundamentals(ticker: string): Promise<StockFundamentals> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
 

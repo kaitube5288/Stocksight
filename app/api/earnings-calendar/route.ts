@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import axios from 'axios'
 import Parser from 'rss-parser'
 import { getKSTDate } from '@/lib/date'
+import { scrapeNaverQuarterlyEarnings } from '@/lib/stock-data'
 
 const rssParser = new Parser({ timeout: 10000 })
 
@@ -11,7 +12,7 @@ const DART_KEY  = process.env.DART_API_KEY
 const EARNINGS_KW = [
   '잠정실적', '잠정공시', '영업(잠정)실적', '연결재무제표기준영업',
   '매출액또는손익구조', '분기보고서', '반기보고서', '영업실적',
-  '실적발표', '손익구조', '영업이익', '당기순이익',
+  '실적발표', '손익구조',
 ]
 
 const RATE_KW = [
@@ -28,6 +29,12 @@ export type EarningsItem = {
   report_nm: string
   rcept_dt: string
   rcept_no?: string
+  stock_code?: string
+  // 네이버 분기 실적 (scrapeNaverQuarterlyEarnings로 보강)
+  quarter?: string
+  revenue?: number | null        // 매출액 (억원)
+  operatingProfit?: number | null // 영업이익 (억원)
+  netIncome?: number | null      // 당기순이익 (억원)
 }
 
 export type ScheduledItem = {
@@ -56,14 +63,13 @@ export type CalendarData = {
 let _cache: { data: CalendarData; ts: number } | null = null
 const TTL = 30 * 60 * 1000
 
-// KST 날짜 오프셋 헬퍼 (YYYYMMDD)
 function kstDateOffset(days: number): string {
   const d = new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
   d.setDate(d.getDate() + days)
   return d.toISOString().slice(0, 10).replace(/-/g, '')
 }
 
-// DART 공시 목록 → 실적 키워드 필터
+// DART 공시 목록 → 실적 키워드 필터 (stock_code 포함)
 async function dartEarnings(dateStr: string): Promise<EarningsItem[]> {
   if (!DART_KEY) return []
   try {
@@ -85,22 +91,47 @@ async function dartEarnings(dateStr: string): Promise<EarningsItem[]> {
   } catch { return [] }
 }
 
+// 네이버 분기 실적으로 DART 항목 보강 (최대 8개 병렬 처리)
+async function enrichWithNaverEarnings(items: EarningsItem[]): Promise<EarningsItem[]> {
+  const targets = items.filter(d => d.stock_code && /^\d{6}$/.test(d.stock_code)).slice(0, 8)
+  if (targets.length === 0) return items
+
+  const results = await Promise.all(
+    targets.map(async item => {
+      const q = await scrapeNaverQuarterlyEarnings(item.stock_code!).catch(() => null)
+      if (!q) return item
+      return {
+        ...item,
+        quarter: q.quarter,
+        revenue: q.revenue,
+        operatingProfit: q.operatingProfit,
+        netIncome: q.netIncome,
+      }
+    })
+  )
+
+  // targets 외 항목은 그대로 유지
+  const enrichedSet = new Set(targets.map(t => t.rcept_no ?? t.corp_name))
+  return items.map(item => {
+    const enriched = results.find(r => (r.rcept_no ?? r.corp_name) === (item.rcept_no ?? item.corp_name))
+    return enrichedSet.has(item.rcept_no ?? item.corp_name) && enriched ? enriched : item
+  })
+}
+
 // 네이버 금융 모바일 API — 실적발표 일정
 async function naverEarningsSchedule(): Promise<ScheduledItem[]> {
-  const kstToday = getKSTDate() // YYYY-MM-DD
+  const kstToday    = getKSTDate()
   const kstTomorrow = (() => {
     const d = new Date(new Date().getTime() + 9 * 60 * 60 * 1000)
     d.setDate(d.getDate() + 1)
     return d.toISOString().slice(0, 10)
   })()
 
-  const endpoints = [
+  for (const url of [
     `https://m.stock.naver.com/api/market/earning/schedule?date=${kstToday}`,
     `https://m.stock.naver.com/api/market/earning/schedule?date=${kstTomorrow}`,
     `https://m.stock.naver.com/api/market/earning`,
-  ]
-
-  for (const url of endpoints) {
+  ]) {
     try {
       const res = await axios.get(url, {
         headers: {
@@ -111,9 +142,7 @@ async function naverEarningsSchedule(): Promise<ScheduledItem[]> {
         timeout: 6000,
       })
       const data = res.data
-      // 배열 응답이면 직접 파싱, 객체면 items/list 찾기
-      const items: unknown[] = Array.isArray(data)
-        ? data
+      const items: unknown[] = Array.isArray(data) ? data
         : Array.isArray(data?.items) ? data.items
         : Array.isArray(data?.list)  ? data.list
         : []
@@ -128,55 +157,43 @@ async function naverEarningsSchedule(): Promise<ScheduledItem[]> {
           }
         }).filter(s => s.name.length > 0)
       }
-    } catch { /* 다음 엔드포인트 시도 */ }
+    } catch { /* 다음 시도 */ }
   }
   return []
 }
 
-// 네이버 금융 실적발표 캘린더 HTML 스크래핑 (JSON fallback)
+// 네이버 금융 실적발표 캘린더 HTML 스크래핑
 async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
   try {
-    const res = await axios.get(
-      'https://finance.naver.com/market/earning.naver',
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept-Charset': 'euc-kr',
-          Referer: 'https://finance.naver.com/',
-        },
-        responseType: 'arraybuffer',
-        timeout: 8000,
-      }
-    )
+    const res = await axios.get('https://finance.naver.com/market/earning.naver', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Charset': 'euc-kr',
+        Referer: 'https://finance.naver.com/',
+      },
+      responseType: 'arraybuffer',
+      timeout: 8000,
+    })
     const html = new TextDecoder('euc-kr').decode(res.data as ArrayBuffer)
-
     const results: ScheduledItem[] = []
     const seen = new Set<string>()
 
-    // 기업명 링크 + 인접 날짜 셀 파싱
-    const rowRe = /<tr[^>]*class="[^"]*type_1[^"]*"[^>]*>([\s\S]*?)<\/tr>|<tr[^>]*>([\s\S]*?)<\/tr>/g
-    for (const rowM of html.matchAll(rowRe)) {
+    for (const rowM of html.matchAll(/<tr[^>]*class="[^"]*type_1[^"]*"[^>]*>([\s\S]*?)<\/tr>|<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
       const row = rowM[1] ?? rowM[2]
       if (!row) continue
       const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
       if (cells.length < 2) continue
 
-      // 기업명 추출
-      const nameM =
-        cells[0][1].match(/code=\d{6}[^"]*"[^>]*>([^<]{2,20})<\/a>/) ??
-        cells[0][1].match(/>\s*([가-힣A-Za-z][가-힣A-Za-z0-9\s]{1,18})\s*<\/a>/)
-      if (!nameM) continue
-
-      // 날짜 추출 (YYYY.MM.DD 또는 MM/DD 형식)
-      const dateM = cells[1][1].match(/(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/) ??
-                    cells[1][1].match(/(\d{1,2}[\/]\d{1,2})/)
-      if (!dateM) continue
+      const nameM = cells[0][1].match(/code=\d{6}[^"]*"[^>]*>([^<]{2,20})<\/a>/)
+        ?? cells[0][1].match(/>\s*([가-힣A-Za-z][가-힣A-Za-z0-9\s]{1,18})\s*<\/a>/)
+      const dateM = cells[1][1].match(/(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})/)
+        ?? cells[1][1].match(/(\d{1,2}[/]\d{1,2})/)
+      if (!nameM || !dateM) continue
 
       const name = nameM[1].trim()
-      const date = dateM[1].trim()
       if (!seen.has(name)) {
         seen.add(name)
-        results.push({ name, date })
+        results.push({ name, date: dateM[1].trim() })
       }
       if (results.length >= 20) break
     }
@@ -188,27 +205,24 @@ async function scrapeNaverEarningCalendar(): Promise<ScheduledItem[]> {
 async function fetchRateAndPolicyNews(): Promise<{ rate: RateNewsItem[]; policy: RateNewsItem[] }> {
   const rateItems: RateNewsItem[] = []
   const policyItems: RateNewsItem[] = []
-  const seenTitles = new Set<string>()
+  const seen = new Set<string>()
 
-  const queries = [
+  await Promise.all([
     { q: '금리 기준금리 FOMC 연준', type: 'rate' as const },
     { q: '한국은행 금통위 통화정책', type: 'rate' as const },
     { q: '경제정책 기재부 재정정책', type: 'policy' as const },
-  ]
-
-  await Promise.all(queries.map(async ({ q, type }) => {
+  ].map(async ({ q, type }) => {
     try {
-      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ko&gl=KR&ceid=KR:ko`
-      const feed = await rssParser.parseURL(url)
+      const feed = await rssParser.parseURL(
+        `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ko&gl=KR&ceid=KR:ko`
+      )
       for (const item of (feed.items ?? []).slice(0, 8)) {
         const title = item.title ?? ''
-        if (!title || seenTitles.has(title)) continue
-
+        if (!title || seen.has(title)) continue
         const isRate   = RATE_KW.some(k => title.includes(k))
         const isPolicy = POLICY_KW.some(k => title.includes(k))
         if (!isRate && !isPolicy) continue
-
-        seenTitles.add(title)
+        seen.add(title)
         const entry: RateNewsItem = {
           title,
           link: item.link ?? '',
@@ -219,13 +233,10 @@ async function fetchRateAndPolicyNews(): Promise<{ rate: RateNewsItem[]; policy:
         if (entry.category === 'rate') rateItems.push(entry)
         else policyItems.push(entry)
       }
-    } catch { /* 쿼리 실패 무시 */ }
+    } catch { /* 무시 */ }
   }))
 
-  return {
-    rate:   rateItems.slice(0, 8),
-    policy: policyItems.slice(0, 8),
-  }
+  return { rate: rateItems.slice(0, 8), policy: policyItems.slice(0, 8) }
 }
 
 export async function GET() {
@@ -245,17 +256,20 @@ export async function GET() {
     fetchRateAndPolicyNews(),
   ])
 
-  // 오늘+어제 실적 병합 (중복 제거)
+  // 오늘+어제 병합 (중복 제거)
   const seenCorp = new Set<string>()
-  const todayEarnings: EarningsItem[] = []
+  const merged: EarningsItem[] = []
   for (const item of [...todayDart, ...yesterdayDart]) {
     if (!seenCorp.has(item.corp_name)) {
       seenCorp.add(item.corp_name)
-      todayEarnings.push(item)
+      merged.push(item)
     }
   }
 
-  // 예정 일정 병합 (API 우선, HTML scrape fallback)
+  // 네이버 분기 실적으로 보강
+  const todayEarnings = await enrichWithNaverEarnings(merged.slice(0, 20))
+
+  // 예정 일정 병합
   const seenSched = new Set<string>()
   const scheduledEarnings: ScheduledItem[] = []
   for (const item of [...scheduled1, ...scheduled2]) {
@@ -266,7 +280,7 @@ export async function GET() {
   }
 
   const data: CalendarData = {
-    todayEarnings: todayEarnings.slice(0, 20),
+    todayEarnings,
     scheduledEarnings: scheduledEarnings.slice(0, 20),
     rateNews: rate,
     policyNews: policy,

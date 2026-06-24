@@ -10,6 +10,7 @@ export type DartDisclosure = {
   report_nm: string
   rcept_dt: string
   flr_nm: string
+  stock_code?: string  // 상장 종목만 존재 (6자리 코드)
 }
 
 export async function getTodayDisclosures(): Promise<DartDisclosure[]> {

@@ -19,7 +19,6 @@ function formatDate(str: string) {
 }
 
 function truncateReportName(name: string) {
-  // 공시명이 길면 핵심 단어만 표시
   if (name.includes('잠정실적') || name.includes('영업(잠정)실적')) return '잠정실적'
   if (name.includes('분기보고서')) return '분기보고서'
   if (name.includes('반기보고서')) return '반기보고서'
@@ -27,30 +26,69 @@ function truncateReportName(name: string) {
   return name.length > 18 ? name.slice(0, 18) + '…' : name
 }
 
+// 억원 단위 포맷 (10,000억 이상은 X.X조)
+function fmtBillion(n: number | null | undefined): string {
+  if (n == null) return ''
+  const sign = n < 0 ? '-' : ''
+  const abs  = Math.abs(n)
+  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}조`
+  return `${sign}${Math.round(abs).toLocaleString()}억`
+}
+
 function EarningsRow({ item }: { item: EarningsItem }) {
-  const reportLabel = truncateReportName(item.report_nm)
-  const isProvisional = item.report_nm?.includes('잠정') || item.report_nm?.includes('잠정실적')
+  const reportLabel    = truncateReportName(item.report_nm)
+  const isProvisional  = item.report_nm?.includes('잠정')
+  const hasNumbers     = item.revenue != null || item.operatingProfit != null
+  const opColor        = item.operatingProfit == null ? 'var(--text-muted)'
+    : item.operatingProfit >= 0 ? 'rgba(74,222,128,0.85)' : 'rgba(248,113,113,0.85)'
+
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-xl"
+    <div className="flex flex-col gap-1 py-2 px-3 rounded-xl"
       style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}>
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)', maxWidth: '110px' }}>
-          {item.corp_name}
-        </span>
-        <span
-          className="text-[10px] px-1.5 py-0.5 rounded-md shrink-0"
-          style={{
-            background: isProvisional ? 'rgba(251,146,60,0.12)' : 'rgba(77,166,255,0.1)',
-            border: isProvisional ? '1px solid rgba(251,146,60,0.35)' : '1px solid rgba(77,166,255,0.25)',
-            color: isProvisional ? '#fb923c' : '#4da6ff',
-          }}
-        >
-          {reportLabel}
+      {/* 1행: 기업명 + 뱃지 + 날짜 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)', maxWidth: '110px' }}>
+            {item.corp_name}
+          </span>
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-md shrink-0"
+            style={{
+              background: isProvisional ? 'rgba(251,146,60,0.12)' : 'rgba(77,166,255,0.1)',
+              border: isProvisional ? '1px solid rgba(251,146,60,0.35)' : '1px solid rgba(77,166,255,0.25)',
+              color: isProvisional ? '#fb923c' : '#4da6ff',
+            }}
+          >
+            {reportLabel}
+          </span>
+        </div>
+        <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
+          {formatDate(item.rcept_dt)}
         </span>
       </div>
-      <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-        {formatDate(item.rcept_dt)}
-      </span>
+      {/* 2행: 실적 숫자 (있을 때만) */}
+      {hasNumbers && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {item.quarter && (
+            <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{item.quarter}</span>
+          )}
+          {item.revenue != null && (
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              매출 <span style={{ color: 'var(--text-secondary)' }}>{fmtBillion(item.revenue)}</span>
+            </span>
+          )}
+          {item.operatingProfit != null && (
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              영익 <span style={{ color: opColor, fontWeight: 600 }}>{fmtBillion(item.operatingProfit)}</span>
+            </span>
+          )}
+          {item.netIncome != null && (
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              순익 <span style={{ color: 'var(--text-secondary)' }}>{fmtBillion(item.netIncome)}</span>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -219,9 +257,7 @@ export default function EarningsCalendar() {
                 ) : (
                   <div className="text-xs py-3 text-center rounded-xl"
                     style={{ color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)' }}>
-                    {!process.env.NEXT_PUBLIC_SUPABASE_URL || true
-                      ? 'DART 공시 조회 중 (API 키 필요)'
-                      : '오늘 실적 공시 없음'}
+                    오늘·어제 실적 공시 없음
                   </div>
                 )}
               </div>
