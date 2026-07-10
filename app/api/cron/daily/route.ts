@@ -200,11 +200,11 @@ async function runDailyAnalysis() {
     // isBullMarket은 Gemini 호출 전에 이미 계산됨 (marketText에 주입됨)
     // 하락장 판단: 어제 KOSPI·KOSDAQ 모두 하락했으면 하락장
     const isBearMarket = kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5
-    // 거래유형별 RSI 상한 — 프롬프트 규칙을 코드 레벨에서 강제 적용
+    // 거래유형별 RSI 상한 — 프롬프트 규칙을 코드 레벨에서 강제 적용 (단타 55, 스윙 65, 중기 60으로 강화)
     const rsiMaxByType: Record<string, number> = {
-      '단타': isBullMarket ? 65 : 60,  // 단타: RSI 60 초과 금지 (불장 시 65까지)
-      '스윙': isBullMarket ? 80 : 75,
-      '중기': isBullMarket ? 75 : 70,
+      '단타': isBullMarket ? 65 : 55,  // 단타: RSI 55 초과 금지 (불장 시 65까지)
+      '스윙': isBullMarket ? 80 : 65,  // 스윙: RSI 65 초과 금지 (불장 시 80까지)
+      '중기': isBullMarket ? 70 : 60,  // 중기: RSI 60 초과 금지 (불장 시 70까지)
     }
     console.log(`[불장판단] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% → 단타RSI≤${rsiMaxByType['단타']} / 스윙RSI≤${rsiMaxByType['스윙']} / 중기RSI≤${rsiMaxByType['중기']} (불장: ${isBullMarket} / 하락장: ${isBearMarket})`)
 
@@ -219,6 +219,11 @@ async function runDailyAnalysis() {
         console.log(`[필터-RSI] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 제거 (${r.trade_type} 상한: ${maxRsi})`)
         return false
       }
+      // RSI 하한: 28 미만 극단적 과매도 = 추가 하락 위험
+      if (tech.rsi14 !== null && tech.rsi14 < 28) {
+        console.log(`[필터-RSI하한] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 극단 과매도 제거`)
+        return false
+      }
       if (tech.macdSignal === 'sell') {
         console.log(`[필터-MACD] ${r.name}(${r.ticker}) MACD 데드크로스 제거`)
         return false
@@ -226,6 +231,17 @@ async function runDailyAnalysis() {
       // 하락추세 종목: 단타·스윙 코드 레벨 강제 제거
       if (tech.trend === 'down' && (r.trade_type === '단타' || r.trade_type === '스윙')) {
         console.log(`[필터-추세] ${r.name}(${r.ticker}) 하락추세 제거 (${r.trade_type})`)
+        return false
+      }
+      // 볼린저밴드 상단 근접 종목: 단타·스윙 과열 구간 제거
+      if (tech.bollingerSignal === 'sell' && (r.trade_type === '단타' || r.trade_type === '스윙')) {
+        console.log(`[필터-BB상단] ${r.name}(${r.ticker}) 볼린저 상단 근접 제거 (${r.trade_type})`)
+        return false
+      }
+      // 외국인+기관 동반 순매도 종목: 단타 수급 역풍 제거
+      if (r.trade_type === '단타' && tech.foreignNet !== null && tech.institutionNet !== null &&
+          tech.foreignNet < 0 && tech.institutionNet < 0) {
+        console.log(`[필터-수급동반매도] ${r.name}(${r.ticker}) 외국인+기관 동반매도 단타 제거`)
         return false
       }
       return true
@@ -248,8 +264,8 @@ async function runDailyAnalysis() {
       probability: Math.min(r.probability, 95),
     }))
 
-    // 거래유형별 기본 손절 비율 (Gemini가 제공 안 할 경우 fallback)
-    const stopLossPct: Record<string, number> = { '단타': 0.97, '스윙': 0.95, '중기': 0.92 }
+    // 거래유형별 기본 손절 비율 — 단타 -2.5%, 스윙 -4%, 중기 -6%
+    const stopLossPct: Record<string, number> = { '단타': 0.975, '스윙': 0.96, '중기': 0.94 }
 
     result.recommendations = result.recommendations.map(r => {
       // 하락장 현금보유 슬롯은 그대로 통과

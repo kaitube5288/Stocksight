@@ -56,24 +56,38 @@ export async function sendTelegramAlert(params: {
     `🔗 <a href="https://stocksight-pied.vercel.app">분석 보기</a>`,
   ].filter(Boolean)
 
-  const text = lines.join('\n')
-
-  try {
-    await axios.post(
-      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
-      {
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      },
-      { timeout: 10000 }
-    )
-    return true
-  } catch (e) {
-    console.error('텔레그램 전송 실패:', e instanceof Error ? e.message : e)
-    return false
+  const MAX_MSG_LENGTH = 4000
+  const linkLine = `\n🔗 <a href="https://stocksight-pied.vercel.app">분석 보기</a>`
+  const bodyLines = lines.filter(l => !l.startsWith('🔗'))
+  let body = bodyLines.join('\n')
+  if (body.length + linkLine.length > MAX_MSG_LENGTH) {
+    body = body.slice(0, MAX_MSG_LENGTH - linkLine.length - 3) + '...'
   }
+  const text = body + linkLine
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await axios.post(
+        `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
+        {
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        },
+        { timeout: 15000 }
+      )
+      return true
+    } catch (e) {
+      if (attempt === 2) {
+        console.error('텔레그램 전송 실패 (3회 재시도 소진):', e instanceof Error ? e.message : e)
+        return false
+      }
+      console.warn(`텔레그램 전송 재시도 (${attempt + 1}/3)...`)
+      await new Promise(r => setTimeout(r, (attempt + 1) * 3000))
+    }
+  }
+  return false
 }
 
 // Chat ID 조회 헬퍼 (봇에 메시지 보낸 후 호출)
