@@ -13,6 +13,7 @@ interface MacroData {
   gold: DayPoint[]
   bond: DayPoint[]    // 미국 10년물 국채 금리 (%)
   fedRate: DayPoint[] // 연준 기준금리 추종 (3개월 단기채)
+  oil: DayPoint[]     // WTI 원유 선물 (USD/배럴)
 }
 
 function shortDate(d: string) {
@@ -142,6 +143,7 @@ export default function MacroCharts() {
   const [goldData,   setGoldData]   = useState<DayPoint[]>([])
   const [bondData,   setBondData]   = useState<DayPoint[]>([])
   const [fedData,    setFedData]    = useState<DayPoint[]>([])
+  const [oilData,    setOilData]    = useState<DayPoint[]>([])
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -168,6 +170,7 @@ export default function MacroCharts() {
         }))
         setGoldData(converted)
         setFedData(d.fedRate ?? [])
+        setOilData(d.oil ?? [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -175,17 +178,17 @@ export default function MacroCharts() {
 
   if (loading) return (
     <div className="py-6 text-center" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-      환율·금시세·채권금리 로딩 중...
+      환율·금시세·채권금리·유가 로딩 중...
     </div>
   )
 
-  if (!usdkrwData.length && !goldData.length && !bondData.length && !fedData.length) return null
+  if (!usdkrwData.length && !goldData.length && !bondData.length && !fedData.length && !oilData.length) return null
 
   return (
     <div className="mt-5 flex flex-col gap-3">
       <div className="section-line" />
       <h2 className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-        환율·금시세·채권금리 (90일)
+        환율·금시세·채권금리·유가 (90일)
       </h2>
       <ChartBlock
         title="USD/KRW 환율"
@@ -211,6 +214,13 @@ export default function MacroCharts() {
         unit="%"
         data={fedData}
         color="rgba(180,130,255,0.85)"
+        decimals={2}
+      />
+      <ChartBlock
+        title="WTI 원유 선물"
+        unit="USD/배럴"
+        data={oilData}
+        color="rgba(255,120,50,0.85)"
         decimals={2}
       />
     </div>
