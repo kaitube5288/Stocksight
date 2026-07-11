@@ -39,13 +39,17 @@ function ChartBlock({
   color,
   decimals = 0,
   badge,
+  rawData,
+  rawUnit,
 }: {
   title: string
   unit: string
   data: DayPoint[]
   color: string
   decimals?: number
-  badge?: string
+  badge?: string       // 헤더 우측 가격 옆 부가 표시 (예: "71.51 USD/배럴")
+  rawData?: DayPoint[] // tooltip 보조 데이터 (날짜별 원본 값)
+  rawUnit?: string     // rawData 단위
 }) {
   if (!data.length) return null
 
@@ -66,6 +70,9 @@ function ChartBlock({
       ? v.toLocaleString('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
       : v.toLocaleString('ko-KR', { maximumFractionDigits: 0 })
 
+  const rawMap: Record<string, number> = {}
+  if (rawData) for (const p of rawData) rawMap[p.date] = p.value
+
   return (
     <div
       className="rounded-2xl p-4"
@@ -73,17 +80,15 @@ function ChartBlock({
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
-          {badge && (
-            <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{badge}</span>
-          )}
-        </div>
+        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
         <div className="flex items-center gap-2">
           <span className="mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
             {fmt(last.value)}
             <span className="text-[10px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{unit}</span>
           </span>
+          {badge && (
+            <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{badge}</span>
+          )}
           {chg != null && (
             <span
               className="mono text-[10px] font-bold px-1.5 py-0.5 rounded"
@@ -127,8 +132,28 @@ function ChartBlock({
                 fontSize: '11px',
                 color: 'rgba(255,255,255,0.85)',
               }}
-              formatter={(v: unknown) => [`${fmt(Number(v))} ${unit}`, title]}
-              labelFormatter={(label: unknown) => shortDate(String(label))}
+              content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null
+                const krwVal = payload[0]?.value as number
+                const barrelVal = rawMap[label as string]
+                return (
+                  <div style={{
+                    background: '#111', border: '1px solid rgba(255,255,255,0.14)',
+                    borderRadius: '8px', padding: '6px 10px', fontSize: '11px',
+                    color: 'rgba(255,255,255,0.85)',
+                  }}>
+                    <div style={{ marginBottom: '4px', color: 'rgba(255,255,255,0.45)', fontSize: '10px' }}>
+                      {shortDate(String(label))}
+                    </div>
+                    {barrelVal != null && rawUnit && (
+                      <div style={{ color: 'rgba(255,255,255,0.6)', marginBottom: '2px' }}>
+                        {barrelVal.toFixed(2)} {rawUnit}
+                      </div>
+                    )}
+                    <div>{title} : {fmt(krwVal)} {unit}</div>
+                  </div>
+                )
+              }}
             />
             <Line
               type="monotone"
@@ -151,6 +176,7 @@ export default function MacroCharts() {
   const [bondData,   setBondData]   = useState<DayPoint[]>([])
   const [fedData,    setFedData]    = useState<DayPoint[]>([])
   const [oilData,    setOilData]    = useState<DayPoint[]>([])
+  const [oilRawData, setOilRawData] = useState<DayPoint[]>([])
   const [oilBarrel,  setOilBarrel]  = useState<number | null>(null)
   const [loading,    setLoading]    = useState(true)
 
@@ -184,6 +210,7 @@ export default function MacroCharts() {
           value: Math.round((p.value * getNearestKrw(p.date)) / 158.987),
         }))
         setOilData(oilConverted)
+        setOilRawData(rawOil)
         if (rawOil.length) setOilBarrel(rawOil[rawOil.length - 1].value)
       })
       .catch(() => {})
@@ -236,6 +263,8 @@ export default function MacroCharts() {
         data={oilData}
         color="rgba(255,120,50,0.85)"
         badge={oilBarrel != null ? `${oilBarrel.toFixed(2)} USD/배럴` : undefined}
+        rawData={oilRawData}
+        rawUnit="USD/배럴"
       />
     </div>
   )
