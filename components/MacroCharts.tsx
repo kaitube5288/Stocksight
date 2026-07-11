@@ -86,9 +86,19 @@ function ChartBlock({
             {fmt(last.value)}
             <span className="text-[10px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{unit}</span>
           </span>
-          {badge && (
-            <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{badge}</span>
-          )}
+          {badge && (() => {
+            const spaceIdx = badge.lastIndexOf(' ')
+            const badgeNum  = spaceIdx >= 0 ? badge.slice(0, spaceIdx) : badge
+            const badgeUnit = spaceIdx >= 0 ? badge.slice(spaceIdx + 1) : ''
+            return (
+              <span className="mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                {badgeNum}
+                {badgeUnit && (
+                  <span className="text-[10px] font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{badgeUnit}</span>
+                )}
+              </span>
+            )
+          })()}
           {chg != null && (
             <span
               className="mono text-[10px] font-bold px-1.5 py-0.5 rounded"
