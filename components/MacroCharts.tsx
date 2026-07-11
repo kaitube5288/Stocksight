@@ -38,12 +38,14 @@ function ChartBlock({
   data,
   color,
   decimals = 0,
+  badge,
 }: {
   title: string
   unit: string
   data: DayPoint[]
   color: string
   decimals?: number
+  badge?: string
 }) {
   if (!data.length) return null
 
@@ -71,7 +73,12 @@ function ChartBlock({
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
+          {badge && (
+            <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>{badge}</span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <span className="mono text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
             {fmt(last.value)}
@@ -144,6 +151,7 @@ export default function MacroCharts() {
   const [bondData,   setBondData]   = useState<DayPoint[]>([])
   const [fedData,    setFedData]    = useState<DayPoint[]>([])
   const [oilData,    setOilData]    = useState<DayPoint[]>([])
+  const [oilBarrel,  setOilBarrel]  = useState<number | null>(null)
   const [loading,    setLoading]    = useState(true)
 
   useEffect(() => {
@@ -170,11 +178,13 @@ export default function MacroCharts() {
         }))
         setGoldData(converted)
         setFedData(d.fedRate ?? [])
-        const oilConverted = (d.oil ?? []).map(p => ({
+        const rawOil = d.oil ?? []
+        const oilConverted = rawOil.map(p => ({
           date:  p.date,
           value: Math.round((p.value * getNearestKrw(p.date)) / 158.987),
         }))
         setOilData(oilConverted)
+        if (rawOil.length) setOilBarrel(rawOil[rawOil.length - 1].value)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -225,6 +235,7 @@ export default function MacroCharts() {
         unit="원/L"
         data={oilData}
         color="rgba(255,120,50,0.85)"
+        badge={oilBarrel != null ? `${oilBarrel.toFixed(2)} USD/배럴` : undefined}
       />
     </div>
   )
