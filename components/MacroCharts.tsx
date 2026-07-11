@@ -170,7 +170,11 @@ export default function MacroCharts() {
         }))
         setGoldData(converted)
         setFedData(d.fedRate ?? [])
-        setOilData(d.oil ?? [])
+        const oilConverted = (d.oil ?? []).map(p => ({
+          date:  p.date,
+          value: Math.round(p.value * getNearestKrw(p.date)),
+        }))
+        setOilData(oilConverted)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -218,10 +222,9 @@ export default function MacroCharts() {
       />
       <ChartBlock
         title="WTI 원유 선물"
-        unit="USD/배럴"
+        unit="원/배럴"
         data={oilData}
         color="rgba(255,120,50,0.85)"
-        decimals={2}
       />
     </div>
   )
