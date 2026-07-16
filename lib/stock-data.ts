@@ -650,6 +650,7 @@ export type TechnicalIndicators = {
   candlePattern: 'hammer' | 'shooting_star' | 'doji' | 'bullish_engulfing' | 'bearish_engulfing' | null
   foreignNet: number | null                         // 최신 영업일 외국인 순매수 (주)
   institutionNet: number | null                     // 최신 영업일 기관 순매수 (주)
+  prevDayChangePct: number | null                   // 전일 대비 등락률 (%)
 }
 
 function calcSMA(prices: number[], period: number): number | null {
@@ -763,7 +764,7 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
     rsi14: null, macdSignal: null, trend: null,
     volumeSurge: null, bollingerSignal: null, bollingerWidth: null,
     supportLevel: null, resistanceLevel: null, isNearHighBreakout: false, candlePattern: null,
-    foreignNet: null, institutionNet: null,
+    foreignNet: null, institutionNet: null, prevDayChangePct: null,
   }
   try {
     const [{ opens, highs, lows, closes, volumes }, naverScrape] = await Promise.all([
@@ -827,6 +828,10 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
 
     const isNearHighBreakout = sr != null && last > 0 && last >= sr.resistance * 0.98
 
+    // 전일 대비 등락률
+    const prevClose = closes[closes.length - 2]
+    const prevDayChangePct = prevClose > 0 ? ((last - prevClose) / prevClose) * 100 : null
+
     return {
       rsi14, macdSignal, trend,
       volumeSurge, bollingerSignal, bollingerWidth,
@@ -836,6 +841,7 @@ export async function fetchTechnicalIndicators(ticker: string): Promise<Technica
       candlePattern,
       foreignNet: naverScrape.foreignNet,
       institutionNet: naverScrape.institutionNet,
+      prevDayChangePct,
     }
   } catch { return empty }
 }

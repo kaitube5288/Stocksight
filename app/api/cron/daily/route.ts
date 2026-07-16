@@ -433,6 +433,10 @@ function formatCandidatesContext(
     }
     if (t?.foreignNet != null) parts.push(`외국인${t.foreignNet > 0 ? '+' : ''}${Math.round(t.foreignNet / 1000)}K주`)
     if (t?.institutionNet != null) parts.push(`기관${t.institutionNet > 0 ? '+' : ''}${Math.round(t.institutionNet / 1000)}K주`)
+    if (t?.prevDayChangePct != null) {
+      const sign = t.prevDayChangePct >= 0 ? '+' : ''
+      parts.push(`전일${sign}${t.prevDayChangePct.toFixed(1)}%`)
+    }
     lines.push(parts.join(' | '))
   }
   return lines.join('\n')
