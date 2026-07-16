@@ -302,8 +302,26 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
 
   const text = await callGemini(prompt)
   const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Gemini 응답에서 JSON을 파싱할 수 없습니다')
-  const parsed = JSON.parse(jsonMatch[0]) as GeminiAnalysisResult
+  if (!jsonMatch) {
+    console.error('[Gemini] JSON 파싱 실패 — 응답 앞 200자:', text.slice(0, 200))
+    // throw 대신 빈 결과 반환 → 텔레그램 에러 알림으로 이어짐
+    return {
+      recommendations: [],
+      market_outlook: '[분석 실패] Gemini 응답 JSON 파싱 오류 — 오늘 추천 생략',
+      risk_factors: 'Gemini 응답 형식 오류로 분석 불가',
+    }
+  }
+  let parsed: GeminiAnalysisResult
+  try {
+    parsed = JSON.parse(jsonMatch[0]) as GeminiAnalysisResult
+  } catch (e) {
+    console.error('[Gemini] JSON.parse 실패:', e instanceof Error ? e.message : e)
+    return {
+      recommendations: [],
+      market_outlook: '[분석 실패] Gemini 응답 JSON 파싱 오류 — 오늘 추천 생략',
+      risk_factors: 'Gemini 응답 형식 오류로 분석 불가',
+    }
+  }
   // 필수 필드 누락 방어
   if (!Array.isArray(parsed.recommendations)) parsed.recommendations = []
   if (!parsed.market_outlook) parsed.market_outlook = '시장 전망 데이터 없음'

@@ -90,6 +90,19 @@ export async function sendTelegramAlert(params: {
   return false
 }
 
+// 에러·경고용 단순 텍스트 전송 (포맷 없음, 실패해도 조용히 무시)
+export async function sendTelegramSimple(message: string): Promise<void> {
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return
+  if (TELEGRAM_TOKEN.startsWith('your-')) return
+  try {
+    await axios.post(
+      `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
+      { chat_id: TELEGRAM_CHAT_ID, text: message.slice(0, 4000), parse_mode: 'HTML' },
+      { timeout: 10000 }
+    )
+  } catch { /* 에러 알림 실패는 조용히 무시 */ }
+}
+
 // Chat ID 조회 헬퍼 (봇에 메시지 보낸 후 호출)
 export async function getTelegramChatId(): Promise<string | null> {
   if (!TELEGRAM_TOKEN) return null

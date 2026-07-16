@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { generateRecommendations, analyzeEventBeneficiaries } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
-import { sendTelegramAlert } from '@/lib/telegram'
+import { sendTelegramAlert, sendTelegramSimple } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
@@ -48,9 +48,9 @@ export async function POST() {
 
 async function runDailyAnalysis() {
   const supabaseAdmin = getSupabaseAdmin()
+  const todayDate = getKSTDate()  // try 밖에 선언 — catch 블록에서도 참조 가능
 
   try {
-    const todayDate = getKSTDate()
     const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 
     // 1. 뉴스 수집: 07:30 크론이 채운 news_cache DB를 우선 읽고, 없으면 직접 수집 fallback
@@ -383,7 +383,7 @@ async function runDailyAnalysis() {
       result.market_outlook = `[불장 감지] ${result.market_outlook}`
     }
 
-    // 5. Supabase 저장
+    // 5. Supabase 저장 (실패해도 텔레그램 전송은 반드시 진행)
     await supabaseAdmin.from('recommendations').delete().eq('date', todayDate)
     const { data, error } = await supabaseAdmin
       .from('recommendations')
@@ -396,7 +396,7 @@ async function runDailyAnalysis() {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) console.error('[Supabase 저장 실패]', error.message)
 
     // 6. 텔레그램 알림
     await sendTelegramAlert({
@@ -430,7 +430,11 @@ async function runDailyAnalysis() {
       .lt('fetched_at', cleanupDate.toISOString())
 
     // 9. 누적 수익률 미달 섹션 자기진단 — 메인 작업 완료 후 실행 (다음 cron 회차에 반영)
-    const improvedSections = await runStrategyImprovementIfNeeded()
+    // 60초 타임아웃: 이 단계가 길어져도 전체 함수가 멈추지 않도록 보호
+    const improvedSections = await Promise.race([
+      runStrategyImprovementIfNeeded(),
+      new Promise<string[]>(resolve => setTimeout(() => { console.warn('[전략개선] 60초 타임아웃 — 스킵'); resolve([]) }, 60000)),
+    ])
 
     return NextResponse.json({
       success: true,
@@ -446,6 +450,10 @@ async function runDailyAnalysis() {
   } catch (error) {
     const message = error instanceof Error ? error.message : JSON.stringify(error)
     console.error('Daily cron 오류:', message)
+    // 에러 내용을 텔레그램으로 즉시 알림 (원인 파악용)
+    await sendTelegramSimple(
+      `⚠️ <b>StockSight 분석 오류</b> (${todayDate})\n\n${message.slice(0, 500)}\n\n🔗 <a href="https://stocksight-pied.vercel.app">상세 확인</a>`
+    )
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 }
