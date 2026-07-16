@@ -122,6 +122,8 @@ export async function generateRecommendations(params: {
   eventBeneficiaryContext?: string
   interestRates?: string   // 미국 국채 금리 + 장단기 역전 여부
   ratePolicyNews?: string  // 금리·정책 관련 뉴스 필터링 결과
+  bounceContext?: string   // 전일 급락 + 과매도 반등 후보 (단타 최우선 검토)
+  kospiMA20Warning?: string // KOSPI 20일선 하회 경고
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -206,7 +208,7 @@ ${params.ratePolicyNews}
 ${params.historicalPatterns}
 ${params.technicalContext ? `\n## 뉴스 관련 섹터 기술적 지표 (실시간)\n${params.technicalContext}` : ''}
 ${params.candidatesContext ? `\n## 후보 종목 실제 데이터 (PER·PBR·ROE·RSI·MACD·추세)\n${params.candidatesContext}` : ''}
-
+${params.bounceContext ? `\n${params.bounceContext}\n` : ''}${params.kospiMA20Warning ? `\n## ⚠️ 시장 구조 경고\n${params.kospiMA20Warning}\n` : ''}
 ---
 
 ## 분석 기준 (4가지 종합 → probability 점수)
@@ -230,6 +232,38 @@ ${params.candidatesContext ? `\n## 후보 종목 실제 데이터 (PER·PBR·ROE
 
 ---
 
+## 추천 품질 기준 — 다중 조건 동시 만족 종목 우선
+
+[강력 신호 = 단타 1순위]
+아래 5개 조건 중 3개 이상 동시 만족 시에만 단타 추천:
+① RSI 30~50 (과매도 회복 구간)
+② MACD 골든크로스 (MACD↑)
+③ 볼린저밴드 하단 근접 (BB하단근접)
+④ 거래량 1.5배 이상 급증
+⑤ 추세↑ 또는 추세- (횡보)
+
+→ 조건 충족 개수를 reasoning 첫 줄에 반드시 명시
+   예: "신호강도 4/5 — RSI 38 + MACD↑ + BB하단 + 거래량2.1x 동시 만족"
+
+[보통 신호 = 스윙/중기만]
+3개 미만 만족 → 단타 금지, 스윙·중기만 검토
+
+## 규칙 기반 진입 전략 (AI 예측보다 이 규칙 우선)
+
+[단타 진입 규칙]
+- 반등형: 전일 -7% 이상 급락 + RSI < 40 + 추세 횡보/상승 → 기술적 반등 단타 (🔄반등후보 섹션 최우선 활용)
+- 돌파형: 🚀신고가돌파 + 거래량 2배↑ + 추세↑ → 모멘텀 단타 (불장 한정)
+- 눌림형: RSI 35~50 + BB하단근접 + MACD↑ + 추세↑ → 눌림목 단타
+
+[스윙 진입 규칙]
+- 지지선 반등: 지지선근접 + RSI 40 이하 + MACD↑ + 거래량 증가 → 지지선 반등 스윙
+
+[중기 진입 규칙]
+- 저평가 우량주: ROE 10%↑ + PBR 1.5 이하 + RSI 50 이하 + 추세↑ → 저평가 우량주 중기
+
+→ 위 규칙에 해당하는 패턴명을 key_catalyst에 반드시 포함
+   예: "반등형 단타", "눌림목 단타", "지지선 반등 스윙", "저평가 우량주 중기"
+
 ## 투자 유형별 추천 (총 9종목)
 - 단타 (1일 목표): 추세↑ 필수 + MA5>MA20 정배열 필수 + RSI 35~55 (상한 강화) + MACD↑ 필수 + (BB하단근접 OR 거래량급증1.5x↑ OR hammer·doji 패턴) 중 1개 이상, 매수가 = 당일 시가 예상
   * 볼린저밴드 하단 근접(buy) 종목 최우선 / 외국인+기관 동반 순매도 종목 단타 금지
@@ -247,7 +281,7 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
 
 반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
 - recommendations 배열 9개: 인덱스 0~2 단타, 3~5 스윙, 6~8 중기
-- stop_loss: 단타는 매수가×0.975(-2.5%), 스윙은 매수가×0.96(-4%), 중기는 매수가×0.94(-6%)
+- stop_loss: 단타는 매수가×0.95(-5%), 스윙은 매수가×0.96(-4%), 중기는 매수가×0.94(-6%)
 {
   "recommendations": [
     {
@@ -255,7 +289,7 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
       "ticker": "6자리 종목코드",
       "buy_price": 매수가격(숫자),
       "sell_price": 목표매도가(숫자),
-      "stop_loss": 손절가(숫자 — 단타 -2.5%, 스윙 -4%, 중기 -6%),
+      "stop_loss": 손절가(숫자 — 단타 -5%, 스윙 -4%, 중기 -6%),
       "expected_return": 예상수익률(숫자, % 단위),
       "probability": 상승확률(0-100 숫자),
       "reasoning": "추천 이유 (2-3문장, 실제 RSI·MACD·추세 수치 근거 포함 + 뉴스 미언급 기술적 근거 강조)",

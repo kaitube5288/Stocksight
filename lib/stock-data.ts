@@ -135,7 +135,7 @@ async function fetchSimpleQuote(symbol: string): Promise<{ price: number; change
   } catch { return null }
 }
 
-async function fetchKospiMA20(): Promise<{ price: number; ma20: number } | null> {
+export async function fetchKospiMA20(): Promise<{ price: number; ma20: number } | null> {
   try {
     const res = await axios.get(
       'https://query1.finance.yahoo.com/v8/finance/chart/%5EKS11?interval=1d&range=60d',
@@ -933,7 +933,7 @@ export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedT
     ma5: null, ma20: null, ma60: null, high52w: null, low52w: null,
     ma5Signal: '데이터 없음', maAlignmentSignal: '데이터 없음',
     bollingerStatusText: '데이터 없음', range52wSignal: '데이터 없음', priceSignal: '데이터 없음',
-    analystTarget: null,
+    analystTarget: null, prevDayChangePct: null,
   }
   try {
     const [ohlcv1y, naverScrape] = await Promise.all([
@@ -1084,6 +1084,7 @@ export async function fetchDetailedTechnicals(ticker: string): Promise<DetailedT
       high52w, low52w,
       ma5Signal, maAlignmentSignal, bollingerStatusText, range52wSignal, priceSignal,
       analystTarget: naverScrape.analystTarget,
+      prevDayChangePct: prev > 0 ? ((last - prev) / prev) * 100 : null,
     }
   } catch { return base }
 }

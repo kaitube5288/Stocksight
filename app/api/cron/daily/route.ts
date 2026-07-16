@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations, analyzeEventBeneficiaries } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -57,14 +57,15 @@ async function runDailyAnalysis() {
     const { news: freshNews, analyzed: analyzedNews } = await getNewsFromCacheOrFetch()
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
 
-    // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 + 미국 국채 금리 병렬 수집
-    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks, interestRatesRaw] = await Promise.all([
+    // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 + 미국 국채 금리 + KOSPI MA20 병렬 수집
+    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks, interestRatesRaw, kospiMA20] = await Promise.all([
       getTodayDisclosures(),
       getMarketIndex(),
       getUSDKRW(),
       getGoldPrice(),
       fetchVolumeTopStocks(15).catch(() => [] as { ticker: string; name: string }[]),
       fetchInterestRates().catch(() => ({ us10Y: null, us3M: null, yieldSpread: null, isInverted: false })),
+      fetchKospiMA20().catch(() => null),
     ])
     const interestRatesText = formatInterestRatesForPrompt(interestRatesRaw)
 
@@ -143,6 +144,38 @@ async function runDailyAnalysis() {
 
     const candidatesContext = formatCandidatesContext(fullCandidatePool, fullCandidateFundamentals, fullCandidateTechMap)
 
+    // 반등 후보 식별: 전일 -7% 이하 + RSI ≤ 35 + 추세 횡보/상승 → 단타 최우선 검토
+    const bounceCandidates = fullCandidatePool.filter(c => {
+      const t = fullCandidateTechMap[c.ticker]
+      return t?.prevDayChangePct != null && t.prevDayChangePct <= -7
+        && t.rsi14 != null && t.rsi14 <= 35
+        && (t.trend === 'up' || t.trend === 'sideways')
+    })
+    const bounceContext = bounceCandidates.length > 0
+      ? [
+          '## 🔄 단타 반등 최우선 후보 (전일 급락 + 과매도 + 추세 유지)',
+          '→ 아래 종목은 전일 -7% 이상 급락했으나 RSI 과매도 + 추세 횡보/상승 유지 중',
+          '→ 기술적 반등 가능성 높음 — 단타 추천 시 최우선 검토 필수',
+          ...bounceCandidates.map(c => {
+            const t = fullCandidateTechMap[c.ticker]
+            const trendLabel = t?.trend === 'up' ? '추세↑' : '추세-'
+            return `• ${c.name}(${c.ticker}) 전일${t!.prevDayChangePct!.toFixed(1)}% | RSI ${t?.rsi14?.toFixed(0)} | ${trendLabel}`
+          }),
+        ].join('\n')
+      : undefined
+    if (bounceCandidates.length > 0) {
+      console.log(`[반등후보] ${bounceCandidates.length}개 감지: ${bounceCandidates.map(c => c.ticker).join(', ')}`)
+    }
+
+    // KOSPI MA20 기반 시장 구조 경고
+    const isKospiBelowMA20 = kospiMA20 != null && kospiMA20.price < kospiMA20.ma20
+    const kospiMA20Warning = isKospiBelowMA20
+      ? `⚠️ KOSPI 20일선 하회 중 (현재 ${kospiMA20!.price.toFixed(0)} / MA20 ${kospiMA20!.ma20.toFixed(0)})\n→ 시장 전체 하락 구조. 단타·스윙 추천 종목 수를 최소화하고, 방어주·현금보유 비중 확대. 확신도 90% 이상 종목만 추천.`
+      : undefined
+    if (isKospiBelowMA20) {
+      console.log(`[KOSPI-MA20] KOSPI ${kospiMA20!.price.toFixed(0)} < MA20 ${kospiMA20!.ma20.toFixed(0)} — 단타 최대 1종목 제한 적용`)
+    }
+
     // 금리·정책 뉴스: 기존 analyzedNews에서 키워드 필터링 (추가 API 호출 없음)
     const RATE_POLICY_KW = [
       '금리', '기준금리', 'FOMC', '연준', '한국은행', '금통위',
@@ -169,6 +202,8 @@ async function runDailyAnalysis() {
       eventBeneficiaryContext: eventBeneficiary.analysisText || undefined,
       interestRates: interestRatesText || undefined,
       ratePolicyNews: ratePolicyNewsText || undefined,
+      bounceContext: bounceContext || undefined,
+      kospiMA20Warning: kospiMA20Warning || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
@@ -258,14 +293,59 @@ async function runDailyAnalysis() {
       })
     }
 
+    // D: 강력 신호 점수 필터 — 단타는 5개 조건 중 3개 이상 만족 필수
+    function calcSignalScore(tech: TechnicalIndicators): number {
+      let score = 0
+      if (tech.rsi14 != null && tech.rsi14 >= 30 && tech.rsi14 <= 50) score++
+      if (tech.macdSignal === 'buy') score++
+      if (tech.bollingerSignal === 'buy') score++
+      if (tech.volumeSurge != null && tech.volumeSurge >= 1.5) score++
+      if (tech.trend === 'up' || tech.trend === 'sideways') score++
+      return score
+    }
+    result.recommendations = result.recommendations.filter(r => {
+      if (r.ticker === '000000') return true
+      if (r.trade_type !== '단타') return true
+      const tech = techMap[r.ticker]
+      if (!tech) return true
+      const score = calcSignalScore(tech)
+      if (score < 3) {
+        console.log(`[필터-신호점수] ${r.name}(${r.ticker}) 신호강도 ${score}/5 — 단타 기준 미달 (3점↑ 필요) 제거`)
+        return false
+      }
+      console.log(`[신호강도] ${r.name}(${r.ticker}) ${score}/5 통과`)
+      return true
+    })
+
+    // E: KOSPI MA20 하회 시 단타 최대 1종목으로 제한 (나머지 슬롯 현금보유로 채움)
+    if (isKospiBelowMA20) {
+      const dantas = result.recommendations.filter(r => r.trade_type === '단타' && r.ticker !== '000000')
+      if (dantas.length > 1) {
+        const keepTicker = dantas[0].ticker
+        result.recommendations = result.recommendations.filter(r =>
+          r.trade_type !== '단타' || r.ticker === '000000' || r.ticker === keepTicker
+        )
+        const cashSlotCount = 2 - (result.recommendations.filter(r => r.trade_type === '단타' && r.ticker === '000000').length)
+        for (let i = 0; i < cashSlotCount; i++) {
+          result.recommendations.splice(1 + i, 0, {
+            name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
+            expected_return: 0, probability: 0, trade_type: '단타', hold_period: '1일 목표',
+            reasoning: 'KOSPI 20일선 하회 — 시장 전체 하락 구조, 현금 보유 권고',
+            key_catalyst: 'KOSPI MA20 하회', per: null, pbr: null, roe: null,
+          })
+        }
+        console.log(`[KOSPI-MA20] 단타 ${dantas.length}개→1개 축소, 현금보유 ${cashSlotCount}개 추가`)
+      }
+    }
+
     // 확률 상한 95% 캡핑
     result.recommendations = result.recommendations.map(r => ({
       ...r,
       probability: Math.min(r.probability, 95),
     }))
 
-    // 거래유형별 기본 손절 비율 — 단타 -2.5%, 스윙 -4%, 중기 -6%
-    const stopLossPct: Record<string, number> = { '단타': 0.975, '스윙': 0.96, '중기': 0.94 }
+    // 거래유형별 기본 손절 비율 — 단타 -5%, 스윙 -4%, 중기 -6%
+    const stopLossPct: Record<string, number> = { '단타': 0.95, '스윙': 0.96, '중기': 0.94 }
 
     result.recommendations = result.recommendations.map(r => {
       // 하락장 현금보유 슬롯은 그대로 통과
