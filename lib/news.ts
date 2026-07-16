@@ -67,6 +67,24 @@ const SECTOR_KEYWORDS: Record<string, string[]> = {
   '전장':   ['전장', 'ADAS', '차량용 카메라', '블랙박스', '차량 전자', '파인디지털', '아이비전'],
 }
 
+// 날짜 파싱 (RFC 822, ISO 8601, 네이버 "YYYY.MM.DD HH:MM" 형식 지원)
+function parsePubDate(pubDate: string): Date | null {
+  if (!pubDate?.trim()) return null
+  const d = new Date(pubDate)
+  if (!isNaN(d.getTime())) return d
+  // 네이버 스크래핑 형식: "2026.07.15 08:30"
+  const m = pubDate.match(/(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})/)
+  if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+09:00`)
+  return null
+}
+
+// 36시간 이내 기사만 유효 (파싱 실패 시 포함 — 누락 방지)
+function isRecentNews(pubDate: string, maxAgeHours = 36): boolean {
+  const d = parsePubDate(pubDate)
+  if (!d) return true
+  return Date.now() - d.getTime() <= maxAgeHours * 60 * 60 * 1000
+}
+
 function scoreImpact(title: string): 'high' | 'medium' | 'low' {
   if (HIGH_IMPACT.some(k => title.includes(k))) return 'high'
   if (LOW_IMPACT.some(k => title.includes(k))) return 'low'
@@ -249,7 +267,7 @@ export async function fetchOvernightNews(): Promise<NewsItem[]> {
     if (seen.has(item.title)) return false
     seen.add(item.title)
     return true
-  })
+  }).filter(item => isRecentNews(item.pubDate))
 }
 
 // 실시간 뉴스 수집 + 분석 (크론 직접 호출용)
@@ -276,13 +294,13 @@ export async function fetchAndAnalyzeNews(): Promise<{ news: NewsItem[]; analyze
   const naverItems = await fetchNaverFinanceRSS()
   all.push(...naverItems)
 
-  // 중복 제거 (제목 기준)
+  // 중복 제거 + 36시간 이내 기사만 유효 (오래된 기사 제거)
   const seen = new Set<string>()
   const unique = all.filter(n => {
     if (!n.title || seen.has(n.title)) return false
     seen.add(n.title)
     return true
-  })
+  }).filter(n => isRecentNews(n.pubDate))
 
   const analyzed = analyzeNews(unique)
   return { news: unique, analyzed }
@@ -306,7 +324,7 @@ export async function getNewsFromCacheOrFetch(): Promise<{ news: NewsItem[]; ana
       .limit(1)
       .single()
     if (cached?.news && Array.isArray(cached.news) && (cached.news as NewsItem[]).length > 0) {
-      const news = cached.news as NewsItem[]
+      const news = (cached.news as NewsItem[]).filter(n => isRecentNews(n.pubDate))
       const analyzed = analyzeNews(news)
       return { news, analyzed }
     }
