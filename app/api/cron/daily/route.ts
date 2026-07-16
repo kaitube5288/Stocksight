@@ -89,7 +89,7 @@ async function runDailyAnalysis() {
     const poolTickerSet = new Set(candidatePool.map(c => c.ticker))
     const volumeCandidates = volumeTopStocks
       .filter(s => !poolTickerSet.has(s.ticker))
-      .slice(0, 5)
+      .slice(0, 10)
       .map(s => ({ ...s, sector: '거래량상위' }))
     const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
     const candidateTickers = mergedCandidatePool.map(c => c.ticker)
