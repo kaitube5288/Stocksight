@@ -49,15 +49,24 @@ export async function POST(request: Request) {
   }
 
   // 보유 종목 추가/수정
-  const { ticker, name, avg_price, shares, account_id } = body
+  const { id, ticker, name, avg_price, shares, account_id } = body
   if (!ticker || !name || avg_price == null || shares == null) {
     return NextResponse.json({ error: '필수 항목 누락: ticker, name, avg_price, shares' }, { status: 400 })
   }
-  const { error } = await supabase.from('portfolio').upsert(
-    { ticker, name, avg_price: Number(avg_price), shares: Number(shares), account_id: account_id ?? null, updated_at: new Date().toISOString() },
-    { onConflict: 'ticker' }
-  )
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  if (id) {
+    // 기존 종목 수정: id 기반 update (ticker 변경 불가)
+    const { error } = await supabase.from('portfolio').update(
+      { name, avg_price: Number(avg_price), shares: Number(shares), account_id: account_id ?? null, updated_at: new Date().toISOString() }
+    ).eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else {
+    // 신규 종목 추가: insert
+    const { error } = await supabase.from('portfolio').insert(
+      { ticker, name, avg_price: Number(avg_price), shares: Number(shares), account_id: account_id ?? null }
+    )
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json({ success: true })
 }
 

@@ -16,7 +16,7 @@ const ADVICE_STYLE: Record<string, { bg: string; border: string; color: string; 
   '손절고려': { bg: 'rgba(255,92,92,0.12)',    border: 'rgba(255,92,92,0.4)',   color: '#ff5c5c', label: '손절고려' },
 }
 
-const EMPTY_FORM = { ticker: '', name: '', avg_price: '', shares: '', account_id: '' }
+const EMPTY_FORM = { id: '', ticker: '', name: '', avg_price: '', shares: '', account_id: '' }
 const EMPTY_ACCT = (): AcctForm => ({ name: '', current_investment: '0', additional_investment: '0', cash: '0' })
 
 type AccountTheme = {
@@ -177,7 +177,7 @@ export default function PortfolioSection() {
 
   const openEdit = (item: PortfolioItem) => {
     setEditTicker(item.ticker)
-    setForm({ ticker: item.ticker, name: item.name, avg_price: String(item.avg_price), shares: String(item.shares), account_id: item.account_id ?? '' })
+    setForm({ id: item.id ?? '', ticker: item.ticker, name: item.name, avg_price: String(item.avg_price), shares: String(item.shares), account_id: item.account_id ?? '' })
     setSearchQuery(`${item.name} (${item.ticker})`)
     setSearchResults([])
     setShowDropdown(false)
@@ -214,7 +214,7 @@ export default function PortfolioSection() {
       const res = await fetch('/api/portfolio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: form.ticker.trim(), name: form.name.trim(), avg_price: Number(form.avg_price.replace(/,/g, '')), shares: Number(form.shares.replace(/,/g, '')), account_id: form.account_id || null }),
+        body: JSON.stringify({ id: form.id || undefined, ticker: form.ticker.trim(), name: form.name.trim(), avg_price: Number(form.avg_price.replace(/,/g, '')), shares: Number(form.shares.replace(/,/g, '')), account_id: form.account_id || null }),
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
@@ -584,7 +584,7 @@ export default function PortfolioSection() {
                     <div className="flex flex-col gap-2">
                       {accItems.map(item => (
                         <StockCard
-                          key={item.ticker}
+                          key={item.id ?? item.ticker}
                           item={item}
                           live={live}
                           adviceList={adviceByTicker[item.ticker] ?? []}
@@ -611,7 +611,7 @@ export default function PortfolioSection() {
                 <div className="flex flex-col gap-2">
                   {unassigned.map(item => (
                     <StockCard
-                      key={item.ticker}
+                      key={item.id ?? item.ticker}
                       item={item}
                       live={live}
                       adviceList={adviceByTicker[item.ticker] ?? []}
