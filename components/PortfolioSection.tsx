@@ -269,13 +269,15 @@ export default function PortfolioSection() {
   const totalAdditionalInv = accounts.reduce((sum, a) => sum + a.additional_investment, 0)
   const totalAsset = totalEval + totalCash
 
-  // Group items by account
+  // Group items by account (account_id가 현재 accounts에 없는 고아 종목도 미분류로 표시)
+  const knownAccountIds = new Set(accounts.map(a => a.id).filter((id): id is string => id != null))
   const itemsByAccount: Record<string, PortfolioItem[]> = {}
   const unassigned: PortfolioItem[] = []
   for (const item of items) {
     const aid = item.account_id
-    if (!aid) unassigned.push(item)
-    else {
+    if (!aid || !knownAccountIds.has(aid)) {
+      unassigned.push(item)
+    } else {
       if (!itemsByAccount[aid]) itemsByAccount[aid] = []
       itemsByAccount[aid].push(item)
     }
