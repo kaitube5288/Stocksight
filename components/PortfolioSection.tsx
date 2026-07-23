@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { PortfolioItem, PortfolioAdvice } from '@/lib/supabase'
+
+type SearchResult = { ticker: string; name: string; sector: string }
 
 type LivePrice = { price: number | null }
 
@@ -31,6 +33,11 @@ export default function PortfolioSection() {
   const [editingCash, setEditingCash] = useState(false)
   const [cashInput, setCashInput] = useState('')
   const [error, setError] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const fetchLive = useCallback(async (tickers: string[]) => {
     if (!tickers.length) return
@@ -72,13 +79,41 @@ export default function PortfolioSection() {
   const openAdd = () => {
     setEditTicker(null)
     setForm(EMPTY_FORM)
+    setSearchQuery('')
+    setSearchResults([])
+    setShowDropdown(false)
     setShowForm(true)
   }
 
   const openEdit = (item: PortfolioItem) => {
     setEditTicker(item.ticker)
     setForm({ ticker: item.ticker, name: item.name, avg_price: String(item.avg_price), shares: String(item.shares) })
+    setSearchQuery(`${item.name} (${item.ticker})`)
+    setSearchResults([])
+    setShowDropdown(false)
     setShowForm(true)
+  }
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value)
+    if (!editTicker) setForm(f => ({ ...f, ticker: '', name: '' }))
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    if (!value.trim()) { setSearchResults([]); setShowDropdown(false); return }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/portfolio/search?q=${encodeURIComponent(value.trim())}`)
+        const data: SearchResult[] = await res.json()
+        setSearchResults(data)
+        setShowDropdown(data.length > 0)
+      } catch { /* 무시 */ }
+    }, 200)
+  }
+
+  const selectStock = (stock: SearchResult) => {
+    setForm(f => ({ ...f, ticker: stock.ticker, name: stock.name }))
+    setSearchQuery(`${stock.name} (${stock.ticker})`)
+    setShowDropdown(false)
+    setSearchResults([])
   }
 
   const saveItem = async () => {
@@ -184,19 +219,76 @@ export default function PortfolioSection() {
           <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
             {editTicker ? '종목 수정' : '종목 추가'}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+
+          {/* 종목 검색 (자동완성) */}
+          <div className="relative mb-2" ref={dropdownRef}>
+            <input
+              type="text"
+              placeholder="종목명 또는 코드 검색 (예: 삼성전자 / 005930)"
+              value={searchQuery}
+              readOnly={!!editTicker}
+              onChange={e => handleSearchChange(e.target.value)}
+              onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+              className="w-full px-3 py-2 rounded-xl text-xs mono outline-none"
+              style={{
+                background: editTicker ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${form.ticker ? 'rgba(0,229,170,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                color: 'var(--text-primary)',
+              }}
+            />
+            {/* 선택된 종목 배지 */}
+            {form.ticker && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <span className="text-[10px] mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,229,170,0.15)', color: 'var(--accent-green)' }}>
+                  {form.ticker}
+                </span>
+                {!editTicker && (
+                  <button
+                    onClick={() => { setForm(f => ({ ...f, ticker: '', name: '' })); setSearchQuery('') }}
+                    className="text-[10px]"
+                    style={{ color: 'var(--text-muted)' }}
+                  >✕</button>
+                )}
+              </div>
+            )}
+            {/* 드롭다운 */}
+            {showDropdown && searchResults.length > 0 && (
+              <div
+                className="absolute z-50 w-full mt-1 rounded-xl overflow-hidden"
+                style={{ background: '#0d1221', border: '1px solid rgba(255,255,255,0.15)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+              >
+                {searchResults.map(s => (
+                  <button
+                    key={s.ticker}
+                    onMouseDown={() => selectStock(s)}
+                    className="w-full px-3 py-2 text-left flex items-center justify-between transition-all"
+                    style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span className="text-xs" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{s.sector}</span>
+                      <span className="mono text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(77,166,255,0.1)', color: '#4da6ff' }}>{s.ticker}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 평균단가 + 보유수량 */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
             {[
-              { key: 'ticker', placeholder: '종목코드 (005930)' },
-              { key: 'name', placeholder: '종목명 (삼성전자)' },
-              { key: 'avg_price', placeholder: '평균단가 (62000)' },
-              { key: 'shares', placeholder: '보유수량 (100)' },
+              { key: 'avg_price', placeholder: '평균단가 (예: 62000)' },
+              { key: 'shares',    placeholder: '보유수량 (예: 100)' },
             ].map(({ key, placeholder }) => (
               <input
                 key={key}
                 type="text"
                 placeholder={placeholder}
                 value={form[key as keyof typeof form]}
-                readOnly={key === 'ticker' && !!editTicker}
                 onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                 className="px-3 py-2 rounded-xl text-xs mono outline-none"
                 style={{
@@ -207,6 +299,7 @@ export default function PortfolioSection() {
               />
             ))}
           </div>
+
           <div className="flex items-center gap-2">
             <button
               onClick={saveItem}
