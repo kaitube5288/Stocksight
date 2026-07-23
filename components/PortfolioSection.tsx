@@ -311,7 +311,7 @@ export default function PortfolioSection() {
           {(totalCurrentInv > 0 || totalAdditionalInv > 0) && (
             <div className="flex items-center gap-5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <div>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>현재투자금 합계&nbsp;&nbsp;</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 원금 합계&nbsp;&nbsp;</span>
                 <span className="mono text-[11px] font-semibold" style={{ color: '#a78bfa' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
               </div>
               <div>
@@ -395,7 +395,7 @@ export default function PortfolioSection() {
 
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: '현재투자금', value: acc.current_investment, color: '#a78bfa' },
+                      { label: '총 원금', value: acc.current_investment, color: '#a78bfa' },
                       { label: '추가투자금', value: acc.additional_investment, color: 'var(--accent-green)' },
                       { label: '보유현금', value: acc.cash, color: 'var(--accent-gold)' },
                     ].map(({ label, value, color }) => (
@@ -406,30 +406,34 @@ export default function PortfolioSection() {
                     ))}
                   </div>
 
-                  {accItems.length > 0 && (
-                    <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { label: `종목 평가 (${accItems.length}개)`, value: `${Math.round(evalTotal).toLocaleString('ko-KR')}원`, color: 'var(--text-secondary)' },
-                          {
-                            label: '손익금',
-                            value: `${evalTotal - accCost >= 0 ? '+' : ''}${Math.round(evalTotal - accCost).toLocaleString('ko-KR')}원`,
-                            color: profitColor(accProfitPct),
-                          },
-                          {
-                            label: '수익률',
-                            value: `${accProfitPct >= 0 ? '+' : ''}${accProfitPct.toFixed(2)}%`,
-                            color: profitColor(accProfitPct),
-                          },
-                        ].map(({ label, value, color }) => (
-                          <div key={label} className="rounded-xl p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                            <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                            <div className="mono text-[11px] font-semibold" style={{ color }}>{value}</div>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        {
+                          label: `계좌평가${accItems.length > 0 ? ` (${accItems.length}개)` : ''}`,
+                          value: `${Math.round(evalTotal).toLocaleString('ko-KR')}원`,
+                          color: 'var(--text-secondary)',
+                        },
+                        {
+                          label: '손익금',
+                          value: accCost > 0
+                            ? `${evalTotal - accCost >= 0 ? '+' : ''}${Math.round(evalTotal - accCost).toLocaleString('ko-KR')}원`
+                            : '—',
+                          color: accCost > 0 ? profitColor(accProfitPct) : 'var(--text-muted)',
+                        },
+                        {
+                          label: '수익률',
+                          value: accCost > 0 ? `${accProfitPct >= 0 ? '+' : ''}${accProfitPct.toFixed(2)}%` : '—',
+                          color: accCost > 0 ? profitColor(accProfitPct) : 'var(--text-muted)',
+                        },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="rounded-xl p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                          <div className="mono text-[11px] font-semibold" style={{ color }}>{value}</div>
+                        </div>
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
               )
             })}
@@ -703,7 +707,7 @@ function AccountEditCard({
       />
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[
-          { key: 'current_investment' as const, label: '현재투자금', color: '#a78bfa' },
+          { key: 'current_investment' as const, label: '총 원금', color: '#a78bfa' },
           { key: 'additional_investment' as const, label: '추가투자금', color: 'var(--accent-green)' },
           { key: 'cash' as const, label: '보유현금', color: 'var(--accent-gold)' },
         ].map(({ key, label, color }) => (
