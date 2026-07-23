@@ -363,7 +363,7 @@ export default function PortfolioSection() {
 
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { label: '총 원금', value: acc.current_investment, color: 'var(--text-primary)', bg: 'rgba(167,139,250,0.13)', border: 'rgba(167,139,250,0.3)' },
+                      { label: '원금', value: acc.current_investment, color: 'var(--text-primary)', bg: 'rgba(167,139,250,0.13)', border: 'rgba(167,139,250,0.3)' },
                       { label: '추가투자금', value: acc.additional_investment, color: 'var(--accent-green)', bg: 'rgba(0,229,170,0.1)', border: 'rgba(0,229,170,0.27)' },
                       { label: '보유현금', value: acc.cash, color: 'var(--accent-gold)', bg: 'rgba(255,201,77,0.1)', border: 'rgba(255,201,77,0.27)' },
                     ].map(({ label, value, color, bg, border }) => (
@@ -398,9 +398,10 @@ export default function PortfolioSection() {
       {/* ===== 2. 총 자산 요약 ===== */}
       {(items.length > 0 || accounts.length > 0) && (
         <div className="rounded-2xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             {[
               { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
+              { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
               { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
               { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
               { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
@@ -411,18 +412,24 @@ export default function PortfolioSection() {
               </div>
             ))}
           </div>
-          {(totalCurrentInv > 0 || totalAdditionalInv > 0) && (
-            <div className="flex items-center gap-5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
+              <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(totalCost).toLocaleString('ko-KR')}원</span>
+            </div>
+            {totalCurrentInv > 0 && (
               <div>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 원금 합계&nbsp;&nbsp;</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원금 합계&nbsp;&nbsp;</span>
                 <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
               </div>
+            )}
+            {totalAdditionalInv > 0 && (
               <div>
                 <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>추가투자금 합계&nbsp;&nbsp;</span>
                 <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
@@ -690,31 +697,34 @@ function StockCard({
 
   const pColor = profitPct > 0 ? '#ff5c5c' : profitPct < 0 ? '#4da6ff' : 'var(--text-muted)'
 
+  const costAmt = item.avg_price * item.shares
+
   return (
     <div className="rounded-2xl p-4" style={{ background: cardBg, border: `1px solid ${cardBorder}` }}>
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
-            <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>{item.ticker}</span>
-            <span className="mono text-xs font-bold" style={{ color: pColor }}>
-              {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(2)}%
-            </span>
-          </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>평균 {item.avg_price.toLocaleString('ko-KR')}원</span>
-            <span className="text-xs mono" style={{ color: 'var(--text-secondary)' }}>현재 {currentPrice.toLocaleString('ko-KR')}원</span>
-            <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>{item.shares.toLocaleString()}주</span>
-            <span className="text-xs mono font-medium" style={{ color: 'var(--text-primary)' }}>평가금액 {Math.round(evalAmt).toLocaleString('ko-KR')}원</span>
-            <span className="text-xs mono font-medium" style={{ color: pColor }}>
-              손익금 {profitAmt >= 0 ? '+' : ''}{Math.round(profitAmt).toLocaleString('ko-KR')}원
-            </span>
-          </div>
+      {/* 1행: 종목명 | 코드 | 현재가 | 손익% | 편집/삭제 */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
+          <span className="mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>{item.ticker}</span>
+          <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>현재가 {currentPrice.toLocaleString('ko-KR')}원</span>
+          <span className="mono text-xs font-bold" style={{ color: pColor }}>
+            {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(2)}%
+          </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button onClick={() => onEdit(item)} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>편집</button>
           <button onClick={() => onDelete(item.ticker)} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.25)', color: 'var(--accent-red)' }}>삭제</button>
         </div>
+      </div>
+      {/* 2행: 매입금액 | 평단가 | 수량 | 평가금액 | 손익금 */}
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>매입금액 {Math.round(costAmt).toLocaleString('ko-KR')}원</span>
+        <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>평단가 {item.avg_price.toLocaleString('ko-KR')}원</span>
+        <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>수량 {item.shares.toLocaleString()}주</span>
+        <span className="text-xs mono font-medium" style={{ color: 'var(--text-primary)' }}>평가금액 {Math.round(evalAmt).toLocaleString('ko-KR')}원</span>
+        <span className="text-xs mono font-medium" style={{ color: pColor }}>
+          손익금 {profitAmt >= 0 ? '+' : ''}{Math.round(profitAmt).toLocaleString('ko-KR')}원
+        </span>
       </div>
 
       {/* AI 조언 */}
