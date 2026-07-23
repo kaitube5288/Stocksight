@@ -75,8 +75,15 @@ async function runDailyAnalysis() {
     const kospiChangePct = (kospi && kospi.previousClose > 0) ? (kospi.price - kospi.previousClose) / kospi.previousClose * 100 : 0
     const kosdaqChangePct = (kosdaq && kosdaq.previousClose > 0) ? (kosdaq.price - kosdaq.previousClose) / kosdaq.previousClose * 100 : 0
     const isBullMarket = kospiChangePct >= 1 || kosdaqChangePct >= 1
-    const bullMarketNote = isBullMarket
+    const isKospiBelowMA20 = kospiMA20 != null && kospiMA20.price < kospiMA20.ma20
+    // 단기 반등: 당일 급등이지만 MA20 하회 중 (약세장 속 기술적 반등)
+    // 진정한 불장: 당일 급등 + MA20 위 (상승 구조 확인된 강세장)
+    const isShortTermBounce = isBullMarket && isKospiBelowMA20
+    const isTrueBullMarket  = isBullMarket && !isKospiBelowMA20
+    const bullMarketNote = isTrueBullMarket
       ? `\n[🚀 불장 감지] KOSPI ${kospiChangePct.toFixed(2)}% / KOSDAQ ${kosdaqChangePct.toFixed(2)}% — 강세장 모멘텀 전략 적용: 신고가 돌파 종목 우선, RSI 상한 80까지 예외 허용`
+      : isShortTermBounce
+      ? `\n[⚡ 단기 반등] KOSPI ${kospiChangePct.toFixed(2)}% 급등이나 MA20 하회 중 — 과매도 반등 전략 적용, 리스크 관리 강화`
       : ''
     const marketText = formatMarketContext({ kospi, kosdaq, usdkrw }) + bullMarketNote
 
@@ -147,9 +154,10 @@ async function runDailyAnalysis() {
     // 반등 후보 식별: 전일 -7% 이하 + RSI ≤ 35 + 추세 횡보/상승 → 단타 최우선 검토
     const bounceCandidates = fullCandidatePool.filter(c => {
       const t = fullCandidateTechMap[c.ticker]
+      // trend 조건 제외: 반등후보는 하락추세에서 과매도된 종목을 찾는 것이므로
+      // 반등 초기에는 추세가 여전히 'down'으로 분류됨
       return t?.prevDayChangePct != null && t.prevDayChangePct <= -7
         && t.rsi14 != null && t.rsi14 <= 35
-        && (t.trend === 'up' || t.trend === 'sideways')
     })
     const bounceContext = bounceCandidates.length > 0
       ? [
@@ -167,10 +175,13 @@ async function runDailyAnalysis() {
       console.log(`[반등후보] ${bounceCandidates.length}개 감지: ${bounceCandidates.map(c => c.ticker).join(', ')}`)
     }
 
-    // KOSPI MA20 기반 시장 구조 경고
-    const isKospiBelowMA20 = kospiMA20 != null && kospiMA20.price < kospiMA20.ma20
+    // KOSPI MA20 기반 시장 구조 경고 (isKospiBelowMA20은 위에서 이미 계산됨)
     const kospiMA20Warning = isKospiBelowMA20
-      ? `⚠️ KOSPI 20일선 하회 중 (현재 ${kospiMA20!.price.toFixed(0)} / MA20 ${kospiMA20!.ma20.toFixed(0)})\n→ 시장 전체 하락 구조. 단타·스윙 추천 종목 수를 최소화하고, 방어주·현금보유 비중 확대. 확신도 90% 이상 종목만 추천.`
+      ? isShortTermBounce
+        // 단기 반등 국면: 과매도 반등 1종목 허용, 극보수 지시 해제
+        ? `⚠️ KOSPI 20일선 하회 중이나 당일 ${kospiChangePct.toFixed(1)}% 급반등 (단기 반등 국면)\n→ 과매도(RSI≤35) 종목 중 기술적 반등 가능성 있는 종목 단타 1개 이내 허용. 손절 -5% 엄수. 스윙·중기는 여전히 신중하게.`
+        // 순수 하락장: 극보수 유지
+        : `⚠️ KOSPI 20일선 하회 중 (현재 ${kospiMA20!.price.toFixed(0)} / MA20 ${kospiMA20!.ma20.toFixed(0)})\n→ 시장 전체 하락 구조. 단타·스윙 추천 종목 수를 최소화하고, 방어주·현금보유 비중 확대. 확신도 90% 이상 종목만 추천.`
       : undefined
     if (isKospiBelowMA20) {
       console.log(`[KOSPI-MA20] KOSPI ${kospiMA20!.price.toFixed(0)} < MA20 ${kospiMA20!.ma20.toFixed(0)} — 단타 최대 1종목 제한 적용`)
@@ -296,7 +307,8 @@ async function runDailyAnalysis() {
     // D: 강력 신호 점수 필터 — 단타는 5개 조건 중 3개 이상 만족 필수
     function calcSignalScore(tech: TechnicalIndicators): number {
       let score = 0
-      if (tech.rsi14 != null && tech.rsi14 >= 30 && tech.rsi14 <= 50) score++
+      // RSI: [20,50] — 과매도 반등 잠재력(20~30) + 회복 진행(30~50) 모두 인정
+      if (tech.rsi14 != null && tech.rsi14 >= 20 && tech.rsi14 <= 50) score++
       if (tech.macdSignal === 'buy') score++
       if (tech.bollingerSignal === 'buy') score++
       if (tech.volumeSurge != null && tech.volumeSurge >= 1.5) score++
@@ -378,9 +390,11 @@ async function runDailyAnalysis() {
       }
     })
 
-    // 불장 감지 시 market_outlook 앞에 태그 삽입 (Gemini가 자유롭게 쓰는 표현에 의존하지 않고 확정적으로 붙임)
-    if (isBullMarket && !result.market_outlook.startsWith('[불장 감지]')) {
+    // 시장 구조 태그 삽입 (Gemini 표현에 의존하지 않고 확정적으로 붙임)
+    if (isTrueBullMarket && !result.market_outlook.startsWith('[불장 감지]')) {
       result.market_outlook = `[불장 감지] ${result.market_outlook}`
+    } else if (isShortTermBounce && !result.market_outlook.startsWith('[단기 반등]')) {
+      result.market_outlook = `[단기 반등] ${result.market_outlook}`
     }
 
     // 5. Supabase 저장 (실패해도 텔레그램 전송은 반드시 진행)
