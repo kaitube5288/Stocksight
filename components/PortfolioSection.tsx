@@ -705,7 +705,7 @@ function StockCard({
             <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>평균 {item.avg_price.toLocaleString('ko-KR')}원</span>
             <span className="text-xs mono" style={{ color: 'var(--text-secondary)' }}>현재 {currentPrice.toLocaleString('ko-KR')}원</span>
             <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>{item.shares.toLocaleString()}주</span>
-            <span className="text-xs mono font-medium" style={{ color: pColor }}>평가 {Math.round(evalAmt).toLocaleString('ko-KR')}원</span>
+            <span className="text-xs mono font-medium" style={{ color: 'var(--text-primary)' }}>평가금액 {Math.round(evalAmt).toLocaleString('ko-KR')}원</span>
             <span className="text-xs mono font-medium" style={{ color: pColor }}>
               손익금 {profitAmt >= 0 ? '+' : ''}{Math.round(profitAmt).toLocaleString('ko-KR')}원
             </span>
