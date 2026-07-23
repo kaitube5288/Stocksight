@@ -407,16 +407,27 @@ export default function PortfolioSection() {
                   </div>
 
                   {accItems.length > 0 && (
-                    <div className="mt-2.5 pt-2.5 flex items-center justify-between" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>종목 평가 ({accItems.length}개)</span>
-                        <span className="mono text-[10px] font-semibold" style={{ color: profitColor(accProfitPct) }}>
-                          {accProfitPct >= 0 ? '+' : ''}{accProfitPct.toFixed(2)}%
-                        </span>
+                    <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: `종목 평가 (${accItems.length}개)`, value: `${Math.round(evalTotal).toLocaleString('ko-KR')}원`, color: 'var(--text-secondary)' },
+                          {
+                            label: '손익금',
+                            value: `${evalTotal - accCost >= 0 ? '+' : ''}${Math.round(evalTotal - accCost).toLocaleString('ko-KR')}원`,
+                            color: profitColor(accProfitPct),
+                          },
+                          {
+                            label: '수익률',
+                            value: `${accProfitPct >= 0 ? '+' : ''}${accProfitPct.toFixed(2)}%`,
+                            color: profitColor(accProfitPct),
+                          },
+                        ].map(({ label, value, color }) => (
+                          <div key={label} className="rounded-xl p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                            <div className="mono text-[11px] font-semibold" style={{ color }}>{value}</div>
+                          </div>
+                        ))}
                       </div>
-                      <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                        {Math.round(evalTotal).toLocaleString('ko-KR')}원
-                      </span>
                     </div>
                   )}
                 </div>
