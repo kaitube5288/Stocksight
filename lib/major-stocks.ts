@@ -232,6 +232,8 @@ export const MAJOR_STOCKS = [
   { ticker: '112610', name: '씨에스윈드', sector: '신재생' },
   // 바이오/제약
   { ticker: '347890', name: '디앤디파마텍', sector: '바이오' },
+  // NXT 상장
+  { ticker: '0008Z0', name: '에스엔시스', sector: 'IT서비스' },
 ]
 
 export const STOCK_MAP = Object.fromEntries(
