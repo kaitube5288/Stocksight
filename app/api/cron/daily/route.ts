@@ -412,14 +412,94 @@ async function runDailyAnalysis() {
 
     if (error) console.error('[Supabase 저장 실패]', error.message)
 
-    // 6. 텔레그램 알림
-    await sendTelegramAlert({
-      stocks: result.recommendations,
-      marketOutlook: result.market_outlook,
-      date: todayDate,
-      usdkrw,
-      goldPrice,
-    })
+    // 6. 텔레그램 + 포트폴리오 조언 동시 실행 (병렬 — 둘 중 하나 실패해도 나머지 진행)
+    const runPortfolioAdvice = async () => {
+      const [{ data: portfolioItems }, { data: cashRow }] = await Promise.all([
+        supabaseAdmin.from('portfolio').select('*').order('created_at', { ascending: true }),
+        supabaseAdmin.from('portfolio_cash').select('*').eq('id', 1).maybeSingle(),
+      ])
+      if (!portfolioItems || portfolioItems.length === 0) return
+
+      const cash = (cashRow as { amount?: number } | null)?.amount ?? 0
+
+      const [techResults, priceResults, historyData] = await Promise.all([
+        Promise.all(portfolioItems.map(p => fetchTechnicalIndicators(p.ticker).catch(() => null))),
+        Promise.all(portfolioItems.map(p => fetchNaverData(p.ticker).catch(() => ({ price: null })))),
+        supabaseAdmin
+          .from('portfolio_advice')
+          .select('ticker,date,advice_type,advice_detail')
+          .in('ticker', portfolioItems.map(p => p.ticker))
+          .order('date', { ascending: false })
+          .limit(14 * portfolioItems.length),
+      ])
+
+      const historyMap: Record<string, { date: string; advice_type: string; advice_detail: string }[]> = {}
+      for (const h of historyData.data ?? []) {
+        const rec = h as { ticker: string; date: string; advice_type: string; advice_detail: string }
+        if (!historyMap[rec.ticker]) historyMap[rec.ticker] = []
+        historyMap[rec.ticker].push({ date: rec.date, advice_type: rec.advice_type, advice_detail: rec.advice_detail })
+      }
+
+      const items = portfolioItems.map((p, i) => {
+        const item = p as { ticker: string; name: string; avg_price: number; shares: number }
+        const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
+        const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
+        const tech = techResults[i]
+        return {
+          ticker: item.ticker,
+          name: item.name,
+          avg_price: item.avg_price,
+          shares: item.shares,
+          current_price: currentPrice,
+          profit_pct: profitPct,
+          tech: {
+            rsi14: tech?.rsi14 ?? null,
+            macdSignal: tech?.macdSignal ?? null,
+            trend: tech?.trend ?? null,
+            volumeSurge: tech?.volumeSurge ?? null,
+            bollingerSignal: tech?.bollingerSignal ?? null,
+            prevDayChangePct: tech?.prevDayChangePct ?? null,
+          },
+          history: (historyMap[item.ticker] ?? []).slice(0, 14),
+        }
+      })
+
+      const advice = await generatePortfolioAdvice({
+        items,
+        cash,
+        marketOutlook: result.market_outlook,
+        date: todayDate,
+      })
+
+      await Promise.all(advice.map(a => {
+        const item = items.find(x => x.ticker === a.ticker)
+        return supabaseAdmin.from('portfolio_advice').upsert({
+          date: todayDate,
+          ticker: a.ticker,
+          name: a.name,
+          advice_type: a.advice_type,
+          advice_detail: a.advice_detail,
+          current_price: item?.current_price ?? null,
+          avg_price: item?.avg_price ?? null,
+          profit_pct: item?.profit_pct ?? null,
+        }, { onConflict: 'date,ticker' })
+      }))
+
+      console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)
+    }
+
+    const [telegramResult, portfolioResult] = await Promise.allSettled([
+      sendTelegramAlert({
+        stocks: result.recommendations,
+        marketOutlook: result.market_outlook,
+        date: todayDate,
+        usdkrw,
+        goldPrice,
+      }),
+      runPortfolioAdvice(),
+    ])
+    if (telegramResult.status === 'rejected') console.error('[텔레그램] 전송 실패:', telegramResult.reason)
+    if (portfolioResult.status === 'rejected') console.error('[포트폴리오] 조언 생성 실패:', portfolioResult.reason)
 
     // 7. 분석 성공 시각 sentinel 갱신 (수집+분석 모두 성공했을 때만)
     await supabaseAdmin
@@ -442,87 +522,6 @@ async function runDailyAnalysis() {
       .from('news_cache')
       .delete()
       .lt('fetched_at', cleanupDate.toISOString())
-
-    // 9. 포트폴리오 조언 생성 (비동기 비차단 — 텔레그램·추천 저장 완료 후 실행)
-    void (async () => {
-      try {
-        const [{ data: portfolioItems }, { data: cashRow }] = await Promise.all([
-          supabaseAdmin.from('portfolio').select('*').order('created_at', { ascending: true }),
-          supabaseAdmin.from('portfolio_cash').select('*').eq('id', 1).maybeSingle(),
-        ])
-        if (!portfolioItems || portfolioItems.length === 0) return
-
-        const cash = (cashRow as { amount?: number } | null)?.amount ?? 0
-
-        // 기술지표 + 현재가 병렬 조회
-        const [techResults, priceResults, historyData] = await Promise.all([
-          Promise.all(portfolioItems.map(p => fetchTechnicalIndicators(p.ticker).catch(() => null))),
-          Promise.all(portfolioItems.map(p => fetchNaverData(p.ticker).catch(() => ({ price: null })))),
-          supabaseAdmin
-            .from('portfolio_advice')
-            .select('ticker,date,advice_type,advice_detail')
-            .in('ticker', portfolioItems.map(p => p.ticker))
-            .order('date', { ascending: false })
-            .limit(14 * portfolioItems.length),
-        ])
-
-        const historyMap: Record<string, { date: string; advice_type: string; advice_detail: string }[]> = {}
-        for (const h of historyData.data ?? []) {
-          const rec = h as { ticker: string; date: string; advice_type: string; advice_detail: string }
-          if (!historyMap[rec.ticker]) historyMap[rec.ticker] = []
-          historyMap[rec.ticker].push({ date: rec.date, advice_type: rec.advice_type, advice_detail: rec.advice_detail })
-        }
-
-        const items = portfolioItems.map((p, i) => {
-          const item = p as { ticker: string; name: string; avg_price: number; shares: number }
-          const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
-          const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
-          const tech = techResults[i]
-          return {
-            ticker: item.ticker,
-            name: item.name,
-            avg_price: item.avg_price,
-            shares: item.shares,
-            current_price: currentPrice,
-            profit_pct: profitPct,
-            tech: {
-              rsi14: tech?.rsi14 ?? null,
-              macdSignal: tech?.macdSignal ?? null,
-              trend: tech?.trend ?? null,
-              volumeSurge: tech?.volumeSurge ?? null,
-              bollingerSignal: tech?.bollingerSignal ?? null,
-              prevDayChangePct: tech?.prevDayChangePct ?? null,
-            },
-            history: (historyMap[item.ticker] ?? []).slice(0, 14),
-          }
-        })
-
-        const advice = await generatePortfolioAdvice({
-          items,
-          cash,
-          marketOutlook: result.market_outlook,
-          date: todayDate,
-        })
-
-        await Promise.all(advice.map(a => {
-          const item = items.find(x => x.ticker === a.ticker)
-          return supabaseAdmin.from('portfolio_advice').upsert({
-            date: todayDate,
-            ticker: a.ticker,
-            name: a.name,
-            advice_type: a.advice_type,
-            advice_detail: a.advice_detail,
-            current_price: item?.current_price ?? null,
-            avg_price: item?.avg_price ?? null,
-            profit_pct: item?.profit_pct ?? null,
-          }, { onConflict: 'date,ticker' })
-        }))
-
-        console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)
-      } catch (e) {
-        console.error('[포트폴리오] 조언 생성 실패:', e instanceof Error ? e.message : e)
-      }
-    })()
 
     // 10. 누적 수익률 미달 섹션 자기진단 — 메인 작업 완료 후 실행 (다음 cron 회차에 반영)
     // 60초 타임아웃: 이 단계가 길어져도 전체 함수가 멈추지 않도록 보호
