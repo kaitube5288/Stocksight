@@ -8,6 +8,7 @@ import PerformanceCharts from '@/components/PerformanceCharts'
 import AIRecommendationPage from '@/components/AIRecommendationPage'
 import MacroCharts from '@/components/MacroCharts'
 import EarningsCalendar from '@/components/EarningsCalendar'
+import PortfolioSection from '@/components/PortfolioSection'
 import { DailyRecommendation } from '@/lib/supabase'
 
 type LiveEntry = { price: number | null; per: number | null; pbr: number | null; roe: number | null }
@@ -90,7 +91,7 @@ function usePushNotification() {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<'code' | 'ai'>('code')
+  const [tab, setTab] = useState<'code' | 'ai' | 'portfolio'>('code')
   const [recommendation, setRecommendation] = useState<DailyRecommendation | null>(null)
   const [isToday, setIsToday] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -256,9 +257,12 @@ export default function Home() {
 
       {/* 탭 네비게이션 */}
       <div className="mb-6 flex items-center gap-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', paddingBottom: '0' }}>
-        {(['code', 'ai'] as const).map(t => {
+        {([
+          { key: 'code', label: 'Code 추천' },
+          { key: 'ai', label: 'AI 추천' },
+          { key: 'portfolio', label: '내 포트폴리오' },
+        ] as const).map(({ key: t, label }) => {
           const active = tab === t
-          const label = t === 'code' ? 'Code 추천' : 'AI 추천'
           return (
             <button
               key={t}
@@ -281,6 +285,13 @@ export default function Home() {
       <div style={{ display: tab === 'ai' ? 'block' : 'none' }}>
         <AIRecommendationPage />
       </div>
+
+      {/* 포트폴리오 탭 */}
+      {tab === 'portfolio' && (
+        <div>
+          <PortfolioSection />
+        </div>
+      )}
 
       {/* Code 추천 탭 */}
       <div style={{ display: tab === 'code' ? 'block' : 'none' }}>

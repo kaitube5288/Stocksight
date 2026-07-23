@@ -76,3 +76,26 @@ export type NewsItem = {
   source: string
   ticker?: string
 }
+
+export type PortfolioItem = {
+  id?: string
+  ticker: string
+  name: string
+  avg_price: number
+  shares: number
+  created_at?: string
+  updated_at?: string
+}
+
+export type PortfolioAdvice = {
+  id?: string
+  date: string
+  ticker: string
+  name: string
+  advice_type: '보유유지' | '물타기' | '추매' | '분할매수' | '분할매도' | '손절고려'
+  advice_detail: string
+  current_price?: number | null
+  avg_price?: number | null
+  profit_pct?: number | null
+  created_at?: string
+}

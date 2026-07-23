@@ -448,3 +448,107 @@ JSON 형식으로만 응답:
   if (!jsonMatch) throw new Error('JSON 파싱 실패')
   return JSON.parse(jsonMatch[0])
 }
+
+// ─── 포트폴리오 대처 조언 ───────────────────────────────────────────────────
+
+export type PortfolioAdviceInput = {
+  ticker: string
+  name: string
+  avg_price: number
+  shares: number
+  current_price: number
+  profit_pct: number
+  tech: {
+    rsi14: number | null
+    macdSignal: string | null
+    trend: string | null
+    volumeSurge: number | null
+    bollingerSignal: string | null
+    prevDayChangePct: number | null
+  }
+  history: Array<{ date: string; advice_type: string; advice_detail: string }>
+}
+
+export type PortfolioAdviceResult = {
+  ticker: string
+  name: string
+  advice_type: '보유유지' | '물타기' | '추매' | '분할매수' | '분할매도' | '손절고려'
+  advice_detail: string
+}
+
+export async function generatePortfolioAdvice(params: {
+  items: PortfolioAdviceInput[]
+  cash: number
+  marketOutlook: string
+  date: string
+}): Promise<PortfolioAdviceResult[]> {
+  if (params.items.length === 0) return []
+
+  const itemsText = params.items.map(item => {
+    const pl = item.profit_pct >= 0 ? `+${item.profit_pct.toFixed(1)}%` : `${item.profit_pct.toFixed(1)}%`
+    const evalAmt = (item.current_price * item.shares).toLocaleString('ko-KR')
+    const histText = item.history.length > 0
+      ? item.history.slice(-14).reverse().map(h => `  ${h.date}: [${h.advice_type}] ${h.advice_detail.slice(0, 80)}`).join('\n')
+      : '  (이력 없음)'
+    return `### ${item.name} (${item.ticker})
+- 평균단가: ${item.avg_price.toLocaleString('ko-KR')}원 / 현재가: ${item.current_price.toLocaleString('ko-KR')}원 / 수익률: ${pl}
+- 보유수량: ${item.shares.toLocaleString()}주 / 평가금액: ${evalAmt}원
+- RSI14: ${item.tech.rsi14?.toFixed(0) ?? 'N/A'} | MACD: ${item.tech.macdSignal ?? 'N/A'} | 추세: ${item.tech.trend ?? 'N/A'}
+- 볼린저: ${item.tech.bollingerSignal ?? 'N/A'} | 거래량배율: ${item.tech.volumeSurge?.toFixed(1) ?? 'N/A'}x | 전일등락: ${item.tech.prevDayChangePct != null ? `${item.tech.prevDayChangePct.toFixed(1)}%` : 'N/A'}
+- 과거 조언 이력 (최근 14일, 최신순):
+${histText}`
+  }).join('\n\n')
+
+  const prompt = `당신은 한국 주식 포트폴리오 관리 전문가입니다.
+투자자의 보유 종목 현황, 기술적 지표, 과거 조언 이력을 종합하여 각 종목의 오늘 최적 대처 방안을 제시하세요.
+
+## 오늘 날짜: ${params.date}
+
+## 오늘 시장 전망
+${params.marketOutlook}
+
+## 보유 현금
+${params.cash.toLocaleString('ko-KR')}원
+
+## 보유 종목 현황
+${itemsText}
+
+## 조언 기준
+- 수익률 -15% 이상 하락 + 하락추세 지속: 손절고려 (과거 이력에 물타기 권유 반복 시 특히 강조)
+- 수익률 -5%~-15% + RSI ≤ 40 + 지지선 근접: 물타기 (현금 보유량 고려)
+- RSI ≤ 35 + 거래량 증가 + 손실 미미: 추매 검토
+- RSI ≥ 65 + 볼린저 상단 근접: 분할매도 권고
+- 수익률 +20% 이상: 분할매도 검토 (절반 이상 실현 권고)
+- 과거 이력 패턴 반드시 반영: 예) "3일 연속 물타기 권유 후 계속 하락 → 이번엔 손절 또는 보유만 유지"
+- 매수 금액은 반드시 보유 현금 기준 비율로 제시 (예: "현금의 30% 추매")
+- 매도는 보유 주수 기준 비율로 제시 (예: "보유 주수의 50% 분할매도")
+- advice_detail은 2~3문장, 구체적 행동(가격·비율·이유) 포함
+
+## 응답 형식 (JSON만, 다른 텍스트 없음)
+\`\`\`json
+{
+  "advice": [
+    {
+      "ticker": "종목코드",
+      "name": "종목명",
+      "advice_type": "보유유지|물타기|추매|분할매수|분할매도|손절고려",
+      "advice_detail": "구체적 대처 방안 (2~3문장, 가격/비율/이유 포함)"
+    }
+  ]
+}
+\`\`\``
+
+  const text = await callGemini(prompt)
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
+  const raw = jsonMatch[1] ?? jsonMatch[0]
+  if (!raw) {
+    console.error('[Gemini portfolio advice] JSON 파싱 실패 — 응답 앞 200자:', text.slice(0, 200))
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    return (parsed.advice ?? []) as PortfolioAdviceResult[]
+  } catch {
+    return []
+  }
+}
