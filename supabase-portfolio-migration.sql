@@ -46,12 +46,30 @@ CREATE TABLE IF NOT EXISTS portfolio_advice (
 CREATE INDEX IF NOT EXISTS idx_portfolio_advice_date ON portfolio_advice(date);
 CREATE INDEX IF NOT EXISTS idx_portfolio_advice_ticker ON portfolio_advice(ticker);
 
+-- 5. portfolio 테이블에 계좌 연동 컬럼 추가
+ALTER TABLE portfolio ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES portfolio_accounts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_portfolio_account_id ON portfolio(account_id);
+
+-- 4. 증권 계좌별 투자금/현금 테이블 (계좌명별로 3칸씩)
+CREATE TABLE IF NOT EXISTS portfolio_accounts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '계좌',
+  current_investment NUMERIC NOT NULL DEFAULT 0,
+  additional_investment NUMERIC NOT NULL DEFAULT 0,
+  cash NUMERIC NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- RLS (Row Level Security) — 서비스 키만 접근 허용
 ALTER TABLE portfolio ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio_cash ENABLE ROW LEVEL SECURITY;
 ALTER TABLE portfolio_advice ENABLE ROW LEVEL SECURITY;
+ALTER TABLE portfolio_accounts ENABLE ROW LEVEL SECURITY;
 
 -- 서비스 롤은 모두 허용 (anon은 차단)
 CREATE POLICY "service_all" ON portfolio FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "service_all" ON portfolio_cash FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "service_all" ON portfolio_advice FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_all" ON portfolio_accounts FOR ALL TO service_role USING (true) WITH CHECK (true);

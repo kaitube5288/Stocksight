@@ -77,12 +77,24 @@ export type NewsItem = {
   ticker?: string
 }
 
+export type PortfolioAccount = {
+  id?: string
+  name: string
+  current_investment: number
+  additional_investment: number
+  cash: number
+  sort_order?: number
+  created_at?: string
+  updated_at?: string
+}
+
 export type PortfolioItem = {
   id?: string
   ticker: string
   name: string
   avg_price: number
   shares: number
+  account_id?: string | null
   created_at?: string
   updated_at?: string
 }
