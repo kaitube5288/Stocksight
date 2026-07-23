@@ -50,6 +50,9 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_advice_ticker ON portfolio_advice(ticke
 ALTER TABLE portfolio ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES portfolio_accounts(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_portfolio_account_id ON portfolio(account_id);
 
+-- 6. shares 소수점 지원 (INTEGER → NUMERIC)
+ALTER TABLE portfolio ALTER COLUMN shares TYPE NUMERIC;
+
 -- 4. 증권 계좌별 투자금/현금 테이블 (계좌명별로 3칸씩)
 CREATE TABLE IF NOT EXISTS portfolio_accounts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,

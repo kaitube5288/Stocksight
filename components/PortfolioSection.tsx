@@ -19,6 +19,23 @@ const ADVICE_STYLE: Record<string, { bg: string; border: string; color: string; 
 const EMPTY_FORM = { ticker: '', name: '', avg_price: '', shares: '', account_id: '' }
 const EMPTY_ACCT = (): AcctForm => ({ name: '', current_investment: '0', additional_investment: '0', cash: '0' })
 
+type AccountTheme = {
+  bg: string; border: string; shadow: string; accent: string
+  divider: string; selectedBg: string; selectedBorder: string
+}
+const ACCOUNT_THEMES: { match: string; theme: AccountTheme }[] = [
+  { match: '신한', theme: { bg: 'rgba(59,130,246,0.08)', border: 'rgba(59,130,246,0.3)', shadow: 'rgba(59,130,246,0.1)', accent: '#60a5fa', divider: 'rgba(59,130,246,0.15)', selectedBg: 'rgba(59,130,246,0.18)', selectedBorder: 'rgba(59,130,246,0.5)' } },
+  { match: '카카오', theme: { bg: 'rgba(234,179,8,0.08)', border: 'rgba(234,179,8,0.3)', shadow: 'rgba(234,179,8,0.1)', accent: '#fbbf24', divider: 'rgba(234,179,8,0.15)', selectedBg: 'rgba(234,179,8,0.18)', selectedBorder: 'rgba(234,179,8,0.5)' } },
+  { match: '나무', theme: { bg: 'rgba(74,222,128,0.07)', border: 'rgba(74,222,128,0.3)', shadow: 'rgba(74,222,128,0.1)', accent: '#86efac', divider: 'rgba(74,222,128,0.15)', selectedBg: 'rgba(74,222,128,0.15)', selectedBorder: 'rgba(74,222,128,0.45)' } },
+]
+const DEFAULT_THEME: AccountTheme = { bg: 'rgba(139,92,246,0.07)', border: 'rgba(167,139,250,0.25)', shadow: 'rgba(167,139,250,0.08)', accent: '#a78bfa', divider: 'rgba(167,139,250,0.12)', selectedBg: 'rgba(167,139,250,0.18)', selectedBorder: 'rgba(167,139,250,0.45)' }
+function getAccountTheme(name: string): AccountTheme {
+  for (const { match, theme } of ACCOUNT_THEMES) {
+    if (name.includes(match)) return theme
+  }
+  return DEFAULT_THEME
+}
+
 export default function PortfolioSection() {
   const [items, setItems] = useState<PortfolioItem[]>([])
   const [accounts, setAccounts] = useState<PortfolioAccount[]>([])
@@ -375,6 +392,7 @@ export default function PortfolioSection() {
                 )
               }
 
+              const theme = getAccountTheme(acc.name)
               const profitBg = accCost > 0
                 ? accProfitPct > 0 ? 'rgba(0,229,170,0.08)' : accProfitPct < 0 ? 'rgba(255,92,92,0.07)' : 'rgba(255,255,255,0.04)'
                 : 'rgba(255,255,255,0.04)'
@@ -384,12 +402,12 @@ export default function PortfolioSection() {
 
               return (
                 <div key={acc.id} className="rounded-2xl p-4" style={{
-                  background: 'rgba(139,92,246,0.07)',
-                  border: '1px solid rgba(167,139,250,0.25)',
-                  boxShadow: '0 0 28px rgba(167,139,250,0.08)',
+                  background: theme.bg,
+                  border: `1px solid ${theme.border}`,
+                  boxShadow: `0 0 28px ${theme.shadow}`,
                 }}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{acc.name}</span>
+                    <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => startEditAccount(acc)}
@@ -417,7 +435,7 @@ export default function PortfolioSection() {
                     ))}
                   </div>
 
-                  <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(167,139,250,0.12)' }}>
+                  <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${theme.divider}` }}>
                     <div className="grid grid-cols-3 gap-2">
                       {[
                         {
@@ -523,7 +541,7 @@ export default function PortfolioSection() {
           <div className="grid grid-cols-2 gap-2 mb-2">
             {[
               { key: 'avg_price', placeholder: '평균단가 (예: 62000)' },
-              { key: 'shares', placeholder: '보유수량 (예: 100)' },
+              { key: 'shares', placeholder: '보유수량 (예: 100 또는 10.5)' },
             ].map(({ key, placeholder }) => (
               <input
                 key={key}
@@ -552,20 +570,24 @@ export default function PortfolioSection() {
                 >
                   미분류
                 </button>
-                {accounts.map(a => (
-                  <button
-                    key={a.id}
-                    onClick={() => setForm(f => ({ ...f, account_id: a.id ?? '' }))}
-                    className="text-[10px] px-2.5 py-1 rounded-lg transition-all"
-                    style={{
-                      background: form.account_id === a.id ? 'rgba(167,139,250,0.18)' : 'rgba(255,255,255,0.04)',
-                      border: `1px solid ${form.account_id === a.id ? 'rgba(167,139,250,0.45)' : 'rgba(255,255,255,0.1)'}`,
-                      color: form.account_id === a.id ? '#a78bfa' : 'var(--text-muted)',
-                    }}
-                  >
-                    {a.name}
-                  </button>
-                ))}
+                {accounts.map(a => {
+                  const t = getAccountTheme(a.name)
+                  const selected = form.account_id === a.id
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => setForm(f => ({ ...f, account_id: a.id ?? '' }))}
+                      className="text-[10px] px-2.5 py-1 rounded-lg transition-all"
+                      style={{
+                        background: selected ? t.selectedBg : 'rgba(255,255,255,0.04)',
+                        border: `1px solid ${selected ? t.selectedBorder : 'rgba(255,255,255,0.1)'}`,
+                        color: selected ? t.accent : 'var(--text-muted)',
+                      }}
+                    >
+                      {a.name}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -616,13 +638,14 @@ export default function PortfolioSection() {
               const accCost = accItems.reduce((sum, i) => sum + i.avg_price * i.shares, 0)
               const accProfitPct = accCost > 0 ? ((accEval - accCost) / accCost) * 100 : 0
 
+              const badgeTheme = getAccountTheme(acc.name)
               return (
                 <div key={acc.id}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span
                         className="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg"
-                        style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}
+                        style={{ background: badgeTheme.selectedBg, border: `1px solid ${badgeTheme.border}`, color: badgeTheme.accent }}
                       >
                         {acc.name}
                       </span>
