@@ -239,3 +239,11 @@ export const MAJOR_STOCKS = [
 export const STOCK_MAP = Object.fromEntries(
   MAJOR_STOCKS.map(s => [s.ticker, s])
 )
+
+// 포트폴리오 추적 전용 (추천 후보풀에서 완전 제외 — ETF/해외지수 등)
+export const TRACKING_ONLY_STOCKS = [
+  { ticker: '360750', name: 'TIGER 미국S&P500', sector: 'ETF해외' },
+]
+
+// 포트폴리오 검색 시 사용 (추천 제외 종목 포함)
+export const ALL_SEARCHABLE_STOCKS = [...MAJOR_STOCKS, ...TRACKING_ONLY_STOCKS]

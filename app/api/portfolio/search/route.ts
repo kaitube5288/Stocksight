@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { MAJOR_STOCKS } from '@/lib/major-stocks'
+import { ALL_SEARCHABLE_STOCKS } from '@/lib/major-stocks'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const lower = q.toLowerCase()
 
   // 종목코드 prefix 매칭 우선, 이후 종목명 포함 매칭
-  const results = MAJOR_STOCKS
+  const results = ALL_SEARCHABLE_STOCKS
     .filter(s =>
       s.ticker.startsWith(q) ||
       s.name.toLowerCase().includes(lower)
