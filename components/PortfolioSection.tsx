@@ -38,6 +38,12 @@ export default function PortfolioSection() {
   const [showDropdown, setShowDropdown] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [currentInvestment, setCurrentInvestment] = useState(0)
+  const [additionalInvestment, setAdditionalInvestment] = useState(0)
+  const [editingCurrentInv, setEditingCurrentInv] = useState(false)
+  const [editingAddInv, setEditingAddInv] = useState(false)
+  const [currentInvInput, setCurrentInvInput] = useState('')
+  const [addInvInput, setAddInvInput] = useState('')
 
   const fetchLive = useCallback(async (tickers: string[]) => {
     if (!tickers.length) return
@@ -61,6 +67,8 @@ export default function PortfolioSection() {
       const advData = await advRes.json()
       setItems(portData.items ?? [])
       setCash(portData.cash ?? 0)
+      setCurrentInvestment(portData.current_investment ?? 0)
+      setAdditionalInvestment(portData.additional_investment ?? 0)
       setAdvice(advData.advice ?? [])
       setAdviceDate(advData.date ?? null)
       setAdviceIsToday(advData.isToday ?? false)
@@ -160,6 +168,27 @@ export default function PortfolioSection() {
       setCash(amount)
       setEditingCash(false)
     } catch { setError('현금 저장 실패') }
+    finally { setSaving(false) }
+  }
+
+  const saveInvestment = async (field: 'current' | 'additional') => {
+    const raw = field === 'current' ? currentInvInput : addInvInput
+    const amount = Number(raw.replace(/,/g, ''))
+    if (isNaN(amount)) { setError('올바른 금액을 입력하세요'); return }
+    setSaving(true)
+    try {
+      await fetch('/api/portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'investment',
+          current_investment: field === 'current' ? amount : undefined,
+          additional_investment: field === 'additional' ? amount : undefined,
+        }),
+      })
+      if (field === 'current') { setCurrentInvestment(amount); setEditingCurrentInv(false) }
+      else { setAdditionalInvestment(amount); setEditingAddInv(false) }
+    } catch { setError('저장 실패') }
     finally { setSaving(false) }
   }
 
@@ -456,62 +485,83 @@ export default function PortfolioSection() {
         </div>
       )}
 
-      {/* 보유 현금 */}
-      <div
-        className="glass rounded-2xl p-4"
-        style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>💵 보유 현금</span>
-            {!editingCash && (
-              <span className="mono text-sm font-semibold" style={{ color: 'var(--accent-gold)' }}>
-                {cash.toLocaleString('ko-KR')}원
-              </span>
-            )}
-          </div>
-          {editingCash ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={cashInput}
-                onChange={e => setCashInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && saveCash()}
-                placeholder="보유 현금 (원)"
-                autoFocus
-                className="px-3 py-1.5 rounded-xl text-xs mono outline-none"
-                style={{
-                  width: '140px',
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: 'var(--text-primary)',
-                }}
-              />
-              <button
-                onClick={saveCash}
-                disabled={saving}
-                className="btn-primary px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40"
-              >
-                저장
-              </button>
-              <button
-                onClick={() => setEditingCash(false)}
-                className="px-3 py-1.5 rounded-xl text-xs"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-              >
-                취소
-              </button>
+      {/* 현재 투자금 / 추가 투자금 / 보유 현금 */}
+      <div className="flex flex-col gap-2">
+        {(
+          [
+            {
+              label: '📈 현재 투자금',
+              value: currentInvestment,
+              editing: editingCurrentInv,
+              inputVal: currentInvInput,
+              setInput: setCurrentInvInput,
+              onEdit: () => { setCurrentInvInput(String(currentInvestment)); setEditingCurrentInv(true) },
+              onSave: () => saveInvestment('current'),
+              onCancel: () => setEditingCurrentInv(false),
+              color: '#a78bfa',
+              placeholder: '현재 투자금 (원)',
+            },
+            {
+              label: '💰 추가 투자금',
+              value: additionalInvestment,
+              editing: editingAddInv,
+              inputVal: addInvInput,
+              setInput: setAddInvInput,
+              onEdit: () => { setAddInvInput(String(additionalInvestment)); setEditingAddInv(true) },
+              onSave: () => saveInvestment('additional'),
+              onCancel: () => setEditingAddInv(false),
+              color: 'var(--accent-green)',
+              placeholder: '추가 투자금 (원)',
+            },
+            {
+              label: '💵 보유 현금',
+              value: cash,
+              editing: editingCash,
+              inputVal: cashInput,
+              setInput: setCashInput,
+              onEdit: () => { setCashInput(String(cash)); setEditingCash(true) },
+              onSave: saveCash,
+              onCancel: () => setEditingCash(false),
+              color: 'var(--accent-gold)',
+              placeholder: '보유 현금 (원)',
+            },
+          ] as const
+        ).map(({ label, value, editing, inputVal, setInput, onEdit, onSave, onCancel, color, placeholder }) => (
+          <div
+            key={label}
+            className="glass rounded-2xl p-4"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+                {!editing && (
+                  <span className="mono text-sm font-semibold" style={{ color }}>
+                    {value.toLocaleString('ko-KR')}원
+                  </span>
+                )}
+              </div>
+              {editing ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={inputVal}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && onSave()}
+                    placeholder={placeholder}
+                    autoFocus
+                    className="px-3 py-1.5 rounded-xl text-xs mono outline-none"
+                    style={{ width: '140px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)', color: 'var(--text-primary)' }}
+                  />
+                  <button onClick={onSave} disabled={saving} className="btn-primary px-3 py-1.5 rounded-xl text-xs font-semibold disabled:opacity-40">저장</button>
+                  <button onClick={onCancel} className="px-3 py-1.5 rounded-xl text-xs" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>취소</button>
+                </div>
+              ) : (
+                <button onClick={onEdit} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>편집</button>
+              )}
             </div>
-          ) : (
-            <button
-              onClick={() => { setCashInput(String(cash)); setEditingCash(true) }}
-              className="text-[10px] px-2 py-1 rounded-lg transition-all"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-            >
-              편집
-            </button>
-          )}
-        </div>
+          </div>
+        ))}
       </div>
 
       {error && !showForm && (

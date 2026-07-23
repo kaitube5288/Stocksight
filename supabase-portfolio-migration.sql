@@ -18,8 +18,14 @@ CREATE TABLE IF NOT EXISTS portfolio (
 CREATE TABLE IF NOT EXISTS portfolio_cash (
   id INTEGER DEFAULT 1 PRIMARY KEY,
   amount NUMERIC NOT NULL DEFAULT 0,
+  current_investment NUMERIC NOT NULL DEFAULT 0,
+  additional_investment NUMERIC NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 2-a. 기존 테이블에 컬럼 추가 (이미 portfolio_cash가 있는 경우 이 부분만 실행)
+ALTER TABLE portfolio_cash ADD COLUMN IF NOT EXISTS current_investment NUMERIC DEFAULT 0;
+ALTER TABLE portfolio_cash ADD COLUMN IF NOT EXISTS additional_investment NUMERIC DEFAULT 0;
 
 -- 3. 일별 종목 조언 이력 테이블
 CREATE TABLE IF NOT EXISTS portfolio_advice (

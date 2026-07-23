@@ -10,7 +10,13 @@ export async function GET() {
     ])
     if (e1) console.error('[portfolio GET] items 조회 오류:', e1.message)
     if (e2) console.error('[portfolio GET] cash 조회 오류:', e2.message)
-    return NextResponse.json({ items: items ?? [], cash: (cashData as { amount?: number } | null)?.amount ?? 0 })
+    const cd = cashData as { amount?: number; current_investment?: number; additional_investment?: number } | null
+    return NextResponse.json({
+      items: items ?? [],
+      cash: cd?.amount ?? 0,
+      current_investment: cd?.current_investment ?? 0,
+      additional_investment: cd?.additional_investment ?? 0,
+    })
   } catch (e) {
     return NextResponse.json({ items: [], cash: 0, error: e instanceof Error ? e.message : String(e) })
   }
@@ -20,10 +26,18 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdmin()
   const body = await request.json()
 
-  // 현금 저장
-  if (body.type === 'cash') {
+  // 현금 / 투자금 저장
+  if (body.type === 'cash' || body.type === 'investment') {
+    const { data: existing } = await supabase.from('portfolio_cash').select('*').eq('id', 1).maybeSingle()
+    const prev = existing as { amount?: number; current_investment?: number; additional_investment?: number } | null
     const { error } = await supabase.from('portfolio_cash').upsert(
-      { id: 1, amount: Number(body.amount), updated_at: new Date().toISOString() },
+      {
+        id: 1,
+        amount: body.type === 'cash' ? Number(body.amount) : (prev?.amount ?? 0),
+        current_investment: body.current_investment != null ? Number(body.current_investment) : (prev?.current_investment ?? 0),
+        additional_investment: body.additional_investment != null ? Number(body.additional_investment) : (prev?.additional_investment ?? 0),
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: 'id' }
     )
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
