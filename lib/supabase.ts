@@ -109,5 +109,6 @@ export type PortfolioAdvice = {
   current_price?: number | null
   avg_price?: number | null
   profit_pct?: number | null
+  portfolio_item_id?: string | null
   created_at?: string
 }

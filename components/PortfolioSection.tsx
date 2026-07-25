@@ -44,7 +44,7 @@ export default function PortfolioSection() {
   const [items, setItems] = useState<PortfolioItem[]>([])
   const [accounts, setAccounts] = useState<PortfolioAccount[]>([])
   const [live, setLive] = useState<Record<string, LivePrice>>({})
-  const [adviceByTicker, setAdviceByTicker] = useState<Record<string, PortfolioAdvice[]>>({})
+  const [adviceByItemId, setAdviceByItemId] = useState<Record<string, PortfolioAdvice[]>>({})
   const [adviceIdx, setAdviceIdx] = useState<Record<string, number>>({})
   const [hasToday, setHasToday] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -94,12 +94,13 @@ export default function PortfolioSection() {
       setAccounts(portData.accounts ?? [])
 
       const allAdvice: PortfolioAdvice[] = advData.allAdvice ?? []
-      const byTicker: Record<string, PortfolioAdvice[]> = {}
+      const byItemId: Record<string, PortfolioAdvice[]> = {}
       for (const a of allAdvice) {
-        if (!byTicker[a.ticker]) byTicker[a.ticker] = []
-        byTicker[a.ticker].push(a)
+        const key = a.portfolio_item_id ?? a.ticker
+        if (!byItemId[key]) byItemId[key] = []
+        byItemId[key].push(a)
       }
-      setAdviceByTicker(byTicker)
+      setAdviceByItemId(byItemId)
       setHasToday(advData.hasToday ?? false)
 
       if (portData.items?.length) {
@@ -286,12 +287,12 @@ export default function PortfolioSection() {
   }
 
   // ----- Advice navigation -----
-  const navigateAdvice = (ticker: string, delta: number) => {
+  const navigateAdvice = (itemId: string, delta: number) => {
     setAdviceIdx(prev => {
-      const list = adviceByTicker[ticker] ?? []
-      const current = prev[ticker] ?? 0
+      const list = adviceByItemId[itemId] ?? []
+      const current = prev[itemId] ?? 0
       const next = Math.max(0, Math.min(list.length - 1, current + delta))
-      return { ...prev, [ticker]: next }
+      return { ...prev, [itemId]: next }
     })
   }
 
@@ -641,9 +642,9 @@ export default function PortfolioSection() {
                           key={item.id ?? item.ticker}
                           item={item}
                           live={live}
-                          adviceList={adviceByTicker[item.ticker] ?? []}
-                          adviceIdx={adviceIdx[item.ticker] ?? 0}
-                          onAdviceNav={(delta) => navigateAdvice(item.ticker, delta)}
+                          adviceList={adviceByItemId[item.id ?? item.ticker] ?? []}
+                          adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
+                          onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                           onEdit={openEdit}
                           onDelete={(id, ticker) => deleteItem(id, ticker)}
                           onUpdate={updateItem}
@@ -670,9 +671,9 @@ export default function PortfolioSection() {
                       key={item.id ?? item.ticker}
                       item={item}
                       live={live}
-                      adviceList={adviceByTicker[item.ticker] ?? []}
-                      adviceIdx={adviceIdx[item.ticker] ?? 0}
-                      onAdviceNav={(delta) => navigateAdvice(item.ticker, delta)}
+                      adviceList={adviceByItemId[item.id ?? item.ticker] ?? []}
+                      adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
+                      onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                       onEdit={openEdit}
                       onDelete={(id, ticker) => deleteItem(id, ticker)}
                       onUpdate={updateItem}

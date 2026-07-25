@@ -440,38 +440,48 @@ async function runDailyAnalysis() {
 
     // 6. 텔레그램 + 포트폴리오 조언 동시 실행 (병렬 — 둘 중 하나 실패해도 나머지 진행)
     const runPortfolioAdvice = async () => {
-      const [{ data: portfolioItems }, { data: cashRow }] = await Promise.all([
+      const [{ data: portfolioItems }, { data: cashRow }, { data: accountRows }] = await Promise.all([
         supabaseAdmin.from('portfolio').select('*').order('created_at', { ascending: true }),
         supabaseAdmin.from('portfolio_cash').select('*').eq('id', 1).maybeSingle(),
+        supabaseAdmin.from('portfolio_accounts').select('id,name'),
       ])
       if (!portfolioItems || portfolioItems.length === 0) return
 
       const cash = (cashRow as { amount?: number } | null)?.amount ?? 0
+      const accountMap: Record<string, string> = {}
+      for (const a of accountRows ?? []) {
+        accountMap[(a as { id: string; name: string }).id] = (a as { id: string; name: string }).name
+      }
+
+      const allTickers = [...new Set(portfolioItems.map(p => (p as { ticker: string }).ticker))]
 
       const [techResults, priceResults, historyData] = await Promise.all([
-        Promise.all(portfolioItems.map(p => fetchTechnicalIndicators(p.ticker).catch(() => null))),
-        Promise.all(portfolioItems.map(p => fetchNaverData(p.ticker).catch(() => ({ price: null })))),
+        Promise.all(portfolioItems.map(p => fetchTechnicalIndicators((p as { ticker: string }).ticker).catch(() => null))),
+        Promise.all(portfolioItems.map(p => fetchNaverData((p as { ticker: string }).ticker).catch(() => ({ price: null })))),
         supabaseAdmin
           .from('portfolio_advice')
-          .select('ticker,date,advice_type,advice_detail')
-          .in('ticker', portfolioItems.map(p => p.ticker))
+          .select('ticker,date,advice_type,advice_detail,portfolio_item_id')
+          .in('ticker', allTickers)
           .order('date', { ascending: false })
           .limit(14 * portfolioItems.length),
       ])
 
       const historyMap: Record<string, { date: string; advice_type: string; advice_detail: string }[]> = {}
       for (const h of historyData.data ?? []) {
-        const rec = h as { ticker: string; date: string; advice_type: string; advice_detail: string }
-        if (!historyMap[rec.ticker]) historyMap[rec.ticker] = []
-        historyMap[rec.ticker].push({ date: rec.date, advice_type: rec.advice_type, advice_detail: rec.advice_detail })
+        const rec = h as { ticker: string; date: string; advice_type: string; advice_detail: string; portfolio_item_id: string | null }
+        const key = rec.portfolio_item_id ?? rec.ticker
+        if (!historyMap[key]) historyMap[key] = []
+        historyMap[key].push({ date: rec.date, advice_type: rec.advice_type, advice_detail: rec.advice_detail })
       }
 
       const items = portfolioItems.map((p, i) => {
-        const item = p as { ticker: string; name: string; avg_price: number; shares: number }
+        const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null }
         const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
         const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
         const tech = techResults[i]
         return {
+          item_key: String(i),
+          account_name: item.account_id ? accountMap[item.account_id] : undefined,
           ticker: item.ticker,
           name: item.name,
           avg_price: item.avg_price,
@@ -486,7 +496,7 @@ async function runDailyAnalysis() {
             bollingerSignal: tech?.bollingerSignal ?? null,
             prevDayChangePct: tech?.prevDayChangePct ?? null,
           },
-          history: (historyMap[item.ticker] ?? []).slice(0, 14),
+          history: (historyMap[item.id] ?? historyMap[item.ticker] ?? []).slice(0, 14),
         }
       })
 
@@ -498,17 +508,21 @@ async function runDailyAnalysis() {
       })
 
       await Promise.all(advice.map(a => {
-        const item = items.find(x => x.ticker === a.ticker)
+        const itemIndex = parseInt(a.item_key)
+        const item = items[itemIndex]
+        if (!item) return Promise.resolve()
+        const rawItem = portfolioItems[itemIndex] as { id: string }
         return supabaseAdmin.from('portfolio_advice').upsert({
           date: todayDate,
-          ticker: a.ticker,
-          name: a.name,
+          portfolio_item_id: rawItem.id,
+          ticker: item.ticker,
+          name: item.name,
           advice_type: a.advice_type,
           advice_detail: a.advice_detail,
-          current_price: item?.current_price ?? null,
-          avg_price: item?.avg_price ?? null,
-          profit_pct: item?.profit_pct ?? null,
-        }, { onConflict: 'date,ticker' })
+          current_price: item.current_price ?? null,
+          avg_price: item.avg_price ?? null,
+          profit_pct: item.profit_pct ?? null,
+        }, { onConflict: 'date,portfolio_item_id' })
       }))
 
       console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)

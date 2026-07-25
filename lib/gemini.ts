@@ -452,6 +452,8 @@ JSON 형식으로만 응답:
 // ─── 포트폴리오 대처 조언 ───────────────────────────────────────────────────
 
 export type PortfolioAdviceInput = {
+  item_key: string
+  account_name?: string
   ticker: string
   name: string
   avg_price: number
@@ -470,6 +472,7 @@ export type PortfolioAdviceInput = {
 }
 
 export type PortfolioAdviceResult = {
+  item_key: string
   ticker: string
   name: string
   advice_type: '보유유지' | '물타기' | '추매' | '분할매수' | '분할매도' | '손절고려'
@@ -490,7 +493,8 @@ export async function generatePortfolioAdvice(params: {
     const histText = item.history.length > 0
       ? item.history.slice(-14).reverse().map(h => `  ${h.date}: [${h.advice_type}] ${h.advice_detail.slice(0, 80)}`).join('\n')
       : '  (이력 없음)'
-    return `### ${item.name} (${item.ticker})
+    const acctLabel = item.account_name ? ` — ${item.account_name}` : ''
+    return `### [${item.item_key}] ${item.name} (${item.ticker})${acctLabel}
 - 평균단가: ${item.avg_price.toLocaleString('ko-KR')}원 / 현재가: ${item.current_price.toLocaleString('ko-KR')}원 / 수익률: ${pl}
 - 보유수량: ${item.shares.toLocaleString()}주 / 평가금액: ${evalAmt}원
 - RSI14: ${item.tech.rsi14?.toFixed(0) ?? 'N/A'} | MACD: ${item.tech.macdSignal ?? 'N/A'} | 추세: ${item.tech.trend ?? 'N/A'}
@@ -523,12 +527,16 @@ ${itemsText}
 - 매수 금액은 반드시 보유 현금 기준 비율로 제시 (예: "현금의 30% 추매")
 - 매도는 보유 주수 기준 비율로 제시 (예: "보유 주수의 50% 분할매도")
 - advice_detail은 2~3문장, 구체적 행동(가격·비율·이유) 포함
+- 손절고려 시: 반드시 "XX,XXX원 하회 시 손절 검토" 형식으로 구체적 손절 가격 제시
+- 분할매도 시: "XX,XXX원 이상에서 N주(보유의 N%) 매도" 형식으로 목표가 명시
+- 물타기/추매 시: "XX,XXX원 이하 도달 시 현금의 N% 추가매수" 형식으로 매수 기준가 명시
 
 ## 응답 형식 (JSON만, 다른 텍스트 없음)
 \`\`\`json
 {
   "advice": [
     {
+      "item_key": "헤더의 [숫자] 그대로",
       "ticker": "종목코드",
       "name": "종목명",
       "advice_type": "보유유지|물타기|추매|분할매수|분할매도|손절고려",
