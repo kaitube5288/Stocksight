@@ -82,9 +82,15 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true })
   }
 
-  // 종목 삭제
-  if (!body.ticker) return NextResponse.json({ error: 'ticker 필요' }, { status: 400 })
-  const { error } = await supabase.from('portfolio').delete().eq('ticker', body.ticker)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // 종목 삭제 (id 우선, 없으면 ticker)
+  if (body.id) {
+    const { error } = await supabase.from('portfolio').delete().eq('id', body.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else if (body.ticker) {
+    const { error } = await supabase.from('portfolio').delete().eq('ticker', body.ticker)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else {
+    return NextResponse.json({ error: 'id 또는 ticker 필요' }, { status: 400 })
+  }
   return NextResponse.json({ success: true })
 }

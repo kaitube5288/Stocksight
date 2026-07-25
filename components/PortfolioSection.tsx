@@ -228,14 +228,29 @@ export default function PortfolioSection() {
     }
   }
 
-  const deleteItem = async (ticker: string) => {
+  const deleteItem = async (id: string, ticker: string) => {
     if (!confirm(`${ticker} 종목을 삭제하시겠습니까?`)) return
     setSaving(true)
     try {
-      await fetch('/api/portfolio', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker }) })
+      await fetch('/api/portfolio', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
       await load()
     } catch { setError('삭제 실패') }
     finally { setSaving(false) }
+  }
+
+  const updateItem = async (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => {
+    try {
+      const res = await fetch('/api/portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ticker, name, avg_price: avgPrice, shares, account_id: accountId }),
+      })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '업데이트 실패')
+    }
   }
 
   // ----- Advice navigation -----
@@ -598,7 +613,8 @@ export default function PortfolioSection() {
                           adviceIdx={adviceIdx[item.ticker] ?? 0}
                           onAdviceNav={(delta) => navigateAdvice(item.ticker, delta)}
                           onEdit={openEdit}
-                          onDelete={deleteItem}
+                          onDelete={(id, ticker) => deleteItem(id, ticker)}
+                          onUpdate={updateItem}
                         />
                       ))}
                     </div>
@@ -625,7 +641,8 @@ export default function PortfolioSection() {
                       adviceIdx={adviceIdx[item.ticker] ?? 0}
                       onAdviceNav={(delta) => navigateAdvice(item.ticker, delta)}
                       onEdit={openEdit}
-                      onDelete={deleteItem}
+                      onDelete={(id, ticker) => deleteItem(id, ticker)}
+                      onUpdate={updateItem}
                     />
                   ))}
                 </div>
@@ -674,7 +691,7 @@ function AccountEditCard({
 }
 
 function StockCard({
-  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete,
+  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate,
 }: {
   item: PortfolioItem
   live: Record<string, LivePrice>
@@ -682,26 +699,58 @@ function StockCard({
   adviceIdx: number
   onAdviceNav: (delta: number) => void
   onEdit: (item: PortfolioItem) => void
-  onDelete: (ticker: string) => void
+  onDelete: (id: string, ticker: string) => void
+  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => void
 }) {
+  const [mode, setMode] = useState<'none' | 'buy' | 'sell'>('none')
+  const [buyPrice, setBuyPrice] = useState('')
+  const [buyQty, setBuyQty] = useState('')
+  const [sellQty, setSellQty] = useState('')
+
   const currentPrice = live[item.ticker]?.price ?? item.avg_price
   const profitAmt = (currentPrice - item.avg_price) * item.shares
   const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
   const evalAmt = currentPrice * item.shares
+  const costAmt = item.avg_price * item.shares
 
   const currentAdvice = adviceList[adviceIdx]
   const advStyle = currentAdvice ? (ADVICE_STYLE[currentAdvice.advice_type] ?? ADVICE_STYLE['보유유지']) : null
 
   const cardBg = profitPct > 0 ? 'rgba(255,92,92,0.05)' : profitPct < 0 ? 'rgba(77,166,255,0.05)' : 'rgba(255,255,255,0.03)'
   const cardBorder = profitPct > 0 ? 'rgba(255,92,92,0.18)' : profitPct < 0 ? 'rgba(77,166,255,0.16)' : 'rgba(255,255,255,0.1)'
-
   const pColor = profitPct > 0 ? '#ff5c5c' : profitPct < 0 ? '#4da6ff' : 'var(--text-muted)'
 
-  const costAmt = item.avg_price * item.shares
+  // 추매 미리보기
+  const bPrice = Number(buyPrice.replace(/,/g, ''))
+  const bQty = Number(buyQty.replace(/,/g, ''))
+  const previewBuyAvg = bPrice > 0 && bQty > 0
+    ? (item.avg_price * item.shares + bPrice * bQty) / (item.shares + bQty)
+    : null
+  const previewBuyShares = bQty > 0 ? item.shares + bQty : null
+
+  // 매도 미리보기
+  const sQty = Number(sellQty.replace(/,/g, ''))
+  const previewSellShares = sQty > 0 ? item.shares - sQty : null
+
+  const handleBuyConfirm = () => {
+    if (!previewBuyAvg || !previewBuyShares || !item.id) return
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null)
+    setMode('none'); setBuyPrice(''); setBuyQty('')
+  }
+
+  const handleSellConfirm = () => {
+    if (!item.id || sQty <= 0) return
+    if (sQty >= item.shares) {
+      onDelete(item.id, item.ticker)
+    } else {
+      onUpdate(item.id, item.ticker, item.name, item.avg_price, item.shares - sQty, item.account_id ?? null)
+    }
+    setMode('none'); setSellQty('')
+  }
 
   return (
     <div className="rounded-2xl p-4" style={{ background: cardBg, border: `1px solid ${cardBorder}` }}>
-      {/* 1행: 종목명 | 코드 | 현재가 | 손익% | 편집/삭제 */}
+      {/* 1행: 종목명 | 코드 | 현재가 | 손익% | 버튼들 */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
@@ -711,11 +760,22 @@ function StockCard({
             {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(2)}%
           </span>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+          <button
+            onClick={() => setMode(mode === 'buy' ? 'none' : 'buy')}
+            className="text-[10px] px-2 py-1 rounded-lg transition-all"
+            style={{ background: mode === 'buy' ? 'rgba(0,229,170,0.18)' : 'rgba(0,229,170,0.08)', border: `1px solid ${mode === 'buy' ? 'rgba(0,229,170,0.5)' : 'rgba(0,229,170,0.25)'}`, color: 'var(--accent-green)' }}
+          >추매</button>
+          <button
+            onClick={() => setMode(mode === 'sell' ? 'none' : 'sell')}
+            className="text-[10px] px-2 py-1 rounded-lg transition-all"
+            style={{ background: mode === 'sell' ? 'rgba(255,201,77,0.18)' : 'rgba(255,201,77,0.08)', border: `1px solid ${mode === 'sell' ? 'rgba(255,201,77,0.5)' : 'rgba(255,201,77,0.25)'}`, color: 'var(--accent-gold)' }}
+          >매도</button>
           <button onClick={() => onEdit(item)} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}>편집</button>
-          <button onClick={() => onDelete(item.ticker)} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.25)', color: 'var(--accent-red)' }}>삭제</button>
+          <button onClick={() => item.id && onDelete(item.id, item.ticker)} className="text-[10px] px-2 py-1 rounded-lg transition-all" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.25)', color: 'var(--accent-red)' }}>삭제</button>
         </div>
       </div>
+
       {/* 2행: 매입금액 | 평단가 | 수량 | 평가금액 | 손익금 */}
       <div className="flex items-center gap-3 mb-3 flex-wrap">
         <span className="text-xs mono" style={{ color: 'var(--text-muted)' }}>매입금액 {Math.round(costAmt).toLocaleString('ko-KR')}원</span>
@@ -726,6 +786,91 @@ function StockCard({
           손익금 {profitAmt >= 0 ? '+' : ''}{Math.round(profitAmt).toLocaleString('ko-KR')}원
         </span>
       </div>
+
+      {/* 추매 폼 */}
+      {mode === 'buy' && (
+        <div className="rounded-xl p-3 mb-3" style={{ background: 'rgba(0,229,170,0.06)', border: '1px solid rgba(0,229,170,0.25)' }}>
+          <div className="text-[10px] font-medium mb-2" style={{ color: 'var(--accent-green)' }}>추매</div>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>단가</span>
+              <input
+                type="text" placeholder="0" value={buyPrice}
+                onChange={e => setBuyPrice(e.target.value)}
+                className="w-24 px-2 py-1 rounded-lg text-xs mono outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+              />
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>수량</span>
+              <input
+                type="text" placeholder="0" value={buyQty}
+                onChange={e => setBuyQty(e.target.value)}
+                className="w-20 px-2 py-1 rounded-lg text-xs mono outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+              />
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>주</span>
+            </div>
+          </div>
+          {previewBuyAvg && previewBuyShares && (
+            <div className="text-[10px] mb-2 mono" style={{ color: 'var(--accent-green)' }}>
+              → 새 평단가 {Math.round(previewBuyAvg).toLocaleString('ko-KR')}원 · 총 {previewBuyShares.toLocaleString()}주
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBuyConfirm}
+              disabled={!previewBuyAvg}
+              className="text-[10px] px-3 py-1 rounded-lg font-medium disabled:opacity-30 transition-all"
+              style={{ background: 'rgba(0,229,170,0.2)', border: '1px solid rgba(0,229,170,0.4)', color: 'var(--accent-green)' }}
+            >확인</button>
+            <button
+              onClick={() => { setMode('none'); setBuyPrice(''); setBuyQty('') }}
+              className="text-[10px] px-3 py-1 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+            >취소</button>
+          </div>
+        </div>
+      )}
+
+      {/* 매도 폼 */}
+      {mode === 'sell' && (
+        <div className="rounded-xl p-3 mb-3" style={{ background: 'rgba(255,201,77,0.06)', border: '1px solid rgba(255,201,77,0.25)' }}>
+          <div className="text-[10px] font-medium mb-2" style={{ color: 'var(--accent-gold)' }}>매도</div>
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>매도수량</span>
+              <input
+                type="text" placeholder="0" value={sellQty}
+                onChange={e => setSellQty(e.target.value)}
+                className="w-24 px-2 py-1 rounded-lg text-xs mono outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+              />
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>주</span>
+            </div>
+            <span className="text-[10px] mono" style={{ color: 'var(--text-muted)' }}>보유 {item.shares.toLocaleString()}주</span>
+          </div>
+          {previewSellShares !== null && (
+            <div className="text-[10px] mb-2 mono" style={{ color: previewSellShares <= 0 ? 'var(--accent-red)' : 'var(--accent-gold)' }}>
+              {previewSellShares <= 0 ? '→ 전량 매도 (종목 삭제)' : `→ 잔여 ${previewSellShares.toLocaleString()}주`}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSellConfirm}
+              disabled={sQty <= 0}
+              className="text-[10px] px-3 py-1 rounded-lg font-medium disabled:opacity-30 transition-all"
+              style={{ background: 'rgba(255,201,77,0.2)', border: '1px solid rgba(255,201,77,0.4)', color: 'var(--accent-gold)' }}
+            >확인</button>
+            <button
+              onClick={() => { setMode('none'); setSellQty('') }}
+              className="text-[10px] px-3 py-1 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+            >취소</button>
+          </div>
+        </div>
+      )}
 
       {/* AI 조언 */}
       {currentAdvice && advStyle ? (
