@@ -642,7 +642,7 @@ export default function PortfolioSection() {
                           key={item.id ?? item.ticker}
                           item={item}
                           live={live}
-                          adviceList={adviceByItemId[item.id ?? item.ticker] ?? []}
+                          adviceList={(item.id ? adviceByItemId[item.id] : undefined) ?? adviceByItemId[item.ticker] ?? []}
                           adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
                           onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                           onEdit={openEdit}
@@ -671,7 +671,7 @@ export default function PortfolioSection() {
                       key={item.id ?? item.ticker}
                       item={item}
                       live={live}
-                      adviceList={adviceByItemId[item.id ?? item.ticker] ?? []}
+                      adviceList={(item.id ? adviceByItemId[item.id] : undefined) ?? adviceByItemId[item.ticker] ?? []}
                       adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
                       onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                       onEdit={openEdit}
