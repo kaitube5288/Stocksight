@@ -552,3 +552,64 @@ ${itemsText}
     return []
   }
 }
+
+// ===== 동적 키워드 자동 학습 =====
+
+export type KeywordSuggestion = {
+  keyword: string
+  sector: string | null
+  related_tickers: string[]
+  is_high_impact: boolean
+}
+
+export async function suggestKeywordsFromNews(params: {
+  newsTitles: string[]
+  existingKeywords: string[]
+  trackedSectors: string[]
+}): Promise<KeywordSuggestion[]> {
+  if (params.newsTitles.length === 0) return []
+
+  const prompt = `당신은 한국 주식시장 뉴스 모니터링 전문가입니다.
+오늘 수집된 뉴스 헤드라인을 분석하여, 향후 한국 주식(특히 반도체·배터리·AI·바이오 섹터)에 중요한 영향을 줄 수 있는 키워드 중 아직 감시 목록에 없는 것들을 추천하세요.
+
+## 현재 감시 중인 키워드 (중복 제안 금지)
+${params.existingKeywords.slice(0, 100).join(', ')}
+
+## 오늘 뉴스 헤드라인
+${params.newsTitles.slice(0, 60).map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+## 추가 기준
+- 한국 주요 기업에 직접 영향을 주는 외국 기업명·기술명·규제명
+- 경쟁사 이름 (중국 반도체·배터리·전기차 기업 포함)
+- 글로벌 주요 고객사 (애플·구글·아마존·테슬라 등)
+- 새로운 산업 트렌드 용어, 정책/제재 신조어
+- 관련 종목코드(6자리 숫자 또는 ETF코드)를 알면 포함
+
+## 응답 형식 (JSON만, 다른 텍스트 없음)
+\`\`\`json
+{
+  "keywords": [
+    {
+      "keyword": "추가할 키워드",
+      "sector": "반도체|AI|2차전지|바이오|자동차|방산|조선|기타 중 하나",
+      "related_tickers": ["005930"],
+      "is_high_impact": true
+    }
+  ]
+}
+\`\`\`
+최대 10개 제안. 이미 감시 중인 키워드와 동일하거나 너무 일반적인 단어는 제외하세요.`
+
+  const text = await callGemini(prompt)
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
+  const raw = jsonMatch[1] ?? jsonMatch[0]
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return ((parsed.keywords ?? []) as KeywordSuggestion[])
+      .filter(k => k.keyword && !params.existingKeywords.includes(k.keyword))
+      .slice(0, 10)
+  } catch {
+    return []
+  }
+}

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { generateRecommendations, analyzeEventBeneficiaries, generatePortfolioAdvice } from '@/lib/gemini'
+import { generateRecommendations, analyzeEventBeneficiaries, generatePortfolioAdvice, suggestKeywordsFromNews } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, fetchNaverData, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert, sendTelegramSimple } from '@/lib/telegram'
@@ -8,7 +8,7 @@ import { getKSTDate, getKSTDateLocale } from '@/lib/date'
 import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
-import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews } from '@/lib/news'
+import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
 import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 
@@ -52,6 +52,32 @@ async function runDailyAnalysis() {
 
   try {
     const today = getKSTDateLocale({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+
+    // 0. 동적 키워드 로드 — keyword_watchlist DB → HIGH_IMPACT·섹터맵·추가쿼리 반영
+    const { data: kwRows } = await supabaseAdmin
+      .from('keyword_watchlist')
+      .select('keyword, sector, is_high_impact, related_tickers')
+    const _kwList = (kwRows ?? []) as { keyword: string; sector: string | null; is_high_impact: boolean }[]
+    const dynHighImpact = _kwList.filter(k => k.is_high_impact).map(k => k.keyword)
+    const dynSectorMap: Record<string, string[]> = {}
+    const allKwTexts = _kwList.map(k => k.keyword)
+    for (const k of _kwList) {
+      if (k.sector) {
+        if (!dynSectorMap[k.sector]) dynSectorMap[k.sector] = []
+        dynSectorMap[k.sector].push(k.keyword)
+      }
+    }
+    setDynamicKeywords({
+      highImpact: dynHighImpact,
+      sectorMap: dynSectorMap,
+      extraQueries: [
+        '중국 반도체 삼성 SK하이닉스',
+        '반도체 수출 규제 한국',
+        '애플 반도체 공급업체',
+        'YMTC CXMT 낸드 DRAM',
+      ],
+    })
+    console.log(`[키워드] 동적 키워드 ${_kwList.length}개 로드 (high:${dynHighImpact.length})`)
 
     // 1. 뉴스 수집: 07:30 크론이 채운 news_cache DB를 우선 읽고, 없으면 직접 수집 fallback
     const { news: freshNews, analyzed: analyzedNews } = await getNewsFromCacheOrFetch()
@@ -500,6 +526,30 @@ async function runDailyAnalysis() {
     ])
     if (telegramResult.status === 'rejected') console.error('[텔레그램] 전송 실패:', telegramResult.reason)
     if (portfolioResult.status === 'rejected') console.error('[포트폴리오] 조언 생성 실패:', portfolioResult.reason)
+
+    // 6-b. 키워드 자동 학습 — 오늘 뉴스에서 Gemini가 새 키워드 제안 → DB 누적
+    try {
+      const suggestions = await suggestKeywordsFromNews({
+        newsTitles: analyzedNews.slice(0, 60).map(n => n.title),
+        existingKeywords: allKwTexts,
+        trackedSectors: Object.keys(dynSectorMap),
+      })
+      if (suggestions.length > 0) {
+        await supabaseAdmin.from('keyword_watchlist').upsert(
+          suggestions.map(s => ({
+            keyword: s.keyword,
+            sector: s.sector ?? null,
+            related_tickers: s.related_tickers ?? [],
+            is_high_impact: s.is_high_impact,
+            source: 'ai',
+          })),
+          { onConflict: 'keyword', ignoreDuplicates: true }
+        )
+        console.log(`[키워드] AI 신규 제안 ${suggestions.length}개 누적`)
+      }
+    } catch (e) {
+      console.error('[키워드] 자동 학습 실패 (비치명):', e instanceof Error ? e.message : e)
+    }
 
     // 7. 분석 성공 시각 sentinel 갱신 (수집+분석 모두 성공했을 때만)
     await supabaseAdmin

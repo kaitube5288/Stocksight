@@ -35,6 +35,21 @@ const LOW_IMPACT = [
   '하락 전망', '감소', '적자', '손실', '리스크', '위기', '불확실',
 ]
 
+// 동적 키워드 (cron 시작 시 keyword_watchlist DB에서 로드)
+let _dynHighImpact: string[] = []
+let _dynSectorMap: Record<string, string[]> = {}
+let _dynExtraQueries: string[] = []
+
+export function setDynamicKeywords(opts: {
+  highImpact: string[]
+  sectorMap: Record<string, string[]>
+  extraQueries?: string[]
+}) {
+  _dynHighImpact = opts.highImpact
+  _dynSectorMap = opts.sectorMap
+  _dynExtraQueries = opts.extraQueries ?? []
+}
+
 // 섹터 → 뉴스 내 키워드 매핑 (종목명·산업 용어 포함)
 const SECTOR_KEYWORDS: Record<string, string[]> = {
   '반도체': ['반도체', 'HBM', 'DRAM', 'D램', '낸드', 'NAND', 'AI칩', '메모리', '파운드리', 'SK하이닉스', '삼성전자', '시스템반도체'],
@@ -86,13 +101,19 @@ function isRecentNews(pubDate: string, maxAgeHours = 36): boolean {
 }
 
 function scoreImpact(title: string): 'high' | 'medium' | 'low' {
-  if (HIGH_IMPACT.some(k => title.includes(k))) return 'high'
+  if ([...HIGH_IMPACT, ..._dynHighImpact].some(k => title.includes(k))) return 'high'
   if (LOW_IMPACT.some(k => title.includes(k))) return 'low'
   return 'medium'
 }
 
 function detectSectors(title: string): string[] {
-  return Object.entries(SECTOR_KEYWORDS)
+  const merged: Record<string, string[]> = {}
+  for (const [s, kws] of Object.entries(SECTOR_KEYWORDS)) merged[s] = [...kws]
+  for (const [s, kws] of Object.entries(_dynSectorMap)) {
+    if (merged[s]) merged[s].push(...kws)
+    else merged[s] = [...kws]
+  }
+  return Object.entries(merged)
     .filter(([, keywords]) => keywords.some(k => title.includes(k)))
     .map(([sector]) => sector)
 }
@@ -286,7 +307,7 @@ export async function fetchAndAnalyzeNews(): Promise<{ news: NewsItem[]; analyze
   ]
 
   const all: NewsItem[] = []
-  for (const q of queries) {
+  for (const q of [...queries, ..._dynExtraQueries]) {
     const items = await fetchGoogleNewsRSS(q)
     all.push(...items)
   }
