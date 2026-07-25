@@ -253,6 +253,38 @@ export default function PortfolioSection() {
     }
   }
 
+  const handleSell = async (item: PortfolioItem, sPrice: number, sQty: number) => {
+    if (!item.id) return
+    try {
+      if (sQty >= item.shares) {
+        await fetch('/api/portfolio', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: item.id }),
+        })
+      } else {
+        await fetch('/api/portfolio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: item.id, ticker: item.ticker, name: item.name, avg_price: item.avg_price, shares: item.shares - sQty, account_id: item.account_id ?? null }),
+        })
+      }
+      if (sPrice > 0 && item.account_id) {
+        const acc = accounts.find(a => a.id === item.account_id)
+        if (acc) {
+          await fetch('/api/portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + sPrice * sQty }),
+          })
+        }
+      }
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '매도 처리 실패')
+    }
+  }
+
   // ----- Advice navigation -----
   const navigateAdvice = (ticker: string, delta: number) => {
     setAdviceIdx(prev => {
@@ -615,6 +647,7 @@ export default function PortfolioSection() {
                           onEdit={openEdit}
                           onDelete={(id, ticker) => deleteItem(id, ticker)}
                           onUpdate={updateItem}
+                          onSell={handleSell}
                         />
                       ))}
                     </div>
@@ -643,6 +676,7 @@ export default function PortfolioSection() {
                       onEdit={openEdit}
                       onDelete={(id, ticker) => deleteItem(id, ticker)}
                       onUpdate={updateItem}
+                      onSell={handleSell}
                     />
                   ))}
                 </div>
@@ -691,7 +725,7 @@ function AccountEditCard({
 }
 
 function StockCard({
-  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate,
+  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate, onSell,
 }: {
   item: PortfolioItem
   live: Record<string, LivePrice>
@@ -701,6 +735,7 @@ function StockCard({
   onEdit: (item: PortfolioItem) => void
   onDelete: (id: string, ticker: string) => void
   onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => void
+  onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
 }) {
   const [mode, setMode] = useState<'none' | 'buy' | 'sell'>('none')
   const [buyPrice, setBuyPrice] = useState('')
@@ -742,12 +777,8 @@ function StockCard({
   }
 
   const handleSellConfirm = () => {
-    if (!item.id || sQty <= 0) return
-    if (sQty >= item.shares) {
-      onDelete(item.id, item.ticker)
-    } else {
-      onUpdate(item.id, item.ticker, item.name, item.avg_price, item.shares - sQty, item.account_id ?? null)
-    }
+    if (sQty <= 0 || !item.id) return
+    onSell(item, sPrice, sQty)
     setMode('none'); setSellPrice(''); setSellQty('')
   }
 
