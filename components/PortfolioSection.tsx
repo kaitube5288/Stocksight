@@ -705,6 +705,7 @@ function StockCard({
   const [mode, setMode] = useState<'none' | 'buy' | 'sell'>('none')
   const [buyPrice, setBuyPrice] = useState('')
   const [buyQty, setBuyQty] = useState('')
+  const [sellPrice, setSellPrice] = useState('')
   const [sellQty, setSellQty] = useState('')
 
   const currentPrice = live[item.ticker]?.price ?? item.avg_price
@@ -730,7 +731,9 @@ function StockCard({
 
   // 매도 미리보기
   const sQty = Number(sellQty.replace(/,/g, ''))
+  const sPrice = Number(sellPrice.replace(/,/g, ''))
   const previewSellShares = sQty > 0 ? item.shares - sQty : null
+  const previewSellProfit = sQty > 0 && sPrice > 0 ? (sPrice - item.avg_price) * sQty : null
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
@@ -745,7 +748,7 @@ function StockCard({
     } else {
       onUpdate(item.id, item.ticker, item.name, item.avg_price, item.shares - sQty, item.account_id ?? null)
     }
-    setMode('none'); setSellQty('')
+    setMode('none'); setSellPrice(''); setSellQty('')
   }
 
   return (
@@ -840,11 +843,21 @@ function StockCard({
           <div className="text-[10px] font-medium mb-2" style={{ color: 'var(--accent-gold)' }}>매도</div>
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <div className="flex items-center gap-1">
-              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>매도수량</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>매도단가</span>
+              <input
+                type="text" placeholder="0" value={sellPrice}
+                onChange={e => setSellPrice(e.target.value)}
+                className="w-24 px-2 py-1 rounded-lg text-xs mono outline-none"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+              />
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>수량</span>
               <input
                 type="text" placeholder="0" value={sellQty}
                 onChange={e => setSellQty(e.target.value)}
-                className="w-24 px-2 py-1 rounded-lg text-xs mono outline-none"
+                className="w-20 px-2 py-1 rounded-lg text-xs mono outline-none"
                 style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
               />
               <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>주</span>
@@ -852,8 +865,13 @@ function StockCard({
             <span className="text-[10px] mono" style={{ color: 'var(--text-muted)' }}>보유 {item.shares.toLocaleString()}주</span>
           </div>
           {previewSellShares !== null && (
-            <div className="text-[10px] mb-2 mono" style={{ color: previewSellShares <= 0 ? 'var(--accent-red)' : 'var(--accent-gold)' }}>
+            <div className="text-[10px] mb-1 mono" style={{ color: previewSellShares <= 0 ? 'var(--accent-red)' : 'var(--accent-gold)' }}>
               {previewSellShares <= 0 ? '→ 전량 매도 (종목 삭제)' : `→ 잔여 ${previewSellShares.toLocaleString()}주`}
+            </div>
+          )}
+          {previewSellProfit !== null && (
+            <div className="text-[10px] mb-2 mono" style={{ color: previewSellProfit >= 0 ? '#ff5c5c' : '#4da6ff' }}>
+              실현손익 {previewSellProfit >= 0 ? '+' : ''}{Math.round(previewSellProfit).toLocaleString('ko-KR')}원
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -864,7 +882,7 @@ function StockCard({
               style={{ background: 'rgba(255,201,77,0.2)', border: '1px solid rgba(255,201,77,0.4)', color: 'var(--accent-gold)' }}
             >확인</button>
             <button
-              onClick={() => { setMode('none'); setSellQty('') }}
+              onClick={() => { setMode('none'); setSellPrice(''); setSellQty('') }}
               className="text-[10px] px-3 py-1 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
             >취소</button>
