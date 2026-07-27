@@ -50,6 +50,7 @@ export default function PortfolioSection() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
 
   // Stock form
   const [showForm, setShowForm] = useState(false)
@@ -286,6 +287,32 @@ export default function PortfolioSection() {
     }
   }
 
+  // ----- AI 조언 수동 실행 -----
+  const runAdvice = async (itemId?: string) => {
+    const key = itemId ?? 'all'
+    setRunningAdvice(prev => ({ ...prev, [key]: true }))
+    try {
+      const body = itemId ? JSON.stringify({ item_id: itemId }) : undefined
+      await fetch('/api/portfolio/advice/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      // 조언 데이터만 새로고침
+      const advRes = await fetch('/api/portfolio/advice')
+      const advData = await advRes.json()
+      const allAdvice: PortfolioAdvice[] = advData.allAdvice ?? []
+      const byItemId: Record<string, PortfolioAdvice[]> = {}
+      for (const a of allAdvice) {
+        const k = a.portfolio_item_id ?? a.ticker
+        if (!byItemId[k]) byItemId[k] = []
+        byItemId[k].push(a)
+      }
+      setAdviceByItemId(byItemId)
+      setHasToday(advData.hasToday ?? false)
+    } catch {
+      setError('AI 조언 실행 실패')
+    } finally {
+      setRunningAdvice(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
   // ----- Advice navigation -----
   const navigateAdvice = (itemId: string, delta: number) => {
     setAdviceIdx(prev => {
@@ -477,6 +504,14 @@ export default function PortfolioSection() {
                 <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
               </div>
             )}
+            <button
+              onClick={() => runAdvice()}
+              disabled={runningAdvice['all']}
+              className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
+              style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
+            >
+              {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
+            </button>
           </div>
         </div>
       )}
@@ -649,6 +684,8 @@ export default function PortfolioSection() {
                           onDelete={(id, ticker) => deleteItem(id, ticker)}
                           onUpdate={updateItem}
                           onSell={handleSell}
+                          onRunAdvice={(itemId) => runAdvice(itemId)}
+                          runningAdvice={runningAdvice[item.id ?? ''] ?? false}
                         />
                       ))}
                     </div>
@@ -678,6 +715,8 @@ export default function PortfolioSection() {
                       onDelete={(id, ticker) => deleteItem(id, ticker)}
                       onUpdate={updateItem}
                       onSell={handleSell}
+                      onRunAdvice={(itemId) => runAdvice(itemId)}
+                      runningAdvice={runningAdvice[item.id ?? ''] ?? false}
                     />
                   ))}
                 </div>
@@ -726,7 +765,7 @@ function AccountEditCard({
 }
 
 function StockCard({
-  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate, onSell,
+  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate, onSell, onRunAdvice, runningAdvice,
 }: {
   item: PortfolioItem
   live: Record<string, LivePrice>
@@ -737,6 +776,8 @@ function StockCard({
   onDelete: (id: string, ticker: string) => void
   onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => void
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
+  onRunAdvice: (itemId: string) => void
+  runningAdvice: boolean
 }) {
   const [mode, setMode] = useState<'none' | 'buy' | 'sell'>('none')
   const [buyPrice, setBuyPrice] = useState('')
@@ -946,11 +987,31 @@ function StockCard({
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
             >▶</button>
           </div>
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{currentAdvice.advice_detail}</p>
+          <p className="text-xs leading-relaxed mb-2" style={{ color: 'var(--text-secondary)' }}>{currentAdvice.advice_detail}</p>
+          <div className="flex justify-end">
+            <button
+              onClick={() => item.id && onRunAdvice(item.id)}
+              disabled={runningAdvice || !item.id}
+              className="text-[9px] px-2 py-0.5 rounded-lg transition-all disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-muted)' }}
+            >
+              {runningAdvice ? '⏳ 실행 중…' : '↺ 재실행'}
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>AI 조언 없음 — 다음 분석 실행 후 표시됩니다</p>
+        <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>AI 조언 없음</p>
+            <button
+              onClick={() => item.id && onRunAdvice(item.id)}
+              disabled={runningAdvice || !item.id}
+              className="text-[9px] px-2 py-0.5 rounded-lg transition-all disabled:opacity-40"
+              style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.25)', color: 'var(--accent-green)' }}
+            >
+              {runningAdvice ? '⏳ 실행 중…' : '▶ AI 조언 실행'}
+            </button>
+          </div>
         </div>
       )}
     </div>
