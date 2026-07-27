@@ -255,7 +255,7 @@ export default function StockChart({ ticker, name, instances, tradeType, rank, f
           )
         })}
         {expiresAt && (
-          <span className="mono text-[9px] ml-auto" style={{ color: 'rgba(255,255,255,0.25)' }}>
+          <span suppressHydrationWarning className="mono text-[9px] ml-auto" style={{ color: 'rgba(255,255,255,0.25)' }}>
             {formatExpiryRemaining(expiresAt)}
           </span>
         )}
