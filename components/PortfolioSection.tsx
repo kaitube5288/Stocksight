@@ -672,12 +672,16 @@ export default function PortfolioSection() {
                   </div>
                   {!isCollapsed && (
                     <div className="flex flex-col gap-2">
-                      {accItems.map(item => (
+                      {accItems.map(item => {
+                        const byId = item.id ? (adviceByItemId[item.id] ?? []) : []
+                        const byTicker = adviceByItemId[item.ticker] ?? []
+                        const mergedAdvice = [...byId, ...byTicker.filter(a => !byId.some(b => b.date === a.date))]
+                        return (
                         <StockCard
                           key={item.id ?? item.ticker}
                           item={item}
                           live={live}
-                          adviceList={(item.id ? adviceByItemId[item.id] : undefined) ?? adviceByItemId[item.ticker] ?? []}
+                          adviceList={mergedAdvice}
                           adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
                           onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                           onEdit={openEdit}
@@ -687,7 +691,8 @@ export default function PortfolioSection() {
                           onRunAdvice={(itemId) => runAdvice(itemId)}
                           runningAdvice={runningAdvice[item.id ?? ''] ?? false}
                         />
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -703,12 +708,16 @@ export default function PortfolioSection() {
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
-                  {unassigned.map(item => (
+                  {unassigned.map(item => {
+                    const byId = item.id ? (adviceByItemId[item.id] ?? []) : []
+                    const byTicker = adviceByItemId[item.ticker] ?? []
+                    const mergedAdvice = [...byId, ...byTicker.filter(a => !byId.some(b => b.date === a.date))]
+                    return (
                     <StockCard
                       key={item.id ?? item.ticker}
                       item={item}
                       live={live}
-                      adviceList={(item.id ? adviceByItemId[item.id] : undefined) ?? adviceByItemId[item.ticker] ?? []}
+                      adviceList={mergedAdvice}
                       adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
                       onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
                       onEdit={openEdit}
@@ -718,7 +727,8 @@ export default function PortfolioSection() {
                       onRunAdvice={(itemId) => runAdvice(itemId)}
                       runningAdvice={runningAdvice[item.id ?? ''] ?? false}
                     />
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
