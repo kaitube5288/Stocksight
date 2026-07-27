@@ -85,8 +85,8 @@ export default function AIStockCard({ rec, index = 0 }: {
   const chartColor = '#4d94ff'
 
   const fmt = (n: number | null | undefined) => n ? n.toLocaleString() : '-'
-  const fmtRange = (lo: number, hi: number) =>
-    lo === hi ? lo.toLocaleString() : `${lo.toLocaleString()}~${hi.toLocaleString()}`
+  const fmtRange = (lo: number | null, hi: number | null) =>
+    lo == null || hi == null ? '-' : lo === hi ? lo.toLocaleString() : `${lo.toLocaleString()}~${hi.toLocaleString()}`
 
   const rsiColor = rec.rsi
     ? rec.rsi >= 70 ? '#ff6b6b' : rec.rsi <= 30 ? '#00e5aa' : 'rgba(255,255,255,0.7)'
