@@ -64,15 +64,17 @@ export default function AdminPage() {
 
   const runDailyAnalysis = async () => {
     setAnalyzing(true)
-    setAnalyzeLog([`[${now()}] 일일 분석 실행 중... (30~60초 소요)`])
+    setAnalyzeLog([`[${now()}] 일일 분석 실행 중... (2~4분 소요, 완료 전까지 기다려 주세요)`])
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5분 타임아웃
     try {
-      const res = await fetch('/api/cron/daily', { method: 'POST' })
+      const res = await fetch('/api/cron/daily', { method: 'POST', signal: controller.signal })
+      clearTimeout(timer)
       const data = await res.json()
       if (data.success) {
         setAnalyzeLog(prev => [
           ...prev,
           `[${now()}] ✅ 완료 — 뉴스 ${data.newsCount}건 분석`,
-          `[${now()}] 텔레그램 전송: ${data.telegramSent ? '✅' : '⚠️ 토큰 미설정'}`,
         ])
       } else {
         setAnalyzeLog(prev => [
@@ -82,9 +84,13 @@ export default function AdminPage() {
         ])
       }
     } catch (e) {
+      clearTimeout(timer)
+      const msg = e instanceof Error && e.name === 'AbortError'
+        ? '5분 초과로 타임아웃 — 서버에서는 계속 실행 중일 수 있습니다'
+        : e instanceof Error ? e.message : String(e)
       setAnalyzeLog(prev => [
         ...prev,
-        `[${now()}] ❌ ${e instanceof Error ? e.message : String(e)}`,
+        `[${now()}] ❌ ${msg}`,
         ...(last2026Update ? [`[${now()}] 📦 마지막 수집 데이터: ${formatKST(last2026Update)}`] : []),
       ])
     } finally {
