@@ -41,12 +41,12 @@ export async function GET(request: Request) {
   return runDailyAnalysis()
 }
 
-// Admin 페이지에서 수동 트리거 (POST)
+// Admin 페이지에서 수동 트리거 (POST) — 텔레그램 전송 없이 분석만 실행
 export async function POST() {
-  return runDailyAnalysis()
+  return runDailyAnalysis({ skipTelegram: true })
 }
 
-async function runDailyAnalysis() {
+async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boolean } = {}) {
   const supabaseAdmin = getSupabaseAdmin()
   const todayDate = getKSTDate()  // try 밖에 선언 — catch 블록에서도 참조 가능
 
@@ -533,18 +533,20 @@ async function runDailyAnalysis() {
       console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)
     }
 
-    const [telegramResult, portfolioResult] = await Promise.allSettled([
-      sendTelegramAlert({
+    const tasks: Promise<unknown>[] = [runPortfolioAdvice()]
+    if (!skipTelegram) {
+      tasks.unshift(sendTelegramAlert({
         stocks: result.recommendations,
         marketOutlook: result.market_outlook,
         date: todayDate,
         usdkrw,
         goldPrice,
-      }),
-      runPortfolioAdvice(),
-    ])
-    if (telegramResult.status === 'rejected') console.error('[텔레그램] 전송 실패:', telegramResult.reason)
-    if (portfolioResult.status === 'rejected') console.error('[포트폴리오] 조언 생성 실패:', portfolioResult.reason)
+      }))
+    }
+    const settled = await Promise.allSettled(tasks)
+    if (!skipTelegram && settled[0].status === 'rejected') console.error('[텔레그램] 전송 실패:', (settled[0] as PromiseRejectedResult).reason)
+    const portfolioResult = settled[skipTelegram ? 0 : 1]
+    if (portfolioResult.status === 'rejected') console.error('[포트폴리오] 조언 생성 실패:', (portfolioResult as PromiseRejectedResult).reason)
 
     // 6-b. 키워드 자동 학습 — 오늘 뉴스에서 Gemini가 새 키워드 제안 → DB 누적
     try {
