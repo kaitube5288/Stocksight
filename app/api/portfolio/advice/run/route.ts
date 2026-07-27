@@ -101,6 +101,7 @@ export async function POST(request: Request) {
         current_price: item.current_price ?? null,
         avg_price: item.avg_price ?? null,
         profit_pct: item.profit_pct ?? null,
+        source: 'manual',
       }, { onConflict: 'date,portfolio_item_id' })
     }))
 

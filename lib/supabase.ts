@@ -110,5 +110,6 @@ export type PortfolioAdvice = {
   avg_price?: number | null
   profit_pct?: number | null
   portfolio_item_id?: string | null
+  source?: 'auto' | 'manual'
   created_at?: string
 }

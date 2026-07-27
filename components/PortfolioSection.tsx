@@ -973,11 +973,18 @@ function StockCard({
               className="text-xs px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
               style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
             >◀</button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap justify-center">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: advStyle.border.replace('0.4', '0.2'), color: advStyle.color }}>{advStyle.label}</span>
               <span className="text-[10px] mono" style={{ color: 'var(--text-muted)' }}>
-                AI 조언 {currentAdvice.date}
-                {adviceList.length > 1 && <span style={{ color: 'var(--text-muted)' }}> ({adviceIdx + 1}/{adviceList.length})</span>}
+                {currentAdvice.date}
+                {adviceList.length > 1 && <span> ({adviceIdx + 1}/{adviceList.length})</span>}
+              </span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-md" style={
+                currentAdvice.source === 'manual'
+                  ? { background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa' }
+                  : { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-muted)' }
+              }>
+                {currentAdvice.source === 'manual' ? '수동' : '자동'}
               </span>
             </div>
             <button

@@ -522,6 +522,7 @@ async function runDailyAnalysis() {
           current_price: item.current_price ?? null,
           avg_price: item.avg_price ?? null,
           profit_pct: item.profit_pct ?? null,
+          source: 'auto',
         }, { onConflict: 'date,portfolio_item_id' })
       }))
 
