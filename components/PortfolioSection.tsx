@@ -314,11 +314,10 @@ export default function PortfolioSection() {
   }
 
   // ----- Advice navigation -----
-  const navigateAdvice = (itemId: string, delta: number) => {
+  const navigateAdvice = (itemId: string, delta: number, listLength: number) => {
     setAdviceIdx(prev => {
-      const list = adviceByItemId[itemId] ?? []
       const current = prev[itemId] ?? 0
-      const next = Math.max(0, Math.min(list.length - 1, current + delta))
+      const next = Math.max(0, Math.min(listLength - 1, current + delta))
       return { ...prev, [itemId]: next }
     })
   }
@@ -683,7 +682,7 @@ export default function PortfolioSection() {
                           live={live}
                           adviceList={mergedAdvice}
                           adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
-                          onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
+                          onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta, mergedAdvice.length)}
                           onEdit={openEdit}
                           onDelete={(id, ticker) => deleteItem(id, ticker)}
                           onUpdate={updateItem}
@@ -719,7 +718,7 @@ export default function PortfolioSection() {
                       live={live}
                       adviceList={mergedAdvice}
                       adviceIdx={adviceIdx[item.id ?? item.ticker] ?? 0}
-                      onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta)}
+                      onAdviceNav={(delta) => navigateAdvice(item.id ?? item.ticker, delta, mergedAdvice.length)}
                       onEdit={openEdit}
                       onDelete={(id, ticker) => deleteItem(id, ticker)}
                       onUpdate={updateItem}
