@@ -507,12 +507,16 @@ async function runDailyAnalysis() {
         date: todayDate,
       })
 
-      await Promise.all(advice.map(a => {
+      for (const a of advice) {
         const itemIndex = parseInt(a.item_key)
         const item = items[itemIndex]
-        if (!item) return Promise.resolve()
+        if (!item) continue
         const rawItem = portfolioItems[itemIndex] as { id: string }
-        return supabaseAdmin.from('portfolio_advice').upsert({
+        await supabaseAdmin.from('portfolio_advice')
+          .delete()
+          .eq('date', todayDate)
+          .eq('portfolio_item_id', rawItem.id)
+        await supabaseAdmin.from('portfolio_advice').insert({
           date: todayDate,
           portfolio_item_id: rawItem.id,
           ticker: item.ticker,
@@ -523,8 +527,8 @@ async function runDailyAnalysis() {
           avg_price: item.avg_price ?? null,
           profit_pct: item.profit_pct ?? null,
           source: 'auto',
-        }, { onConflict: 'date,portfolio_item_id' })
-      }))
+        })
+      }
 
       console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)
     }

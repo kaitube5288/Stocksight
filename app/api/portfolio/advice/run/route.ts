@@ -85,13 +85,17 @@ export async function POST(request: Request) {
     // 4. Gemini 조언 생성
     const advice = await generatePortfolioAdvice({ items, cash, marketOutlook, date: todayDate })
 
-    // 5. DB 저장
-    await Promise.all(advice.map(a => {
+    // 5. DB 저장 (DELETE → INSERT로 partial index 충돌 우회)
+    for (const a of advice) {
       const itemIndex = parseInt(a.item_key)
       const rawItem = portfolioItems[itemIndex] as { id: string }
       const item = items[itemIndex]
-      if (!item || !rawItem) return Promise.resolve()
-      return supabaseAdmin.from('portfolio_advice').upsert({
+      if (!item || !rawItem) continue
+      await supabaseAdmin.from('portfolio_advice')
+        .delete()
+        .eq('date', todayDate)
+        .eq('portfolio_item_id', rawItem.id)
+      await supabaseAdmin.from('portfolio_advice').insert({
         date: todayDate,
         portfolio_item_id: rawItem.id,
         ticker: item.ticker,
@@ -102,8 +106,8 @@ export async function POST(request: Request) {
         avg_price: item.avg_price ?? null,
         profit_pct: item.profit_pct ?? null,
         source: 'manual',
-      }, { onConflict: 'date,portfolio_item_id' })
-    }))
+      })
+    }
 
     return NextResponse.json({ success: true, count: advice.length })
   } catch (e) {
