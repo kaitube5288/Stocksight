@@ -839,7 +839,13 @@ function StockCard({
       {/* 1행: 종목명 | 코드 | 현재가 | 손익% | 버튼들 */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
+          <a
+            href={`https://finance.naver.com/item/main.naver?code=${item.ticker}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-semibold transition-opacity hover:opacity-70"
+            style={{ color: 'var(--text-primary)', textDecoration: 'none' }}
+          >{item.name}</a>
           <span className="mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)' }}>{item.ticker}</span>
           <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>현재가 {currentPrice.toLocaleString('ko-KR')}원</span>
           <span className="mono text-xs font-bold" style={{ color: pColor }}>
