@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
   // 계좌 추가/수정
   if (body.type === 'account') {
-    const { id, name, current_investment, additional_investment, cash } = body
+    const { id, name, current_investment, additional_investment, cash, commission_rate, brokerage } = body
     if (id) {
       // 수정 (특정 필드만 업데이트)
       const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -30,6 +30,8 @@ export async function POST(request: Request) {
       if (current_investment != null) update.current_investment = Number(current_investment)
       if (additional_investment != null) update.additional_investment = Number(additional_investment)
       if (cash != null) update.cash = Number(cash)
+      if (commission_rate != null) update.commission_rate = Number(commission_rate)
+      if (brokerage != null) update.brokerage = String(brokerage)
       const { error } = await supabase.from('portfolio_accounts').update(update).eq('id', id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     } else {
@@ -41,6 +43,8 @@ export async function POST(request: Request) {
         current_investment: Number(current_investment ?? 0),
         additional_investment: Number(additional_investment ?? 0),
         cash: Number(cash ?? 0),
+        commission_rate: Number(commission_rate ?? 0.015),
+        brokerage: String(brokerage ?? 'etc'),
         sort_order: nextOrder,
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -5,7 +5,7 @@ import { PortfolioItem, PortfolioAdvice, PortfolioAccount } from '@/lib/supabase
 
 type SearchResult = { ticker: string; name: string; sector: string }
 type LivePrice = { price: number | null }
-type AcctForm = { name: string; current_investment: string; additional_investment: string; cash: string }
+type AcctForm = { name: string; current_investment: string; additional_investment: string; cash: string; brokerage: string; commission_rate: string }
 
 const ADVICE_STYLE: Record<string, { bg: string; border: string; color: string; label: string }> = {
   '보유유지': { bg: 'rgba(77,166,255,0.12)', border: 'rgba(77,166,255,0.4)', color: '#4da6ff', label: '보유유지' },
@@ -17,7 +17,22 @@ const ADVICE_STYLE: Record<string, { bg: string; border: string; color: string; 
 }
 
 const EMPTY_FORM = { id: '', ticker: '', name: '', avg_price: '', shares: '', account_id: '' }
-const EMPTY_ACCT = (): AcctForm => ({ name: '', current_investment: '0', additional_investment: '0', cash: '0' })
+const EMPTY_ACCT = (): AcctForm => ({ name: '', current_investment: '0', additional_investment: '0', cash: '0', brokerage: 'etc', commission_rate: '0.015' })
+
+const BROKERAGES: { name: string; rate: number | null }[] = [
+  { name: '키움증권', rate: 0.015 },
+  { name: '미래에셋', rate: 0.015 },
+  { name: '삼성증권', rate: 0.014 },
+  { name: 'NH투자증권', rate: 0.015 },
+  { name: 'KB증권', rate: 0.015 },
+  { name: '한국투자', rate: 0.015 },
+  { name: '신한투자', rate: 0.015 },
+  { name: '하나증권', rate: 0.015 },
+  { name: '토스증권', rate: 0.015 },
+  { name: '카카오페이', rate: 0 },
+  { name: '직접입력', rate: null },
+]
+const SELL_TAX_RATE = 0.18 // 증권거래세+농특세 합계(%)
 
 type AccountTheme = {
   bg: string; border: string; shadow: string; accent: string
@@ -124,6 +139,8 @@ export default function PortfolioSection() {
       current_investment: String(acc.current_investment),
       additional_investment: String(acc.additional_investment),
       cash: String(acc.cash),
+      brokerage: acc.brokerage ?? 'etc',
+      commission_rate: String(acc.commission_rate ?? 0.015),
     })
   }
 
@@ -142,6 +159,8 @@ export default function PortfolioSection() {
           current_investment: Number(String(f.current_investment).replace(/,/g, '') || 0),
           additional_investment: Number(String(f.additional_investment).replace(/,/g, '') || 0),
           cash: Number(String(f.cash).replace(/,/g, '') || 0),
+          commission_rate: Number(f.commission_rate || 0),
+          brokerage: f.brokerage || 'etc',
         }),
       })
       const data = await res.json()
@@ -284,10 +303,12 @@ export default function PortfolioSection() {
       if (sPrice > 0 && item.account_id) {
         const acc = accounts.find(a => a.id === item.account_id)
         if (acc) {
+          const commRate = (acc.commission_rate ?? 0.015) / 100
+          const netReceived = sPrice * sQty * (1 - commRate - SELL_TAX_RATE / 100)
           await fetch('/api/portfolio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + sPrice * sQty }),
+            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + netReceived }),
           })
         }
       }
@@ -438,7 +459,14 @@ export default function PortfolioSection() {
               return (
                 <div key={acc.id} className="rounded-2xl p-4" style={{ background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: `0 0 28px ${theme.shadow}` }}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
+                    <div>
+                      <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
+                      {acc.brokerage && acc.brokerage !== 'etc' && (
+                        <div className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                          {acc.brokerage} · 수수료 {acc.commission_rate ?? 0.015}%
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5">
                       <button onClick={() => startEditAccount(acc)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-muted)' }}>편집</button>
                       <button onClick={() => acc.id && deleteAccount(acc.id)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,92,92,0.1)', border: '1px solid rgba(255,92,92,0.3)', color: 'var(--accent-red)' }}>삭제</button>
@@ -699,6 +727,7 @@ export default function PortfolioSection() {
                           onSell={handleSell}
                           onRunAdvice={(itemId) => runAdvice(itemId)}
                           runningAdvice={runningAdvice[item.id ?? ''] ?? false}
+                          commissionRate={acc.commission_rate ?? 0.015}
                         />
                         )
                       })}
@@ -735,6 +764,7 @@ export default function PortfolioSection() {
                       onSell={handleSell}
                       onRunAdvice={(itemId) => runAdvice(itemId)}
                       runningAdvice={runningAdvice[item.id ?? ''] ?? false}
+                      commissionRate={0.015}
                     />
                     )
                   })}
@@ -763,6 +793,37 @@ function AccountEditCard({
     <div className="glass rounded-2xl p-4" style={{ border: '1px solid rgba(167,139,250,0.3)' }}>
       <div className="text-[10px] mb-2.5 font-medium" style={{ color: '#a78bfa' }}>{isNew ? '새 계좌 추가' : '계좌 편집'}</div>
       <input type="text" placeholder="계좌명 (예: 신한투자)" value={form.name} onChange={e => onChange({ ...form, name: e.target.value })} className="w-full px-3 py-2 rounded-xl text-xs mono outline-none mb-2" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }} />
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <div className="text-[9px] mb-1" style={{ color: 'rgba(255,201,77,0.7)' }}>증권사</div>
+          <select
+            value={form.brokerage}
+            onChange={e => {
+              const b = BROKERAGES.find(x => x.name === e.target.value)
+              onChange({ ...form, brokerage: e.target.value, commission_rate: b?.rate != null ? String(b.rate) : form.commission_rate })
+            }}
+            className="w-full px-2 py-1.5 rounded-lg text-xs mono outline-none"
+            style={{ background: 'rgba(30,30,40,0.95)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+          >
+            <option value="etc">기타</option>
+            {BROKERAGES.filter(b => b.name !== '직접입력').map(b => (
+              <option key={b.name} value={b.name}>{b.name}</option>
+            ))}
+            <option value="직접입력">직접입력</option>
+          </select>
+        </div>
+        <div>
+          <div className="text-[9px] mb-1" style={{ color: 'rgba(255,201,77,0.7)' }}>수수료율 (%)</div>
+          <input
+            type="text"
+            placeholder="0.015"
+            value={form.commission_rate}
+            onChange={e => onChange({ ...form, commission_rate: e.target.value })}
+            className="w-full px-2 py-1.5 rounded-lg text-xs mono outline-none"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)' }}
+          />
+        </div>
+      </div>
       <div className="grid grid-cols-3 gap-2 mb-3">
         {[
           { key: 'current_investment' as const, label: '총 원금', color: '#a78bfa' },
@@ -784,7 +845,7 @@ function AccountEditCard({
 }
 
 function StockCard({
-  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate, onSell, onRunAdvice, runningAdvice,
+  item, live, adviceList, adviceIdx, onAdviceNav, onEdit, onDelete, onUpdate, onSell, onRunAdvice, runningAdvice, commissionRate,
 }: {
   item: PortfolioItem
   live: Record<string, LivePrice>
@@ -797,6 +858,7 @@ function StockCard({
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
   onRunAdvice: (itemId: string) => void
   runningAdvice: boolean
+  commissionRate: number
 }) {
   const [mode, setMode] = useState<'none' | 'buy' | 'sell'>('none')
   const [buyPrice, setBuyPrice] = useState('')
@@ -824,16 +886,21 @@ function StockCard({
     ? (item.avg_price * item.shares + bPrice * bQty) / (item.shares + bQty)
     : null
   const previewBuyShares = bQty > 0 ? item.shares + bQty : null
+  const buyCommission = bPrice > 0 && bQty > 0 ? bPrice * bQty * commissionRate / 100 : 0
+  const buyTotal = bPrice > 0 && bQty > 0 ? bPrice * bQty + buyCommission : 0
 
   // 매도 미리보기
   const sQty = Number(sellQty.replace(/,/g, ''))
   const sPrice = Number(sellPrice.replace(/,/g, ''))
   const previewSellShares = sQty > 0 ? item.shares - sQty : null
-  const previewSellProfit = sQty > 0 && sPrice > 0 ? (sPrice - item.avg_price) * sQty : null
+  const sellCommission = sQty > 0 && sPrice > 0 ? sPrice * sQty * commissionRate / 100 : 0
+  const sellTax = sQty > 0 && sPrice > 0 ? sPrice * sQty * SELL_TAX_RATE / 100 : 0
+  const netReceived = sQty > 0 && sPrice > 0 ? sPrice * sQty - sellCommission - sellTax : 0
+  const previewSellProfit = sQty > 0 && sPrice > 0 ? netReceived - item.avg_price * sQty : null
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
-    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, bPrice * bQty)
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal))
     setMode('none'); setBuyPrice(''); setBuyQty('')
   }
 
@@ -915,8 +982,15 @@ function StockCard({
             </div>
           </div>
           {previewBuyAvg && previewBuyShares && (
-            <div className="text-[10px] mb-2 mono" style={{ color: 'var(--accent-green)' }}>
-              → 새 평단가 {Math.round(previewBuyAvg).toLocaleString('ko-KR')}원 · 총 {previewBuyShares.toLocaleString()}주
+            <div className="text-[10px] mb-2 mono space-y-0.5">
+              <div style={{ color: 'var(--accent-green)' }}>
+                → 새 평단가 {Math.round(previewBuyAvg).toLocaleString('ko-KR')}원 · 총 {previewBuyShares.toLocaleString()}주
+              </div>
+              {commissionRate > 0 && (
+                <div style={{ color: 'rgba(255,201,77,0.75)' }}>
+                  수수료 {Math.round(buyCommission).toLocaleString('ko-KR')}원 / 총 차감 {Math.round(buyTotal).toLocaleString('ko-KR')}원
+                </div>
+              )}
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -968,8 +1042,13 @@ function StockCard({
             </div>
           )}
           {previewSellProfit !== null && (
-            <div className="text-[10px] mb-2 mono" style={{ color: previewSellProfit >= 0 ? '#ff5c5c' : '#4da6ff' }}>
-              실현손익 {previewSellProfit >= 0 ? '+' : ''}{Math.round(previewSellProfit).toLocaleString('ko-KR')}원
+            <div className="text-[10px] mb-2 mono space-y-0.5">
+              <div style={{ color: previewSellProfit >= 0 ? '#ff5c5c' : '#4da6ff' }}>
+                실현손익 {previewSellProfit >= 0 ? '+' : ''}{Math.round(previewSellProfit).toLocaleString('ko-KR')}원
+              </div>
+              <div style={{ color: 'rgba(255,255,255,0.4)' }}>
+                수수료+거래세 {Math.round(sellCommission + sellTax).toLocaleString('ko-KR')}원 / 실수령 {Math.round(netReceived).toLocaleString('ko-KR')}원
+              </div>
             </div>
           )}
           <div className="flex items-center gap-2">

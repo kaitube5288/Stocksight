@@ -83,6 +83,8 @@ export type PortfolioAccount = {
   current_investment: number
   additional_investment: number
   cash: number
+  commission_rate?: number
+  brokerage?: string
   sort_order?: number
   created_at?: string
   updated_at?: string
