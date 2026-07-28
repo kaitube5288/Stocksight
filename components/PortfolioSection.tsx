@@ -180,7 +180,7 @@ export default function PortfolioSection() {
       name: acc.name,
       current_investment: String(acc.current_investment),
       additional_investment: String(acc.additional_investment),
-      cash: String(acc.cash),
+      cash: String(Math.round(acc.cash)),
       brokerage: acc.brokerage ?? 'etc',
       commission_rate: String(acc.commission_rate ?? 0.015),
     })
@@ -371,7 +371,7 @@ export default function PortfolioSection() {
           await fetch('/api/portfolio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + netReceived }),
+            body: JSON.stringify({ type: 'account', id: acc.id, cash: Math.round(acc.cash + netReceived) }),
           })
           await fetch('/api/portfolio/transactions', {
             method: 'POST',
@@ -555,7 +555,7 @@ export default function PortfolioSection() {
                     {[
                       { label: '원금', value: acc.current_investment, color: 'var(--text-primary)', bg: 'rgba(167,139,250,0.13)', border: 'rgba(167,139,250,0.3)' },
                       { label: '추가투자금', value: acc.additional_investment, color: 'var(--accent-green)', bg: 'rgba(0,229,170,0.1)', border: 'rgba(0,229,170,0.27)' },
-                      { label: '보유현금', value: acc.cash, color: 'var(--accent-gold)', bg: 'rgba(255,201,77,0.1)', border: 'rgba(255,201,77,0.27)' },
+                      { label: '보유현금', value: Math.round(acc.cash), color: 'var(--accent-gold)', bg: 'rgba(255,201,77,0.1)', border: 'rgba(255,201,77,0.27)' },
                     ].map(({ label, value, color, bg, border }) => (
                       <div key={label} className="rounded-xl p-2 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
                         <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
