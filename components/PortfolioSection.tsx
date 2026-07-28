@@ -240,7 +240,7 @@ export default function PortfolioSection() {
     finally { setSaving(false) }
   }
 
-  const updateItem = async (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => {
+  const updateItem = async (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => {
     try {
       const res = await fetch('/api/portfolio', {
         method: 'POST',
@@ -249,6 +249,16 @@ export default function PortfolioSection() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
+      if (buyCost && buyCost > 0 && accountId) {
+        const acc = accounts.find(a => a.id === accountId)
+        if (acc) {
+          await fetch('/api/portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash - buyCost }),
+          })
+        }
+      }
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : '업데이트 실패')
@@ -783,7 +793,7 @@ function StockCard({
   onAdviceNav: (delta: number) => void
   onEdit: (item: PortfolioItem) => void
   onDelete: (id: string, ticker: string) => void
-  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null) => void
+  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => void
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
   onRunAdvice: (itemId: string) => void
   runningAdvice: boolean
@@ -823,7 +833,7 @@ function StockCard({
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
-    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null)
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, bPrice * bQty)
     setMode('none'); setBuyPrice(''); setBuyQty('')
   }
 
