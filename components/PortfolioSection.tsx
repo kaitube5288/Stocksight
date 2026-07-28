@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { PortfolioItem, PortfolioAdvice, PortfolioAccount, PortfolioSnapshot, PortfolioTransaction } from '@/lib/supabase'
+import { PortfolioItem, PortfolioAdvice, PortfolioAccount, PortfolioSnapshot } from '@/lib/supabase'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
 
 type SearchResult = { ticker: string; name: string; sector: string }
@@ -34,7 +34,6 @@ const BROKERAGES: { name: string; rate: number | null }[] = [
   { name: '직접입력', rate: null },
 ]
 const SELL_TAX_RATE = 0.18 // 증권거래세+농특세 합계(%)
-const TX_TABS = ['추매', '매도', '추가투자'] as const
 
 type AccountTheme = {
   bg: string; border: string; shadow: string; accent: string
@@ -69,8 +68,6 @@ export default function PortfolioSection() {
   const [error, setError] = useState('')
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
-  const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
-  const [txTabByAccount, setTxTabByAccount] = useState<Record<string, number>>({})
   const snapshotSavedRef = useRef(false)
 
   // Stock form
@@ -106,17 +103,14 @@ export default function PortfolioSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [portRes, advRes, txRes] = await Promise.all([
+      const [portRes, advRes] = await Promise.all([
         fetch('/api/portfolio'),
         fetch('/api/portfolio/advice'),
-        fetch('/api/portfolio/transactions'),
       ])
       const portData = await portRes.json()
       const advData = await advRes.json()
-      const txData = await txRes.json()
       setItems(portData.items ?? [])
       setAccounts(portData.accounts ?? [])
-      setTransactions(txData.transactions ?? [])
 
       const allAdvice: PortfolioAdvice[] = advData.allAdvice ?? []
       const byItemId: Record<string, PortfolioAdvice[]> = {}
@@ -188,7 +182,6 @@ export default function PortfolioSection() {
   const saveAccount = async (isNew: boolean) => {
     const f = isNew ? newAcctForm : acctForm
     const id = isNew ? undefined : (editingAccountId ?? undefined)
-    const oldAcc = isNew ? null : accounts.find(a => a.id === id)
     setSaving(true)
     setError('')
     try {
@@ -207,18 +200,6 @@ export default function PortfolioSection() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
-      // 추가투자금 증가 시 이력 기록
-      if (!isNew && oldAcc) {
-        const newAmt = Number(String(f.additional_investment).replace(/,/g, '') || 0)
-        const diff = newAmt - oldAcc.additional_investment
-        if (diff > 0) {
-          await fetch('/api/portfolio/transactions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: id, type: '추가투자', amount: diff }),
-          }).catch(() => {})
-        }
-      }
       setEditingAccountId(null)
       setAddingAccount(false)
       setNewAcctForm(EMPTY_ACCT())
@@ -315,7 +296,7 @@ export default function PortfolioSection() {
 
   const updateItem = async (
     id: string, ticker: string, name: string, avgPrice: number, shares: number,
-    accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }
+    accountId: string | null, buyCost?: number
   ) => {
     try {
       const res = await fetch('/api/portfolio', {
@@ -334,13 +315,6 @@ export default function PortfolioSection() {
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash - buyCost }),
           })
         }
-      }
-      if (buyCost && txInfo) {
-        await fetch('/api/portfolio/transactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, ticker, name, type: '추매', price: txInfo.price, quantity: txInfo.qty, amount: buyCost }),
-        }).catch(() => {})
       }
       await load()
     } catch (e) {
@@ -374,11 +348,6 @@ export default function PortfolioSection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + netReceived }),
           })
-          await fetch('/api/portfolio/transactions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: item.account_id, ticker: item.ticker, name: item.name, type: '매도', price: sPrice, quantity: sQty, amount: netReceived }),
-          }).catch(() => {})
         }
       }
       await load()
@@ -411,15 +380,6 @@ export default function PortfolioSection() {
     } finally {
       setRunningAdvice(prev => ({ ...prev, [key]: false }))
     }
-  }
-
-  // ----- Transaction tab navigation -----
-  const navigateTxTab = (accountId: string, delta: number) => {
-    setTxTabByAccount(prev => {
-      const current = prev[accountId] ?? 0
-      const next = (current + delta + 3) % 3
-      return { ...prev, [accountId]: next }
-    })
   }
 
   // ----- Advice navigation -----
@@ -588,62 +548,6 @@ export default function PortfolioSection() {
                       ))}
                     </div>
                   </div>
-                  {/* ── 거래 이력 슬라이드 ── */}
-                  {acc.id && (() => {
-                    const accTxs = transactions.filter(t => t.account_id === acc.id)
-                    const tab = txTabByAccount[acc.id] ?? 0
-                    const tabLabel = TX_TABS[tab]
-                    const tabTxs = accTxs.filter(t => t.type === tabLabel).slice(0, 10)
-                    return (
-                      <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${theme.divider}` }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] font-medium" style={{ color: 'rgba(255,255,255,0.35)' }}>거래 이력</span>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => navigateTxTab(acc.id!, -1)}
-                              className="w-5 h-5 flex items-center justify-center rounded text-[10px] transition-all hover:opacity-70"
-                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-                            >←</button>
-                            <span className="text-[10px] font-semibold mono" style={{
-                              width: '44px', textAlign: 'center',
-                              color: tabLabel === '추매' ? 'var(--accent-green)' : tabLabel === '매도' ? 'var(--accent-gold)' : '#a78bfa'
-                            }}>{tabLabel}</span>
-                            <button
-                              onClick={() => navigateTxTab(acc.id!, 1)}
-                              className="w-5 h-5 flex items-center justify-center rounded text-[10px] transition-all hover:opacity-70"
-                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
-                            >→</button>
-                          </div>
-                        </div>
-                        {tabTxs.length === 0 ? (
-                          <div className="text-[10px] text-center py-2.5" style={{ color: 'rgba(255,255,255,0.2)' }}>이력 없음</div>
-                        ) : (
-                          <div className="space-y-1 max-h-28 overflow-y-auto">
-                            {tabTxs.map((tx) => (
-                              <div key={tx.id} className="flex items-center justify-between px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-[9px] mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date.slice(5).replace('-', '/')}</span>
-                                  {tx.name && <span className="text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>{tx.name}</span>}
-                                </div>
-                                <div className="text-right shrink-0 ml-1">
-                                  {tx.price != null && tx.quantity != null && (
-                                    <div className="text-[9px] mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                                      {tx.price.toLocaleString('ko-KR')}×{tx.quantity}주
-                                    </div>
-                                  )}
-                                  <div className="text-[10px] mono font-semibold" style={{
-                                    color: tabLabel === '추매' ? '#ff5c5c' : tabLabel === '매도' ? '#4da6ff' : '#a78bfa'
-                                  }}>
-                                    {tabLabel === '매도' ? '+' : '-'}{Math.round(tx.amount).toLocaleString('ko-KR')}원
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
                 </div>
               )
             })}
@@ -1025,7 +929,7 @@ function StockCard({
   onAdviceNav: (delta: number) => void
   onEdit: (item: PortfolioItem) => void
   onDelete: (id: string, ticker: string) => void
-  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }) => void
+  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => void
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
   onRunAdvice: (itemId: string) => void
   runningAdvice: boolean
@@ -1071,7 +975,7 @@ function StockCard({
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
-    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal), { price: bPrice, qty: bQty })
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal))
     setMode('none'); setBuyPrice(''); setBuyQty('')
   }
 
