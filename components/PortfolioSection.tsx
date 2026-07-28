@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { PortfolioItem, PortfolioAdvice, PortfolioAccount, PortfolioSnapshot } from '@/lib/supabase'
+import { PortfolioItem, PortfolioAdvice, PortfolioAccount, PortfolioSnapshot, PortfolioTransaction } from '@/lib/supabase'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
 
 type SearchResult = { ticker: string; name: string; sector: string }
@@ -34,6 +34,7 @@ const BROKERAGES: { name: string; rate: number | null }[] = [
   { name: '직접입력', rate: null },
 ]
 const SELL_TAX_RATE = 0.18 // 증권거래세+농특세 합계(%)
+const TX_TABS = ['추매', '매도', '추가투자'] as const
 
 type AccountTheme = {
   bg: string; border: string; shadow: string; accent: string
@@ -69,6 +70,8 @@ export default function PortfolioSection() {
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
   const snapshotSavedRef = useRef(false)
+  const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
+  const [txTab, setTxTab] = useState(0)
 
   // Stock form
   const [showForm, setShowForm] = useState(false)
@@ -103,14 +106,17 @@ export default function PortfolioSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [portRes, advRes] = await Promise.all([
+      const [portRes, advRes, txRes] = await Promise.all([
         fetch('/api/portfolio'),
         fetch('/api/portfolio/advice'),
+        fetch('/api/portfolio/transactions'),
       ])
       const portData = await portRes.json()
       const advData = await advRes.json()
+      const txData = await txRes.json()
       setItems(portData.items ?? [])
       setAccounts(portData.accounts ?? [])
+      setTransactions(txData.transactions ?? [])
 
       const allAdvice: PortfolioAdvice[] = advData.allAdvice ?? []
       const byItemId: Record<string, PortfolioAdvice[]> = {}
@@ -182,6 +188,9 @@ export default function PortfolioSection() {
   const saveAccount = async (isNew: boolean) => {
     const f = isNew ? newAcctForm : acctForm
     const id = isNew ? undefined : (editingAccountId ?? undefined)
+    const oldAcc = !isNew && id ? accounts.find(a => a.id === id) : null
+    const oldAddlInv = oldAcc?.additional_investment ?? 0
+    const newAddlInv = Number(String(f.additional_investment).replace(/,/g, '') || 0)
     setSaving(true)
     setError('')
     try {
@@ -192,7 +201,7 @@ export default function PortfolioSection() {
           type: 'account', id,
           name: f.name || '신규 계좌',
           current_investment: Number(String(f.current_investment).replace(/,/g, '') || 0),
-          additional_investment: Number(String(f.additional_investment).replace(/,/g, '') || 0),
+          additional_investment: newAddlInv,
           cash: Number(String(f.cash).replace(/,/g, '') || 0),
           commission_rate: Number(f.commission_rate || 0),
           brokerage: f.brokerage || 'etc',
@@ -200,6 +209,13 @@ export default function PortfolioSection() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
+      if (!isNew && id && newAddlInv > oldAddlInv) {
+        await fetch('/api/portfolio/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: id, type: '추가투자', amount: Math.round(newAddlInv - oldAddlInv) }),
+        })
+      }
       setEditingAccountId(null)
       setAddingAccount(false)
       setNewAcctForm(EMPTY_ACCT())
@@ -296,7 +312,7 @@ export default function PortfolioSection() {
 
   const updateItem = async (
     id: string, ticker: string, name: string, avgPrice: number, shares: number,
-    accountId: string | null, buyCost?: number
+    accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }
   ) => {
     try {
       const res = await fetch('/api/portfolio', {
@@ -315,6 +331,13 @@ export default function PortfolioSection() {
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash - buyCost }),
           })
         }
+      }
+      if (txInfo && accountId) {
+        await fetch('/api/portfolio/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, ticker, name, type: '추매', price: txInfo.price, quantity: txInfo.qty, amount: Math.round(txInfo.price * txInfo.qty) }),
+        })
       }
       await load()
     } catch (e) {
@@ -347,6 +370,11 @@ export default function PortfolioSection() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + netReceived }),
+          })
+          await fetch('/api/portfolio/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: item.account_id, ticker: item.ticker, name: item.name, type: '매도', price: sPrice, quantity: sQty, amount: Math.round(netReceived) }),
           })
         }
       }
@@ -551,6 +579,65 @@ export default function PortfolioSection() {
                 </div>
               )
             })}
+
+            {/* 거래 이력 패널 (4번째 그리드 셀) */}
+            <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={() => setTxTab(t => Math.max(0, t - 1))}
+                  disabled={txTab === 0}
+                  className="text-xs px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
+                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
+                >◀</button>
+                <div className="text-center">
+                  <div className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>거래 이력</div>
+                  <div className="text-[10px] mt-0.5 font-medium" style={{ color: txTab === 0 ? 'var(--accent-green)' : txTab === 1 ? 'var(--accent-gold)' : '#a78bfa' }}>
+                    {TX_TABS[txTab]}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setTxTab(t => Math.min(TX_TABS.length - 1, t + 1))}
+                  disabled={txTab === TX_TABS.length - 1}
+                  className="text-xs px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
+                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
+                >▶</button>
+              </div>
+              <div className="flex gap-2">
+                {accounts.map(acc => {
+                  const theme = getAccountTheme(acc.name)
+                  const accTxs = transactions.filter(t => t.account_id === acc.id && t.type === TX_TABS[txTab])
+                  return (
+                    <div key={acc.id} className="flex-1 min-w-0">
+                      <div className="text-[10px] font-semibold mb-1.5 text-center truncate" style={{ color: theme.accent }}>{acc.name}</div>
+                      <div className="overflow-y-auto" style={{ maxHeight: '140px' }}>
+                        {accTxs.length === 0 ? (
+                          <div className="text-center py-3">
+                            <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.18)' }}>내역 없음</div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            {accTxs.slice(0, 10).map(tx => (
+                              <div key={tx.id} className="rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div className="text-[9px] mono" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date}</div>
+                                {tx.name && <div className="text-[9px] font-medium truncate" style={{ color: theme.accent }}>{tx.name}</div>}
+                                {tx.price && tx.quantity ? (
+                                  <div className="text-[9px] mono" style={{ color: 'var(--text-muted)' }}>
+                                    {Number(tx.price).toLocaleString('ko-KR')}원×{tx.quantity}주
+                                  </div>
+                                ) : null}
+                                <div className="text-[9px] mono font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                                  {Math.round(tx.amount).toLocaleString('ko-KR')}원
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -929,7 +1016,7 @@ function StockCard({
   onAdviceNav: (delta: number) => void
   onEdit: (item: PortfolioItem) => void
   onDelete: (id: string, ticker: string) => void
-  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => void
+  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }) => void
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
   onRunAdvice: (itemId: string) => void
   runningAdvice: boolean
@@ -975,7 +1062,7 @@ function StockCard({
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
-    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal))
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal), bPrice > 0 && bQty > 0 ? { price: bPrice, qty: bQty } : undefined)
     setMode('none'); setBuyPrice(''); setBuyQty('')
   }
 
