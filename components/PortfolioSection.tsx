@@ -71,7 +71,7 @@ export default function PortfolioSection() {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
   const snapshotSavedRef = useRef(false)
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
-  const [txTab, setTxTab] = useState(0)
+  const [txTabByAccount, setTxTabByAccount] = useState<Record<string, number>>({})
 
   // Stock form
   const [showForm, setShowForm] = useState(false)
@@ -576,68 +576,58 @@ export default function PortfolioSection() {
                       ))}
                     </div>
                   </div>
+
+                  {/* 거래 이력 (계좌별 독립 탭) */}
+                  {acc.id && (() => {
+                    const tab = txTabByAccount[acc.id] ?? 0
+                    const accTxs = transactions.filter(t => t.account_id === acc.id && t.type === TX_TABS[tab])
+                    return (
+                      <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${theme.divider}` }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <button
+                            onClick={() => setTxTabByAccount(prev => ({ ...prev, [acc.id!]: Math.max(0, (prev[acc.id!] ?? 0) - 1) }))}
+                            disabled={tab === 0}
+                            className="text-[10px] px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
+                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
+                          >◀</button>
+                          <span className="text-[10px] font-medium" style={{ color: tab === 0 ? 'var(--accent-green)' : tab === 1 ? 'var(--accent-gold)' : '#a78bfa' }}>
+                            {TX_TABS[tab]} 이력
+                          </span>
+                          <button
+                            onClick={() => setTxTabByAccount(prev => ({ ...prev, [acc.id!]: Math.min(TX_TABS.length - 1, (prev[acc.id!] ?? 0) + 1) }))}
+                            disabled={tab === TX_TABS.length - 1}
+                            className="text-[10px] px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
+                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
+                          >▶</button>
+                        </div>
+                        <div className="overflow-y-auto" style={{ maxHeight: '120px' }}>
+                          {accTxs.length === 0 ? (
+                            <div className="text-center py-2">
+                              <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.18)' }}>내역 없음</div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-1">
+                              {accTxs.slice(0, 10).map(tx => (
+                                <div key={tx.id} className="flex items-center justify-between px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="text-[9px] mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date.slice(5)}</span>
+                                    {tx.name && <span className="text-[9px] truncate" style={{ color: theme.accent }}>{tx.name}</span>}
+                                    {tx.quantity != null && <span className="text-[9px] mono shrink-0" style={{ color: 'var(--text-muted)' }}>{tx.quantity}주</span>}
+                                  </div>
+                                  <span className="text-[9px] mono font-semibold shrink-0 ml-1" style={{ color: 'var(--text-secondary)' }}>
+                                    ({Math.round(tx.amount).toLocaleString('ko-KR')}원)
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
-
-            {/* 거래 이력 패널 (4번째 그리드 셀) */}
-            <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={() => setTxTab(t => Math.max(0, t - 1))}
-                  disabled={txTab === 0}
-                  className="text-xs px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
-                >◀</button>
-                <div className="text-center">
-                  <div className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>거래 이력</div>
-                  <div className="text-[10px] mt-0.5 font-medium" style={{ color: txTab === 0 ? 'var(--accent-green)' : txTab === 1 ? 'var(--accent-gold)' : '#a78bfa' }}>
-                    {TX_TABS[txTab]}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setTxTab(t => Math.min(TX_TABS.length - 1, t + 1))}
-                  disabled={txTab === TX_TABS.length - 1}
-                  className="text-xs px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
-                >▶</button>
-              </div>
-              <div className="flex gap-2">
-                {accounts.map(acc => {
-                  const theme = getAccountTheme(acc.name)
-                  const accTxs = transactions.filter(t => t.account_id === acc.id && t.type === TX_TABS[txTab])
-                  return (
-                    <div key={acc.id} className="flex-1 min-w-0">
-                      <div className="text-[10px] font-semibold mb-1.5 text-center truncate" style={{ color: theme.accent }}>{acc.name}</div>
-                      <div className="overflow-y-auto" style={{ maxHeight: '140px' }}>
-                        {accTxs.length === 0 ? (
-                          <div className="text-center py-3">
-                            <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.18)' }}>내역 없음</div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-1">
-                            {accTxs.slice(0, 10).map(tx => (
-                              <div key={tx.id} className="rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                <div className="text-[9px] mono" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date}</div>
-                                {tx.name && <div className="text-[9px] font-medium truncate" style={{ color: theme.accent }}>{tx.name}</div>}
-                                {tx.price && tx.quantity ? (
-                                  <div className="text-[9px] mono" style={{ color: 'var(--text-muted)' }}>
-                                    {Number(tx.price).toLocaleString('ko-KR')}원×{tx.quantity}주
-                                  </div>
-                                ) : null}
-                                <div className="text-[9px] mono font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                                  {Math.round(tx.amount).toLocaleString('ko-KR')}원
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
           </div>
         )}
       </div>
