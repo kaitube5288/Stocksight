@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { PortfolioItem, PortfolioAdvice, PortfolioAccount } from '@/lib/supabase'
+import { PortfolioItem, PortfolioAdvice, PortfolioAccount, PortfolioSnapshot, PortfolioTransaction } from '@/lib/supabase'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
 
 type SearchResult = { ticker: string; name: string; sector: string }
 type LivePrice = { price: number | null }
@@ -33,6 +34,7 @@ const BROKERAGES: { name: string; rate: number | null }[] = [
   { name: '직접입력', rate: null },
 ]
 const SELL_TAX_RATE = 0.18 // 증권거래세+농특세 합계(%)
+const TX_TABS = ['추매', '매도', '추가투자'] as const
 
 type AccountTheme = {
   bg: string; border: string; shadow: string; accent: string
@@ -66,6 +68,10 @@ export default function PortfolioSection() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
+  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
+  const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
+  const [txTabByAccount, setTxTabByAccount] = useState<Record<string, number>>({})
+  const snapshotSavedRef = useRef(false)
 
   // Stock form
   const [showForm, setShowForm] = useState(false)
@@ -100,14 +106,17 @@ export default function PortfolioSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [portRes, advRes] = await Promise.all([
+      const [portRes, advRes, txRes] = await Promise.all([
         fetch('/api/portfolio'),
         fetch('/api/portfolio/advice'),
+        fetch('/api/portfolio/transactions'),
       ])
       const portData = await portRes.json()
       const advData = await advRes.json()
+      const txData = await txRes.json()
       setItems(portData.items ?? [])
       setAccounts(portData.accounts ?? [])
+      setTransactions(txData.transactions ?? [])
 
       const allAdvice: PortfolioAdvice[] = advData.allAdvice ?? []
       const byItemId: Record<string, PortfolioAdvice[]> = {}
@@ -131,6 +140,38 @@ export default function PortfolioSection() {
 
   useEffect(() => { load() }, [load])
 
+  // 스냅샷 초기 로드
+  useEffect(() => {
+    fetch('/api/portfolio/snapshots')
+      .then(r => r.json())
+      .then(d => setSnapshots(d.snapshots ?? []))
+      .catch(() => {})
+  }, [])
+
+  // 당일 스냅샷 저장 (라이브 가격 수신 후 1회)
+  useEffect(() => {
+    if (loading || snapshotSavedRef.current || items.length === 0) return
+    if (Object.keys(live).length === 0) return
+    snapshotSavedRef.current = true
+    const totalEval = items.reduce((s, i) => s + (live[i.ticker]?.price ?? i.avg_price) * i.shares, 0)
+    const totalCost = items.reduce((s, i) => s + i.avg_price * i.shares, 0)
+    const totalCash = accounts.reduce((s, a) => s + a.cash, 0)
+    fetch('/api/portfolio/snapshots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ total_eval: Math.round(totalEval), total_cost: Math.round(totalCost), total_cash: Math.round(totalCash) }),
+    }).then(r => r.json()).then(d => {
+      if (d.success) {
+        setSnapshots(prev => {
+          const today = new Date().toISOString().slice(0, 10)
+          const filtered = prev.filter(s => s.date !== today)
+          return [...filtered, { date: today, total_eval: Math.round(totalEval), total_cost: Math.round(totalCost), total_cash: Math.round(totalCash) }]
+            .sort((a, b) => a.date.localeCompare(b.date))
+        })
+      }
+    }).catch(() => {})
+  }, [loading, items, live, accounts])
+
   // ----- Account CRUD -----
   const startEditAccount = (acc: PortfolioAccount) => {
     setEditingAccountId(acc.id ?? null)
@@ -147,6 +188,7 @@ export default function PortfolioSection() {
   const saveAccount = async (isNew: boolean) => {
     const f = isNew ? newAcctForm : acctForm
     const id = isNew ? undefined : (editingAccountId ?? undefined)
+    const oldAcc = isNew ? null : accounts.find(a => a.id === id)
     setSaving(true)
     setError('')
     try {
@@ -165,6 +207,18 @@ export default function PortfolioSection() {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
+      // 추가투자금 증가 시 이력 기록
+      if (!isNew && oldAcc) {
+        const newAmt = Number(String(f.additional_investment).replace(/,/g, '') || 0)
+        const diff = newAmt - oldAcc.additional_investment
+        if (diff > 0) {
+          await fetch('/api/portfolio/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: id, type: '추가투자', amount: diff }),
+          }).catch(() => {})
+        }
+      }
       setEditingAccountId(null)
       setAddingAccount(false)
       setNewAcctForm(EMPTY_ACCT())
@@ -259,7 +313,10 @@ export default function PortfolioSection() {
     finally { setSaving(false) }
   }
 
-  const updateItem = async (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => {
+  const updateItem = async (
+    id: string, ticker: string, name: string, avgPrice: number, shares: number,
+    accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }
+  ) => {
     try {
       const res = await fetch('/api/portfolio', {
         method: 'POST',
@@ -277,6 +334,13 @@ export default function PortfolioSection() {
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash - buyCost }),
           })
         }
+      }
+      if (buyCost && txInfo) {
+        await fetch('/api/portfolio/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, ticker, name, type: '추매', price: txInfo.price, quantity: txInfo.qty, amount: buyCost }),
+        }).catch(() => {})
       }
       await load()
     } catch (e) {
@@ -310,6 +374,11 @@ export default function PortfolioSection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash + netReceived }),
           })
+          await fetch('/api/portfolio/transactions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: item.account_id, ticker: item.ticker, name: item.name, type: '매도', price: sPrice, quantity: sQty, amount: netReceived }),
+          }).catch(() => {})
         }
       }
       await load()
@@ -344,6 +413,15 @@ export default function PortfolioSection() {
     }
   }
 
+  // ----- Transaction tab navigation -----
+  const navigateTxTab = (accountId: string, delta: number) => {
+    setTxTabByAccount(prev => {
+      const current = prev[accountId] ?? 0
+      const next = (current + delta + 3) % 3
+      return { ...prev, [accountId]: next }
+    })
+  }
+
   // ----- Advice navigation -----
   const navigateAdvice = (itemId: string, delta: number, listLength: number) => {
     setAdviceIdx(prev => {
@@ -373,6 +451,16 @@ export default function PortfolioSection() {
   const totalCurrentInv = accounts.reduce((sum, a) => sum + a.current_investment, 0)
   const totalAdditionalInv = accounts.reduce((sum, a) => sum + a.additional_investment, 0)
   const totalAsset = totalEval + totalCash
+
+  // 일별 그래프 데이터 (스냅샷 + 오늘 현재값)
+  const graphData = snapshots.map(s => ({
+    date: s.date.slice(5).replace('-', '/'),
+    value: s.total_eval,
+  }))
+  const todayStr = new Date().toISOString().slice(5, 10).replace('-', '/')
+  if (!loading && items.length > 0 && !graphData.some(d => d.date === todayStr)) {
+    graphData.push({ date: todayStr, value: Math.round(totalEval) })
+  }
 
   // Group items by account (account_id가 현재 accounts에 없는 고아 종목도 미분류로 표시)
   const knownAccountIds = new Set(accounts.map(a => a.id).filter((id): id is string => id != null))
@@ -436,7 +524,7 @@ export default function PortfolioSection() {
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>등록된 계좌가 없습니다. 계좌 추가를 눌러 등록하세요.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
             {accounts.map(acc => {
               const isEditing = editingAccountId === acc.id
               const accItems = itemsByAccount[acc.id ?? ''] ?? []
@@ -500,6 +588,62 @@ export default function PortfolioSection() {
                       ))}
                     </div>
                   </div>
+                  {/* ── 거래 이력 슬라이드 ── */}
+                  {acc.id && (() => {
+                    const accTxs = transactions.filter(t => t.account_id === acc.id)
+                    const tab = txTabByAccount[acc.id] ?? 0
+                    const tabLabel = TX_TABS[tab]
+                    const tabTxs = accTxs.filter(t => t.type === tabLabel).slice(0, 10)
+                    return (
+                      <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${theme.divider}` }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-medium" style={{ color: 'rgba(255,255,255,0.35)' }}>거래 이력</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => navigateTxTab(acc.id!, -1)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-[10px] transition-all hover:opacity-70"
+                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+                            >←</button>
+                            <span className="text-[10px] font-semibold mono" style={{
+                              width: '44px', textAlign: 'center',
+                              color: tabLabel === '추매' ? 'var(--accent-green)' : tabLabel === '매도' ? 'var(--accent-gold)' : '#a78bfa'
+                            }}>{tabLabel}</span>
+                            <button
+                              onClick={() => navigateTxTab(acc.id!, 1)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-[10px] transition-all hover:opacity-70"
+                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+                            >→</button>
+                          </div>
+                        </div>
+                        {tabTxs.length === 0 ? (
+                          <div className="text-[10px] text-center py-2.5" style={{ color: 'rgba(255,255,255,0.2)' }}>이력 없음</div>
+                        ) : (
+                          <div className="space-y-1 max-h-28 overflow-y-auto">
+                            {tabTxs.map((tx) => (
+                              <div key={tx.id} className="flex items-center justify-between px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[9px] mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date.slice(5).replace('-', '/')}</span>
+                                  {tx.name && <span className="text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>{tx.name}</span>}
+                                </div>
+                                <div className="text-right shrink-0 ml-1">
+                                  {tx.price != null && tx.quantity != null && (
+                                    <div className="text-[9px] mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                                      {tx.price.toLocaleString('ko-KR')}×{tx.quantity}주
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] mono font-semibold" style={{
+                                    color: tabLabel === '추매' ? '#ff5c5c' : tabLabel === '매도' ? '#4da6ff' : '#a78bfa'
+                                  }}>
+                                    {tabLabel === '매도' ? '+' : '-'}{Math.round(tx.amount).toLocaleString('ko-KR')}원
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
@@ -510,45 +654,72 @@ export default function PortfolioSection() {
       {/* ===== 2. 총 자산 요약 ===== */}
       {(items.length > 0 || accounts.length > 0) && (
         <div className="rounded-2xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-            {[
-              { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
-              { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
-              { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
-              { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
-              { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="text-center">
-                <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+          <div className="flex gap-4 items-start">
+            {/* 왼쪽: 지표 */}
+            <div className="flex-1 min-w-0">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                {[
+                  { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
+                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
+                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
+                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
+                  { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="text-center">
+                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div>
-              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
-              <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(totalCost).toLocaleString('ko-KR')}원</span>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
+                  <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(totalCost).toLocaleString('ko-KR')}원</span>
+                </div>
+                {totalCurrentInv > 0 && (
+                  <div>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원금 합계&nbsp;&nbsp;</span>
+                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
+                  </div>
+                )}
+                {totalAdditionalInv > 0 && (
+                  <div>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>추가투자금 합계&nbsp;&nbsp;</span>
+                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => runAdvice()}
+                  disabled={runningAdvice['all']}
+                  className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
+                  style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
+                >
+                  {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
+                </button>
+              </div>
             </div>
-            {totalCurrentInv > 0 && (
-              <div>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원금 합계&nbsp;&nbsp;</span>
-                <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
-              </div>
-            )}
-            {totalAdditionalInv > 0 && (
-              <div>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>추가투자금 합계&nbsp;&nbsp;</span>
-                <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
-              </div>
-            )}
-            <button
-              onClick={() => runAdvice()}
-              disabled={runningAdvice['all']}
-              className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
-              style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
-            >
-              {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
-            </button>
+            {/* 오른쪽 1/3: 일별 평가금액 그래프 */}
+            <div className="w-36 sm:w-48 shrink-0">
+              <div className="text-[10px] mb-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
+              {graphData.length >= 2 ? (
+                <ResponsiveContainer width="100%" height={110}>
+                  <LineChart data={graphData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis hide domain={['auto', 'auto']} />
+                    <Tooltip
+                      contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}
+                      formatter={(v: unknown) => [`₩${Number(v).toLocaleString()}`, '평가금액']}
+                    />
+                    <Line type="monotone" dataKey="value" stroke="#a78bfa" dot={false} strokeWidth={1.5} activeDot={{ r: 3, fill: '#a78bfa' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center" style={{ height: '110px' }}>
+                  <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>데이터 수집 중</div>
+                  <div className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.15)' }}>방문마다 기록됩니다</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -854,7 +1025,7 @@ function StockCard({
   onAdviceNav: (delta: number) => void
   onEdit: (item: PortfolioItem) => void
   onDelete: (id: string, ticker: string) => void
-  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number) => void
+  onUpdate: (id: string, ticker: string, name: string, avgPrice: number, shares: number, accountId: string | null, buyCost?: number, txInfo?: { price: number; qty: number }) => void
   onSell: (item: PortfolioItem, sellPrice: number, sellQty: number) => void
   onRunAdvice: (itemId: string) => void
   runningAdvice: boolean
@@ -900,7 +1071,7 @@ function StockCard({
 
   const handleBuyConfirm = () => {
     if (!previewBuyAvg || !previewBuyShares || !item.id) return
-    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal))
+    onUpdate(item.id, item.ticker, item.name, Math.round(previewBuyAvg * 100) / 100, previewBuyShares, item.account_id ?? null, Math.round(buyTotal), { price: bPrice, qty: bQty })
     setMode('none'); setBuyPrice(''); setBuyQty('')
   }
 

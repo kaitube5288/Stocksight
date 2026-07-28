@@ -101,6 +101,28 @@ export type PortfolioItem = {
   updated_at?: string
 }
 
+export type PortfolioSnapshot = {
+  id?: string
+  date: string
+  total_eval: number
+  total_cost: number
+  total_cash: number
+  created_at?: string
+}
+
+export type PortfolioTransaction = {
+  id?: string
+  date: string
+  account_id?: string | null
+  ticker?: string | null
+  name?: string | null
+  type: '추매' | '매도' | '추가투자'
+  price?: number | null
+  quantity?: number | null
+  amount: number
+  created_at?: string
+}
+
 export type PortfolioAdvice = {
   id?: string
   date: string
