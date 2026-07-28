@@ -82,6 +82,7 @@ export default function PortfolioSection() {
   const [showDropdown, setShowDropdown] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const formRef = useRef<HTMLDivElement>(null)
 
   // Account form
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
@@ -254,6 +255,7 @@ export default function PortfolioSection() {
     setSearchResults([])
     setShowDropdown(false)
     setShowForm(true)
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
   }
 
   const handleSearchChange = (value: string) => {
@@ -707,7 +709,7 @@ export default function PortfolioSection() {
 
       {/* ===== 3. 종목 추가/수정 폼 ===== */}
       {showForm && (
-        <div className="glass rounded-2xl p-4 mb-4" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
+        <div ref={formRef} className="glass rounded-2xl p-4 mb-4" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
           <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
             {editTicker ? '종목 수정' : '종목 추가'}
           </div>
