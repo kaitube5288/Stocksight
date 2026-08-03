@@ -141,6 +141,14 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
             >
               {stock.trade_type}
             </span>
+            {stock.source_tag === '섹터연동' && (
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
+                style={{ background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.35)', color: '#fb923c' }}
+              >
+                섹터연동
+              </span>
+            )}
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
               {stock.hold_period}
             </span>

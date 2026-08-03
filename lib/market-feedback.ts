@@ -2,6 +2,7 @@ import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getSupabaseAdmin } from './supabase'
+import { STOCK_MAP } from './major-stocks'
 
 export type TopGainer = {
   ticker: string
@@ -294,5 +295,47 @@ export async function buildMarketFeedbackInsights(): Promise<string> {
     return lines.join('\n')
   } catch {
     return ''
+  }
+}
+
+// 전일 급등 종목의 수혜 후보(beneficiary_tickers)에서 섹터연동 후보 추출
+export async function getSectorMomentumCandidates(
+  existingTickerSet: Set<string>
+): Promise<{ ticker: string; name: string; sector: string }[]> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    kst.setDate(kst.getDate() - 1)
+    const kstYesterday = kst.toISOString().slice(0, 10)
+
+    const { data } = await supabase
+      .from('market_feedback')
+      .select('beneficiary_tickers, change_pct')
+      .eq('date', kstYesterday)
+      .order('change_pct', { ascending: false })
+
+    if (!data?.length) return []
+
+    const seen = new Set<string>()
+    const candidates: { ticker: string; name: string; sector: string }[] = []
+
+    for (const row of data) {
+      const tickers: string[] = row.beneficiary_tickers ?? []
+      for (const t of tickers) {
+        if (seen.has(t) || existingTickerSet.has(t)) continue
+        const stock = STOCK_MAP[t]
+        if (!stock) continue
+        seen.add(t)
+        candidates.push({ ticker: t, name: stock.name, sector: '섹터연동' })
+      }
+    }
+
+    const result = candidates.slice(0, 8)
+    if (result.length > 0) {
+      console.log(`[섹터연동] ${kstYesterday} 기준 수혜 후보 ${result.length}개: ${result.map(c => c.ticker).join(', ')}`)
+    }
+    return result
+  } catch {
+    return []
   }
 }

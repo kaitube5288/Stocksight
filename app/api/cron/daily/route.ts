@@ -9,7 +9,7 @@ import { MAJOR_STOCKS } from '@/lib/major-stocks'
 import { isKoreanMarketHoliday } from '@/lib/korean-holidays'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
-import { buildMarketFeedbackInsights } from '@/lib/market-feedback'
+import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 
 export const maxDuration = 300
@@ -137,7 +137,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     // 누적 수익률 미달 섹션 자기진단 + 이전 개선 방향 읽기를 병렬 실행
     // runStrategyImprovementIfNeeded: 오늘 분석 결과 저장 (다음 회차 반영)
     // buildStrategyImprovementContext: 이전 회차 결과 읽기 (오늘 즉시 반영)
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary, sectorMomentumCandidates] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
@@ -148,6 +148,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       highImpactNewsText
         ? analyzeEventBeneficiaries(highImpactNewsText).catch(() => ({ additionalTickers: [], analysisText: '' }))
         : Promise.resolve({ additionalTickers: [], analysisText: '' }),
+      getSectorMomentumCandidates(new Set(candidateTickers)),
     ])
 
     // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
@@ -156,21 +157,35 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       .filter(t => /^\d{6}$/.test(t.ticker) && !existingTickerSet.has(t.ticker))
       .map(t => t.ticker)
 
-    const [extraFundamentals, extraTechRaw] = extraTickers.length > 0
+    // 섹터연동 후보 — 기존 풀 + 이벤트수혜 중복 제거
+    const extraTickerSet = new Set(extraTickers)
+    const sectorOnlyTickers = sectorMomentumCandidates
+      .map(c => c.ticker)
+      .filter(t => !existingTickerSet.has(t) && !extraTickerSet.has(t))
+
+    // 이벤트수혜 + 섹터연동 일괄 조회
+    const allExtraTickers = [...extraTickers, ...sectorOnlyTickers]
+
+    const [extraFundamentals, extraTechRaw] = allExtraTickers.length > 0
       ? await Promise.all([
-          getFundamentalsMap(extraTickers),
-          Promise.all(extraTickers.map(t => fetchTechnicalIndicators(t))),
+          getFundamentalsMap(allExtraTickers),
+          Promise.all(allExtraTickers.map(t => fetchTechnicalIndicators(t))),
         ])
       : [{} as Record<string, StockFundamentals>, [] as TechnicalIndicators[]]
 
-    const extraTechMap = Object.fromEntries(extraTickers.map((t, i) => [t, extraTechRaw[i]]))
+    const extraTechMap = Object.fromEntries(allExtraTickers.map((t, i) => [t, extraTechRaw[i]]))
 
     // 후보 풀 확장: 이벤트 수혜 종목 추가 (MAJOR_STOCKS에 없는 경우 sector='이벤트수혜'로 표시)
     const extraCandidatePool = eventBeneficiary.additionalTickers
       .filter(t => !existingTickerSet.has(t.ticker))
       .map(t => ({ ticker: t.ticker, name: t.name, sector: '이벤트수혜' }))
 
-    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool]
+    // 섹터연동 후보 풀 (이벤트수혜와 중복 없는 것만)
+    const extraCandidateTickerSet = new Set(extraCandidatePool.map(c => c.ticker))
+    const sectorCandidatePool = sectorMomentumCandidates
+      .filter(c => !existingTickerSet.has(c.ticker) && !extraCandidateTickerSet.has(c.ticker))
+
+    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool]
     const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
@@ -250,6 +265,13 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       const trade_type = TRADE_TYPES[Math.floor(i / 3) % 3]
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
+
+    // 섹터연동 경로로 후보풀에 진입한 종목에 source_tag 주입
+    const sectorMomentumTickerSet = new Set(sectorMomentumCandidates.map(c => c.ticker))
+    result.recommendations = result.recommendations.map(r => ({
+      ...r,
+      source_tag: sectorMomentumTickerSet.has(r.ticker) ? '섹터연동' : undefined,
+    }))
 
     // 4-2. 현재가 + 펀더멘털 + 기술적 지표 + 전일 급등 종목 병렬 조회
     const tickers = result.recommendations.map(r => r.ticker)

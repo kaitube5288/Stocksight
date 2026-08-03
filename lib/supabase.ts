@@ -58,6 +58,7 @@ export type StockRecommendation = {
   rsi14?: number | null
   macd_signal?: 'buy' | 'sell' | 'neutral' | null
   trend?: 'up' | 'down' | 'sideways' | null
+  source_tag?: string | null
 }
 
 export type DailyRecommendation = {
