@@ -17,6 +17,12 @@ const TRADE_TYPE_STYLE: Record<string, { background: string; color: string }> = 
   '중기': { background: 'rgba(0,229,170,0.12)', color: 'var(--accent-green)' },
 }
 
+const SOURCE_TAG_STYLE: Record<string, { bg: string; border: string; color: string }> = {
+  '섹터연동':    { bg: 'rgba(251,146,60,0.15)',  border: 'rgba(251,146,60,0.35)',  color: '#fb923c' },
+  '기술스크리닝': { bg: 'rgba(167,139,250,0.15)', border: 'rgba(167,139,250,0.35)', color: '#a78bfa' },
+  '거래량지속':  { bg: 'rgba(34,211,238,0.12)',  border: 'rgba(34,211,238,0.35)',  color: '#22d3ee' },
+}
+
 function ProbBar({ value, rank }: { value: number; rank: number }) {
   const color =
     value >= 90 ? 'linear-gradient(90deg, #00e5aa, #4dffce)' :
@@ -141,12 +147,16 @@ export default function RecommendationCard({ stock, rank, animate }: Props) {
             >
               {stock.trade_type}
             </span>
-            {stock.source_tag === '섹터연동' && (
+            {stock.source_tag && SOURCE_TAG_STYLE[stock.source_tag] && (
               <span
                 className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
-                style={{ background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.35)', color: '#fb923c' }}
+                style={{
+                  background: SOURCE_TAG_STYLE[stock.source_tag].bg,
+                  border: `1px solid ${SOURCE_TAG_STYLE[stock.source_tag].border}`,
+                  color: SOURCE_TAG_STYLE[stock.source_tag].color,
+                }}
               >
-                섹터연동
+                {stock.source_tag}
               </span>
             )}
             <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>

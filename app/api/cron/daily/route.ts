@@ -95,6 +95,16 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     ])
     const interestRatesText = formatInterestRatesForPrompt(interestRatesRaw)
 
+    // 거래량 지속 추적: 오늘 거래량 상위 → volume_watchlist 저장 (쿼리보다 먼저 완료)
+    const kstToday = getKSTDate()
+    if (volumeTopStocks.length > 0) {
+      const { error: vwErr } = await supabaseAdmin.from('volume_watchlist').upsert(
+        volumeTopStocks.map(s => ({ date: kstToday, ticker: s.ticker, name: s.name })),
+        { onConflict: 'date,ticker' }
+      )
+      if (vwErr) console.error('[거래량추적] upsert 오류:', vwErr.message)
+    }
+
     const dartText = formatDisclosuresForPrompt(disclosures)
 
     // 불장 여부를 Gemini 호출 전에 먼저 판단 (마켓 컨텍스트에 주입)
@@ -127,6 +137,13 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
     const candidateTickers = mergedCandidatePool.map(c => c.ticker)
 
+    // 기술적 스크리닝 스캔 대상: MAJOR_STOCKS 중 현재 후보풀 미진입 최대 20개
+    const mergedTickerSet = new Set(candidateTickers)
+    const techScanTickers = MAJOR_STOCKS
+      .filter(s => !mergedTickerSet.has(s.ticker))
+      .slice(0, 20)
+      .map(s => s.ticker)
+
     // HIGH 임팩트 뉴스 텍스트 (이벤트 수혜주 사전 분석용)
     const highImpactNewsText = analyzedNews
       .filter(n => n.impact === 'high')
@@ -137,7 +154,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     // 누적 수익률 미달 섹션 자기진단 + 이전 개선 방향 읽기를 병렬 실행
     // runStrategyImprovementIfNeeded: 오늘 분석 결과 저장 (다음 회차 반영)
     // buildStrategyImprovementContext: 이전 회차 결과 읽기 (오늘 즉시 반영)
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary, sectorMomentumCandidates] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary, sectorMomentumCandidates, volumeRecurringRaw] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
@@ -149,6 +166,25 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
         ? analyzeEventBeneficiaries(highImpactNewsText).catch(() => ({ additionalTickers: [], analysisText: '' }))
         : Promise.resolve({ additionalTickers: [], analysisText: '' }),
       getSectorMomentumCandidates(new Set(candidateTickers)),
+      // 거래량 지속 후보: 최근 3일 중 2일 이상 거래량 상위 등장 종목
+      (async () => {
+        const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+        const dates = [0, 1, 2].map(d => {
+          const dd = new Date(kst); dd.setDate(dd.getDate() - d); return dd.toISOString().slice(0, 10)
+        })
+        const { data } = await supabaseAdmin
+          .from('volume_watchlist')
+          .select('ticker, name, date')
+          .in('date', dates)
+        const tickerDates = new Map<string, { name: string; dates: Set<string> }>()
+        for (const row of (data ?? [])) {
+          if (!tickerDates.has(row.ticker)) tickerDates.set(row.ticker, { name: row.name, dates: new Set() })
+          tickerDates.get(row.ticker)!.dates.add(row.date)
+        }
+        return [...tickerDates.entries()]
+          .filter(([, v]) => v.dates.size >= 2)
+          .map(([ticker, v]) => ({ ticker, name: v.name }))
+      })().catch(() => [] as { ticker: string; name: string }[]),
     ])
 
     // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
@@ -163,8 +199,18 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       .map(c => c.ticker)
       .filter(t => !existingTickerSet.has(t) && !extraTickerSet.has(t))
 
-    // 이벤트수혜 + 섹터연동 일괄 조회
-    const allExtraTickers = [...extraTickers, ...sectorOnlyTickers]
+    // 거래량 지속 후보 — 기존 풀 중복 제거
+    const accumulatedSet = new Set([...existingTickerSet, ...extraTickerSet, ...sectorOnlyTickers])
+    const volumeRecurringTickers = volumeRecurringRaw
+      .map(c => c.ticker)
+      .filter(t => !accumulatedSet.has(t))
+
+    // 기술적 스크리닝 후보 — 기존 풀 + 추가 중복 제거
+    const accumulatedSetFull = new Set([...accumulatedSet, ...volumeRecurringTickers])
+    const techScanFiltered = techScanTickers.filter(t => !accumulatedSetFull.has(t))
+
+    // 이벤트수혜 + 섹터연동 + 거래량지속 + 기술스크리닝 일괄 조회
+    const allExtraTickers = [...extraTickers, ...sectorOnlyTickers, ...volumeRecurringTickers, ...techScanFiltered]
 
     const [extraFundamentals, extraTechRaw] = allExtraTickers.length > 0
       ? await Promise.all([
@@ -185,7 +231,35 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     const sectorCandidatePool = sectorMomentumCandidates
       .filter(c => !existingTickerSet.has(c.ticker) && !extraCandidateTickerSet.has(c.ticker))
 
-    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool]
+    // 거래량 지속 후보 풀
+    const preSectorSet = new Set([...existingTickerSet, ...extraCandidateTickerSet, ...sectorCandidatePool.map(c => c.ticker)])
+    const volumeRecurringPool = volumeRecurringRaw
+      .filter(c => !preSectorSet.has(c.ticker))
+      .map(c => ({ ticker: c.ticker, name: c.name, sector: '거래량지속' }))
+    if (volumeRecurringPool.length > 0) {
+      console.log(`[거래량지속] 연속 등장 후보 ${volumeRecurringPool.length}개: ${volumeRecurringPool.map(c => c.ticker).join(', ')}`)
+    }
+
+    // 기술적 스크리닝 후보 풀: "충전 완료" 패턴 필터 (RSI 35~55, MACD↑, 추세↑, BB 중간선 근처)
+    const majorStockNameMap = Object.fromEntries(MAJOR_STOCKS.map(s => [s.ticker, s.name]))
+    const preScreenSet = new Set([...preSectorSet, ...volumeRecurringPool.map(c => c.ticker)])
+    const techScreeningPool: { ticker: string; name: string; sector: string }[] = []
+    for (const ticker of techScanFiltered) {
+      if (preScreenSet.has(ticker)) continue
+      const tech = extraTechMap[ticker]
+      if (!tech || tech.rsi14 == null) continue
+      if (tech.rsi14 < 35 || tech.rsi14 > 55) continue
+      if (tech.macdSignal === 'sell') continue
+      if (tech.trend === 'down') continue
+      if (tech.bollingerSignal === 'sell') continue
+      techScreeningPool.push({ ticker, name: majorStockNameMap[ticker] ?? ticker, sector: '기술스크리닝' })
+      if (techScreeningPool.length >= 5) break
+    }
+    if (techScreeningPool.length > 0) {
+      console.log(`[기술스크리닝] "충전완료" 패턴 ${techScreeningPool.length}개: ${techScreeningPool.map(c => c.ticker).join(', ')}`)
+    }
+
+    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool, ...volumeRecurringPool, ...techScreeningPool]
     const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
@@ -266,11 +340,14 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 
-    // 섹터연동 경로로 후보풀에 진입한 종목에 source_tag 주입
-    const sectorMomentumTickerSet = new Set(sectorMomentumCandidates.map(c => c.ticker))
+    // 후보풀 진입 경로별 source_tag 주입 (섹터연동 > 기술스크리닝 > 거래량지속 우선순위)
+    const sourceTagMap = new Map<string, string>()
+    for (const c of volumeRecurringPool)  sourceTagMap.set(c.ticker, '거래량지속')
+    for (const c of techScreeningPool)   sourceTagMap.set(c.ticker, '기술스크리닝')
+    for (const c of sectorCandidatePool) sourceTagMap.set(c.ticker, '섹터연동')
     result.recommendations = result.recommendations.map(r => ({
       ...r,
-      source_tag: sectorMomentumTickerSet.has(r.ticker) ? '섹터연동' : undefined,
+      source_tag: sourceTagMap.get(r.ticker) ?? undefined,
     }))
 
     // 4-2. 현재가 + 펀더멘털 + 기술적 지표 + 전일 급등 종목 병렬 조회
