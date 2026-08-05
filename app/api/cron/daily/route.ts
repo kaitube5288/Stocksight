@@ -110,7 +110,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     // 불장 여부를 Gemini 호출 전에 먼저 판단 (마켓 컨텍스트에 주입)
     const kospiChangePct = (kospi && kospi.previousClose > 0) ? (kospi.price - kospi.previousClose) / kospi.previousClose * 100 : 0
     const kosdaqChangePct = (kosdaq && kosdaq.previousClose > 0) ? (kosdaq.price - kosdaq.previousClose) / kosdaq.previousClose * 100 : 0
-    const isBullMarket = kospiChangePct >= 1 || kosdaqChangePct >= 1
+    const isBullMarket = kospiChangePct >= 0.5 || kosdaqChangePct >= 0.5
     const isKospiBelowMA20 = kospiMA20 != null && kospiMA20.price < kospiMA20.ma20
     // 단기 반등: 당일 급등이지만 MA20 하회 중 (약세장 속 기술적 반등)
     // 진정한 불장: 당일 급등 + MA20 위 (상승 구조 확인된 강세장)
@@ -395,14 +395,32 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
         console.log(`[필터-RSI하한] ${r.name}(${r.ticker}) RSI ${tech.rsi14} 극단 과매도 제거`)
         return false
       }
-      if (tech.macdSignal === 'sell') {
+      // 순환 반등 예외 조건: 불장 + 과매도 회복 구간(RSI 28~48) + 거래량 급증
+      // MACD는 후행 지표라 반전 초기에는 여전히 'sell' — 거래량이 이를 보완
+      const isReversalException =
+        isBullMarket &&
+        tech.rsi14 != null && tech.rsi14 >= 28 && tech.rsi14 <= 48 &&
+        tech.volumeSurge != null && tech.volumeSurge >= 1.5
+      if (tech.macdSignal === 'sell' && !isReversalException) {
         console.log(`[필터-MACD] ${r.name}(${r.ticker}) MACD 데드크로스 제거`)
         return false
       }
-      // 하락추세 종목: 단타·스윙 코드 레벨 강제 제거
-      if (tech.trend === 'down' && (r.trade_type === '단타' || r.trade_type === '스윙')) {
-        console.log(`[필터-추세] ${r.name}(${r.ticker}) 하락추세 제거 (${r.trade_type})`)
-        return false
+      if (tech.macdSignal === 'sell' && isReversalException) {
+        console.log(`[필터-MACD예외] ${r.name}(${r.ticker}) 불장+회복구간(RSI ${tech.rsi14})+거래량(${tech.volumeSurge?.toFixed(1)}x) → MACD 예외 허용`)
+      }
+      // 하락추세 종목: 스윙은 무조건 제거, 단타는 순환 반등 예외 허용
+      if (tech.trend === 'down') {
+        if (r.trade_type === '스윙') {
+          console.log(`[필터-추세] ${r.name}(${r.ticker}) 하락추세 제거 (스윙)`)
+          return false
+        }
+        if (r.trade_type === '단타' && !isReversalException) {
+          console.log(`[필터-추세] ${r.name}(${r.ticker}) 하락추세 제거 (단타)`)
+          return false
+        }
+        if (r.trade_type === '단타' && isReversalException) {
+          console.log(`[필터-추세예외] ${r.name}(${r.ticker}) 불장+회복구간+거래량 → 하락추세 단타 예외 허용`)
+        }
       }
       // 볼린저밴드 상단 근접 종목: 단타·스윙 과열 구간 제거
       if (tech.bollingerSignal === 'sell' && (r.trade_type === '단타' || r.trade_type === '스윙')) {
@@ -446,8 +464,9 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       const tech = techMap[r.ticker]
       if (!tech) return true
       const score = calcSignalScore(tech)
-      if (score < 3) {
-        console.log(`[필터-신호점수] ${r.name}(${r.ticker}) 신호강도 ${score}/5 — 단타 기준 미달 (3점↑ 필요) 제거`)
+      const minScore = isBullMarket ? 2 : 3
+      if (score < minScore) {
+        console.log(`[필터-신호점수] ${r.name}(${r.ticker}) 신호강도 ${score}/5 — 단타 기준 미달 (${minScore}점↑ 필요) 제거`)
         return false
       }
       console.log(`[신호강도] ${r.name}(${r.ticker}) ${score}/5 통과`)
