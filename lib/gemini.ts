@@ -120,10 +120,11 @@ export async function generateRecommendations(params: {
   marketFeedbackInsights?: string
   strategyImprovements?: string
   eventBeneficiaryContext?: string
-  interestRates?: string   // 미국 국채 금리 + 장단기 역전 여부
-  ratePolicyNews?: string  // 금리·정책 관련 뉴스 필터링 결과
-  bounceContext?: string   // 전일 급락 + 과매도 반등 후보 (단타 최우선 검토)
-  kospiMA20Warning?: string // KOSPI 20일선 하회 경고
+  interestRates?: string       // 미국 국채 금리 + 장단기 역전 여부
+  ratePolicyNews?: string      // 금리·정책 관련 뉴스 필터링 결과
+  bounceContext?: string       // 전일 급락 + 과매도 반등 후보 (단타 최우선 검토)
+  kospiMA20Warning?: string    // KOSPI 20일선 하회 경고
+  overseasSignalContext?: string // 전일 해외 시장 (SOX/NASDAQ) 시그널
 }): Promise<GeminiAnalysisResult> {
   const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
 
@@ -197,7 +198,10 @@ ${params.marketContext.includes('[🚀 불장 감지]') ? `
 - AI/IT 플랫폼 뉴스 기반 수혜주(NAVER·LG전자·통신사 등)는 RSI 무관하게 단타 우선 검토
 - expected_return 목표를 +3~5%로 상향 가능 (강세장 모멘텀은 더 크게 움직임)
 ` : ''}
-${params.interestRates ? `
+${params.overseasSignalContext ? `
+## 전일 해외 시장 시그널 (미국/일본 마감 → 한국 섹터 연동 반등 예측)
+${params.overseasSignalContext}
+` : ''}${params.interestRates ? `
 ## 금리 현황 (장단기 역전 = 하락장 [1. 거시 경제 지표] 직접 반영)
 ${params.interestRates}
 ` : ''}${params.ratePolicyNews ? `
@@ -229,6 +233,7 @@ ${params.bounceContext ? `\n${params.bounceContext}\n` : ''}${params.kospiMA20Wa
 
 ### 4. 거시경제 & 시장 (0~30점)
 - 뉴스 직접 언급 / DART 공시 호재 / 섹터 로테이션 / 기관·외국인 수급
+- [📡 해외모멘텀] 표시가 있으면: SOX(반도체 지수)/NASDAQ 전일 강세 → 국내 해당 섹터 과매도(RSI≤45) 종목은 "순환 반등 단타" 후보로 우선 검토. reasoning에 "SOX/NASDAQ 전일 강세 연동 반등" 명시
 
 ---
 

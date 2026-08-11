@@ -212,6 +212,25 @@ export async function fetchInterestRates(): Promise<InterestRates> {
   return { us10Y, us3M, yieldSpread: spread, isInverted: spread != null && spread < 0 }
 }
 
+export interface OverseasMarketSignals {
+  sox:    { price: number | null; changePct: number | null }  // 필라델피아 반도체 지수
+  nasdaq: { price: number | null; changePct: number | null }  // NASDAQ 종합
+  nikkei: { price: number | null; changePct: number | null }  // 닛케이 225
+}
+
+export async function fetchOverseasMarketSignals(): Promise<OverseasMarketSignals> {
+  const [sox, nasdaq, nikkei] = await Promise.all([
+    fetchSimpleQuote('^SOX').catch(() => null),
+    fetchSimpleQuote('^IXIC').catch(() => null),
+    fetchSimpleQuote('^N225').catch(() => null),
+  ])
+  return {
+    sox:    { price: sox?.price    ?? null, changePct: sox?.changePercent    ?? null },
+    nasdaq: { price: nasdaq?.price ?? null, changePct: nasdaq?.changePercent ?? null },
+    nikkei: { price: nikkei?.price ?? null, changePct: nikkei?.changePercent ?? null },
+  }
+}
+
 export function formatInterestRatesForPrompt(rates: InterestRates): string {
   const lines: string[] = []
   if (rates.us10Y != null) lines.push(`- 미국 10년물 국채금리: ${rates.us10Y.toFixed(2)}%`)

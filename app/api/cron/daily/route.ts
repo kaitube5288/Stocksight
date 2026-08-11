@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateRecommendations, analyzeEventBeneficiaries, generatePortfolioAdvice, suggestKeywordsFromNews } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
-import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, fetchNaverData, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
+import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, fetchNaverData, fetchOverseasMarketSignals, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert, sendTelegramSimple } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
@@ -84,7 +84,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     const newsText = formatAnalyzedNewsForPrompt(analyzedNews)
 
     // 2. DART 공시 + 시장 지표 + 환율/금시세 + 거래량 상위 + 미국 국채 금리 + KOSPI MA20 병렬 수집
-    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks, interestRatesRaw, kospiMA20] = await Promise.all([
+    const [disclosures, { kospi, kosdaq }, usdkrw, goldPrice, volumeTopStocks, interestRatesRaw, kospiMA20, overseasSignals] = await Promise.all([
       getTodayDisclosures(),
       getMarketIndex(),
       getUSDKRW(),
@@ -92,6 +92,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       fetchVolumeTopStocks(15).catch(() => [] as { ticker: string; name: string }[]),
       fetchInterestRates().catch(() => ({ us10Y: null, us3M: null, yieldSpread: null, isInverted: false })),
       fetchKospiMA20().catch(() => null),
+      fetchOverseasMarketSignals().catch(() => ({ sox: { price: null, changePct: null }, nasdaq: { price: null, changePct: null }, nikkei: { price: null, changePct: null } })),
     ])
     const interestRatesText = formatInterestRatesForPrompt(interestRatesRaw)
 
@@ -121,7 +122,20 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       : isShortTermBounce
       ? `\n[⚡ 단기 반등] KOSPI ${kospiChangePct.toFixed(2)}% 급등이나 MA20 하회 중 — 과매도 반등 전략 적용, 리스크 관리 강화`
       : ''
-    const marketText = formatMarketContext({ kospi, kosdaq, usdkrw }) + bullMarketNote
+    // 전일 해외 시장 시그널 (미국/일본 마감 → 한국 섹터 연동 반등 예측)
+    const soxStrong    = overseasSignals.sox.changePct    != null && overseasSignals.sox.changePct    >= 1
+    const nasdaqStrong = overseasSignals.nasdaq.changePct != null && overseasSignals.nasdaq.changePct >= 1
+    const overseasNote = (() => {
+      const parts: string[] = []
+      if (overseasSignals.sox.changePct    != null) parts.push(`SOX ${overseasSignals.sox.changePct    >= 0 ? '+' : ''}${overseasSignals.sox.changePct.toFixed(2)}%`)
+      if (overseasSignals.nasdaq.changePct != null) parts.push(`NASDAQ ${overseasSignals.nasdaq.changePct >= 0 ? '+' : ''}${overseasSignals.nasdaq.changePct.toFixed(2)}%`)
+      if (overseasSignals.nikkei.changePct != null) parts.push(`닛케이 ${overseasSignals.nikkei.changePct >= 0 ? '+' : ''}${overseasSignals.nikkei.changePct.toFixed(2)}%`)
+      if (parts.length === 0) return ''
+      const boostLabel = [soxStrong ? '반도체' : '', nasdaqStrong ? 'IT/AI' : ''].filter(Boolean).join('/')
+      const boostNote  = boostLabel ? ` — [📡 해외모멘텀] ${boostLabel} 섹터 국내 연동 반등 기대` : ''
+      return `\n[전일 해외시장] ${parts.join(' / ')}${boostNote}`
+    })()
+    const marketText = formatMarketContext({ kospi, kosdaq, usdkrw }) + bullMarketNote + overseasNote
 
     // 3. 섹터 키워드 추출 (분석된 뉴스 임팩트 가중치 기반: high 3점, medium 1점)
     //    과거 유사 패턴 + 섹터 기술적 지표 + 후보 종목 실제 데이터 + 성과 피드백 병렬 조회
@@ -135,7 +149,24 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       .slice(0, 10)
       .map(s => ({ ...s, sector: '거래량상위' }))
     const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
-    const candidateTickers = mergedCandidatePool.map(c => c.ticker)
+
+    // 해외 모멘텀 후보: SOX/NASDAQ 전일 강세 → 국내 반도체/IT 섹터 종목 강제 편입
+    // candidateTickers에 포함시켜 기술적 지표(RSI 등)가 병렬 수집 대상에 포함되도록 함
+    const mergedTickerSetForOverseas = new Set(mergedCandidatePool.map(c => c.ticker))
+    const overseasPool: { ticker: string; name: string; sector: string }[] = []
+    if (soxStrong || nasdaqStrong) {
+      const targetSectors = new Set<string>()
+      if (soxStrong)    ['반도체', '반도체소재', '전자부품'].forEach(s => targetSectors.add(s))
+      if (nasdaqStrong) ['IT', 'AI', '게임'].forEach(s => targetSectors.add(s))
+      MAJOR_STOCKS
+        .filter(s => targetSectors.has(s.sector) && !mergedTickerSetForOverseas.has(s.ticker))
+        .slice(0, 8)
+        .forEach(s => overseasPool.push({ ticker: s.ticker, name: s.name, sector: '해외모멘텀' }))
+      if (overseasPool.length > 0)
+        console.log(`[해외모멘텀] SOX ${overseasSignals.sox.changePct?.toFixed(2) ?? '-'}% / NASDAQ ${overseasSignals.nasdaq.changePct?.toFixed(2) ?? '-'}% → ${[...targetSectors].join('/')} 후보 ${overseasPool.length}개 추가: ${overseasPool.map(c => c.ticker).join(', ')}`)
+    }
+    const extendedCandidatePool = [...mergedCandidatePool, ...overseasPool]
+    const candidateTickers = extendedCandidatePool.map(c => c.ticker)
 
     // 기술적 스크리닝 스캔 대상: MAJOR_STOCKS 중 현재 후보풀 미진입 최대 20개
     const mergedTickerSet = new Set(candidateTickers)
@@ -259,7 +290,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       console.log(`[기술스크리닝] "충전완료" 패턴 ${techScreeningPool.length}개: ${techScreeningPool.map(c => c.ticker).join(', ')}`)
     }
 
-    const fullCandidatePool = [...mergedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool, ...volumeRecurringPool, ...techScreeningPool]
+    const fullCandidatePool = [...extendedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool, ...volumeRecurringPool, ...techScreeningPool]
     const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
@@ -330,6 +361,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       ratePolicyNews: ratePolicyNewsText || undefined,
       bounceContext: bounceContext || undefined,
       kospiMA20Warning: kospiMA20Warning || undefined,
+      overseasSignalContext: overseasNote || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
