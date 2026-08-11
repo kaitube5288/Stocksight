@@ -509,7 +509,9 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     if (isKospiBelowMA20) {
       const dantas = result.recommendations.filter(r => r.trade_type === '단타' && r.ticker !== '000000')
       if (dantas.length > 1) {
-        const keepTicker = dantas[0].ticker
+        const keepTicker = dantas.reduce((best, curr) =>
+          (curr.probability ?? 0) > (best.probability ?? 0) ? curr : best
+        ).ticker
         result.recommendations = result.recommendations.filter(r =>
           r.trade_type !== '단타' || r.ticker === '000000' || r.ticker === keepTicker
         )
@@ -541,8 +543,10 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       const real = realPrices[r.ticker]
       const fund = fundamentals[r.ticker]
       const tech = techMap[r.ticker]
+      // 전일 종가 기준으로 매수가 설정 (크론 실행 시점의 실시간가 사용 시
+      // 7:45 AM 가격과 9:00 AM 개장가 사이 괴리 발생 → 전일 종가가 일관된 기준)
       const buyPrice = real
-        ? (real.price > 0 ? real.price : real.previousClose)
+        ? (real.previousClose > 0 ? real.previousClose : real.price)
         : r.buy_price
       const sellPrice = real
         ? Math.round(buyPrice * (1 + r.expected_return / 100))
