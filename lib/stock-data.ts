@@ -216,18 +216,21 @@ export interface OverseasMarketSignals {
   sox:    { price: number | null; changePct: number | null }  // 필라델피아 반도체 지수
   nasdaq: { price: number | null; changePct: number | null }  // NASDAQ 종합
   nikkei: { price: number | null; changePct: number | null }  // 닛케이 225
+  vix:    { price: number | null }                            // 공포 지수 (30 이상 = 하락장 신호)
 }
 
 export async function fetchOverseasMarketSignals(): Promise<OverseasMarketSignals> {
-  const [sox, nasdaq, nikkei] = await Promise.all([
+  const [sox, nasdaq, nikkei, vix] = await Promise.all([
     fetchSimpleQuote('^SOX').catch(() => null),
     fetchSimpleQuote('^IXIC').catch(() => null),
     fetchSimpleQuote('^N225').catch(() => null),
+    fetchSimpleQuote('^VIX').catch(() => null),
   ])
   return {
     sox:    { price: sox?.price    ?? null, changePct: sox?.changePercent    ?? null },
     nasdaq: { price: nasdaq?.price ?? null, changePct: nasdaq?.changePercent ?? null },
     nikkei: { price: nikkei?.price ?? null, changePct: nikkei?.changePercent ?? null },
+    vix:    { price: vix?.price    ?? null },
   }
 }
 

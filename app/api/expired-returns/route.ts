@@ -17,8 +17,8 @@ const YF_HEADERS = {
   Accept: 'application/json',
 }
 
-// 만기일 이전 가장 가까운 거래일 종가 조회
-async function getPriceNearDate(ticker: string, targetDate: Date): Promise<number | null> {
+// 만기일 이전 가장 가까운 거래일 종가+고가 조회
+async function getOHLCVNearDate(ticker: string, targetDate: Date): Promise<{ close: number; high: number } | null> {
   const code = ticker.includes('.') ? ticker.split('.')[0] : ticker
   const targetTs = Math.floor(targetDate.getTime() / 1000)
 
@@ -30,6 +30,7 @@ async function getPriceNearDate(ticker: string, targetDate: Date): Promise<numbe
       if (!result) continue
       const timestamps: number[] = result.timestamp ?? []
       const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? []
+      const highs:  (number | null)[] = result.indicators?.quote?.[0]?.high  ?? []
 
       // 만기 timestamp 이하인 것 중 가장 최신 거래일
       let bestIdx = -1
@@ -42,15 +43,15 @@ async function getPriceNearDate(ticker: string, targetDate: Date): Promise<numbe
           bestIdx = i
         }
       }
-      if (bestIdx >= 0) return closes[bestIdx]!
+      if (bestIdx >= 0) return { close: closes[bestIdx]!, high: highs[bestIdx] ?? closes[bestIdx]! }
     } catch { continue }
   }
   return null
 }
 
-type StockRecord = { ticker: string; name: string; buy_price: number; trade_type: string }
+type StockRecord = { ticker: string; name: string; buy_price: number; sell_price: number; trade_type: string }
 // latestBuyPrice: 재추천 시 최신 추천가로 갱신 → 최신 추천 기준 수익률 측정
-type Group = { ticker: string; name: string; firstBuyPrice: number; latestBuyPrice: number; latestRecDate: Date }
+type Group = { ticker: string; name: string; firstBuyPrice: number; latestBuyPrice: number; latestSellPrice: number; latestRecDate: Date }
 
 export async function GET() {
   const supabase = getSupabase()
@@ -80,11 +81,13 @@ export async function GET() {
           ticker: stock.ticker, name: stock.name,
           firstBuyPrice: stock.buy_price,
           latestBuyPrice: stock.buy_price,
+          latestSellPrice: stock.sell_price ?? 0,
           latestRecDate: recDate,
         })
       } else if (recDate > existing.latestRecDate) {
         existing.latestRecDate = recDate
         existing.latestBuyPrice = stock.buy_price  // 재추천 시 최신 추천가로 갱신
+        existing.latestSellPrice = stock.sell_price ?? 0
       }
     }
   }
@@ -101,16 +104,21 @@ export async function GET() {
     }
   }
 
-  // 만기 시점 가격 병렬 조회
-  const exitPrices = await Promise.all(
-    expiredItems.map(({ group, expiresAt }) => getPriceNearDate(group.ticker, expiresAt))
+  // 만기 시점 종가+고가 병렬 조회
+  const exitOHLCVs = await Promise.all(
+    expiredItems.map(({ group, expiresAt }) => getOHLCVNearDate(group.ticker, expiresAt))
   )
 
   // 섹션별 수익률 집계 — 최신 추천가(latestBuyPrice) 기준
+  // 단타: 당일 고가가 목표가에 도달했으면 목표가 기준 수익률 (실제 매도 가능 기준)
   const returnsByTT: Record<TT, number[]> = { '단타': [], '스윙': [], '중기': [] }
   expiredItems.forEach(({ tt, group }, i) => {
-    const exitPrice = exitPrices[i]
-    if (exitPrice == null || !group.latestBuyPrice) return
+    const ohlcv = exitOHLCVs[i]
+    if (ohlcv == null || !group.latestBuyPrice) return
+    let exitPrice = ohlcv.close
+    if (tt === '단타' && group.latestSellPrice > 0 && ohlcv.high >= group.latestSellPrice) {
+      exitPrice = group.latestSellPrice
+    }
     const returnPct = ((exitPrice - group.latestBuyPrice) / group.latestBuyPrice) * 100
     returnsByTT[tt].push(returnPct)
   })

@@ -92,7 +92,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       fetchVolumeTopStocks(15).catch(() => [] as { ticker: string; name: string }[]),
       fetchInterestRates().catch(() => ({ us10Y: null, us3M: null, yieldSpread: null, isInverted: false })),
       fetchKospiMA20().catch(() => null),
-      fetchOverseasMarketSignals().catch(() => ({ sox: { price: null, changePct: null }, nasdaq: { price: null, changePct: null }, nikkei: { price: null, changePct: null } })),
+      fetchOverseasMarketSignals().catch(() => ({ sox: { price: null, changePct: null }, nasdaq: { price: null, changePct: null }, nikkei: { price: null, changePct: null }, vix: { price: null } })),
     ])
     const interestRatesText = formatInterestRatesForPrompt(interestRatesRaw)
 
@@ -185,7 +185,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     // 누적 수익률 미달 섹션 자기진단 + 이전 개선 방향 읽기를 병렬 실행
     // runStrategyImprovementIfNeeded: 오늘 분석 결과 저장 (다음 회차 반영)
     // buildStrategyImprovementContext: 이전 회차 결과 읽기 (오늘 즉시 반영)
-    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary, sectorMomentumCandidates, volumeRecurringRaw] = await Promise.all([
+    const [historicalPatterns, technicalContext, candidateFundamentals, candidateTechRaw, performanceInsights, marketFeedbackInsights, strategyImprovements, eventBeneficiary, sectorMomentumCandidates, volumeRecurringRaw, volumeFrequentRaw] = await Promise.all([
       getSimilarHistoricalPatterns(keywords),
       fetchSectorTechnicals(keywords),
       getFundamentalsMap(candidateTickers),
@@ -216,6 +216,26 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
           .filter(([, v]) => v.dates.size >= 2)
           .map(([ticker, v]) => ({ ticker, name: v.name }))
       })().catch(() => [] as { ticker: string; name: string }[]),
+      // 신규편입 후보: 최근 30일 중 5일 이상 거래량 상위 등장 + MAJOR_STOCKS 미포함
+      (async () => {
+        const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+        const dates30 = Array.from({ length: 30 }, (_, d) => {
+          const dd = new Date(kst); dd.setDate(dd.getDate() - d); return dd.toISOString().slice(0, 10)
+        })
+        const { data } = await supabaseAdmin
+          .from('volume_watchlist')
+          .select('ticker, name, date')
+          .in('date', dates30)
+        const majorTickerSet = new Set(MAJOR_STOCKS.map(s => s.ticker))
+        const tickerCount = new Map<string, { name: string; count: number }>()
+        for (const row of (data ?? [])) {
+          if (!tickerCount.has(row.ticker)) tickerCount.set(row.ticker, { name: row.name, count: 0 })
+          tickerCount.get(row.ticker)!.count++
+        }
+        return [...tickerCount.entries()]
+          .filter(([ticker, v]) => v.count >= 5 && !majorTickerSet.has(ticker))
+          .map(([ticker, v]) => ({ ticker, name: v.name }))
+      })().catch(() => [] as { ticker: string; name: string }[]),
     ])
 
     // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
@@ -240,8 +260,8 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     const accumulatedSetFull = new Set([...accumulatedSet, ...volumeRecurringTickers])
     const techScanFiltered = techScanTickers.filter(t => !accumulatedSetFull.has(t))
 
-    // 이벤트수혜 + 섹터연동 + 거래량지속 + 기술스크리닝 일괄 조회
-    const allExtraTickers = [...extraTickers, ...sectorOnlyTickers, ...volumeRecurringTickers, ...techScanFiltered]
+    // 이벤트수혜 + 섹터연동 + 거래량지속 + 기술스크리닝 + 신규편입 일괄 조회
+    const allExtraTickers = [...new Set([...extraTickers, ...sectorOnlyTickers, ...volumeRecurringTickers, ...techScanFiltered, ...volumeFrequentRaw.map(c => c.ticker)])]
 
     const [extraFundamentals, extraTechRaw] = allExtraTickers.length > 0
       ? await Promise.all([
@@ -271,6 +291,15 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       console.log(`[거래량지속] 연속 등장 후보 ${volumeRecurringPool.length}개: ${volumeRecurringPool.map(c => c.ticker).join(', ')}`)
     }
 
+    // 신규편입 후보 풀 (30일 5회+ MAJOR_STOCKS 미포함)
+    const preFrequentSet = new Set([...preSectorSet, ...volumeRecurringPool.map(c => c.ticker)])
+    const volumeFrequentPool = volumeFrequentRaw
+      .filter(c => !preFrequentSet.has(c.ticker))
+      .map(c => ({ ticker: c.ticker, name: c.name, sector: '신규편입' }))
+    if (volumeFrequentPool.length > 0) {
+      console.log(`[신규편입] 30일 5회+ 거래량 후보 ${volumeFrequentPool.length}개: ${volumeFrequentPool.map(c => c.ticker).join(', ')}`)
+    }
+
     // 기술적 스크리닝 후보 풀: "충전 완료" 패턴 필터 (RSI 35~55, MACD↑, 추세↑, BB 중간선 근처)
     const majorStockNameMap = Object.fromEntries(MAJOR_STOCKS.map(s => [s.ticker, s.name]))
     const preScreenSet = new Set([...preSectorSet, ...volumeRecurringPool.map(c => c.ticker)])
@@ -290,7 +319,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       console.log(`[기술스크리닝] "충전완료" 패턴 ${techScreeningPool.length}개: ${techScreeningPool.map(c => c.ticker).join(', ')}`)
     }
 
-    const fullCandidatePool = [...extendedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool, ...volumeRecurringPool, ...techScreeningPool]
+    const fullCandidatePool = [...extendedCandidatePool, ...extraCandidatePool, ...sectorCandidatePool, ...volumeRecurringPool, ...volumeFrequentPool, ...techScreeningPool]
     const fullCandidateFundamentals = { ...candidateFundamentals, ...extraFundamentals }
     const candidateTechMap = Object.fromEntries(candidateTickers.map((t, i) => [t, candidateTechRaw[i]]))
     const fullCandidateTechMap = { ...candidateTechMap, ...extraTechMap }
@@ -364,17 +393,18 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       overseasSignalContext: overseasNote || undefined,
     })
 
-    // 4-1. trade_type 강제 할당 (순서 기반: 0~2=단타, 3~5=스윙, 6~8=중기)
-    const TRADE_TYPES = ['단타', '스윙', '중기'] as const
+    // 4-1. trade_type 강제 할당 (순서 기반: 0=단타, 1~2=스윙, 3~4=중기)
+    const SLOT_TYPES: ('단타' | '스윙' | '중기')[] = ['단타', '스윙', '스윙', '중기', '중기']
     const HOLD_PERIODS: Record<string, string> = { '단타': '1일 목표', '스윙': '3~5일 목표', '중기': '2~4주 목표' }
     result.recommendations = result.recommendations.map((r, i) => {
-      const trade_type = TRADE_TYPES[Math.floor(i / 3) % 3]
+      const trade_type = SLOT_TYPES[i] ?? '중기'
       return { ...r, trade_type, hold_period: HOLD_PERIODS[trade_type] }
     })
 
     // 후보풀 진입 경로별 source_tag 주입 (섹터연동 > 기술스크리닝 > 거래량지속 우선순위)
     const sourceTagMap = new Map<string, string>()
     for (const c of volumeRecurringPool)  sourceTagMap.set(c.ticker, '거래량지속')
+    for (const c of volumeFrequentPool)   sourceTagMap.set(c.ticker, '신규편입')
     for (const c of techScreeningPool)   sourceTagMap.set(c.ticker, '기술스크리닝')
     for (const c of sectorCandidatePool) sourceTagMap.set(c.ticker, '섹터연동')
     result.recommendations = result.recommendations.map(r => ({
@@ -401,8 +431,10 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
     // isBullMarket은 Gemini 호출 전에 이미 계산됨 (marketText에 주입됨)
-    // 하락장 판단: 어제 KOSPI·KOSDAQ 모두 하락했으면 하락장
-    const isBearMarket = kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5
+    // 하락장 판단: KOSPI·KOSDAQ 모두 하락 OR VIX ≥ 30 (공포 지수 급등)
+    const isVixHigh = overseasSignals.vix?.price != null && overseasSignals.vix.price >= 30
+    const isBearMarket = (kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5) || isVixHigh
+    if (isVixHigh) console.log(`[VIX] 공포지수 ${overseasSignals.vix!.price!.toFixed(1)} ≥ 30 → 하락장 신호 추가 감지`)
     // 거래유형별 RSI 상한 — 프롬프트 규칙을 코드 레벨에서 강제 적용 (단타 55, 스윙 65, 중기 60으로 강화)
     const rsiMaxByType: Record<string, number> = {
       '단타': isBullMarket ? 65 : 55,  // 단타: RSI 55 초과 금지 (불장 시 65까지)
@@ -505,26 +537,24 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       return true
     })
 
-    // E: KOSPI MA20 하회 시 단타 최대 1종목으로 제한 (나머지 슬롯 현금보유로 채움)
+    // E: KOSPI MA20 하회 시 단타 처리 (5종목 체계: 단타 1슬롯)
+    // - 순수 하락장(MA20 하회 + 반등 아님): 단타 슬롯 전체 현금보유로 대체
+    // - 단기 반등(MA20 하회 + 당일 급등): 단타 1종목 유지 허용
     if (isKospiBelowMA20) {
       const dantas = result.recommendations.filter(r => r.trade_type === '단타' && r.ticker !== '000000')
-      if (dantas.length > 1) {
-        const keepTicker = dantas.reduce((best, curr) =>
-          (curr.probability ?? 0) > (best.probability ?? 0) ? curr : best
-        ).ticker
-        result.recommendations = result.recommendations.filter(r =>
-          r.trade_type !== '단타' || r.ticker === '000000' || r.ticker === keepTicker
-        )
-        const cashSlotCount = 2 - (result.recommendations.filter(r => r.trade_type === '단타' && r.ticker === '000000').length)
-        for (let i = 0; i < cashSlotCount; i++) {
-          result.recommendations.splice(1 + i, 0, {
+      if (dantas.length > 0 && !isShortTermBounce) {
+        result.recommendations = result.recommendations.filter(r => r.trade_type !== '단타' || r.ticker === '000000')
+        if (!result.recommendations.some(r => r.trade_type === '단타' && r.ticker === '000000')) {
+          result.recommendations.unshift({
             name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
             expected_return: 0, probability: 0, trade_type: '단타', hold_period: '1일 목표',
             reasoning: 'KOSPI 20일선 하회 — 시장 전체 하락 구조, 현금 보유 권고',
             key_catalyst: 'KOSPI MA20 하회', per: null, pbr: null, roe: null,
           })
         }
-        console.log(`[KOSPI-MA20] 단타 ${dantas.length}개→1개 축소, 현금보유 ${cashSlotCount}개 추가`)
+        console.log(`[KOSPI-MA20] 순수 하락장: 단타 ${dantas.length}개 → 현금보유로 대체`)
+      } else if (isShortTermBounce) {
+        console.log(`[KOSPI-MA20] 단기 반등 국면: 단타 ${dantas.length}개 유지`)
       }
     }
 
@@ -568,6 +598,23 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
         macd_signal: tech?.macdSignal ?? null,
         trend: tech?.trend ?? null,
       }
+    })
+
+    // F: probability 기반 확신도 필터 — 낮은 종목 현금보유 대체
+    const probMin = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    result.recommendations = result.recommendations.map(r => {
+      if (r.ticker === '000000') return r
+      if ((r.probability ?? 0) < probMin) {
+        console.log(`[필터-확률] ${r.name}(${r.ticker}) probability ${r.probability}% < ${probMin}% → 현금보유`)
+        return {
+          ...r,
+          name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
+          expected_return: 0, probability: 0,
+          reasoning: `확신도 ${r.probability}% — 진입 기준(${probMin}%) 미달, 현금 보유 권고`,
+          key_catalyst: '확신도 미달',
+        }
+      }
+      return r
     })
 
     // 시장 구조 태그 삽입 (Gemini 표현에 의존하지 않고 확정적으로 붙임)

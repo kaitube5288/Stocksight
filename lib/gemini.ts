@@ -170,7 +170,7 @@ ${params.strategyImprovements ? `\n⚠️ 전략 보완 규칙 (이전 손실 �
 
 [하락장 확인 시 행동 규칙]
 - market_outlook 앞에 반드시 "[하락장 위험]" 명시
-- 단타 추천은 3개에서 1개로 축소 (나머지 2슬롯: name="현금보유", ticker="000000", buy_price=0, sell_price=0, stop_loss=0, expected_return=0, probability=0, reasoning="하락장 위험 — 현금 보유 권고", key_catalyst="시장 하락 위험")
+- 단타 추천은 0개로 축소 (1슬롯 전체: name="현금보유", ticker="000000", buy_price=0, sell_price=0, stop_loss=0, expected_return=0, probability=0, reasoning="하락장 위험 — 현금 보유 권고", key_catalyst="시장 하락 위험")
 - 단타/스윙은 방어주(금융·통신·제약·필수소비재) 위주, 추세↑ 필수
 - 단타 expected_return 목표를 +2~3%로 낮춰 현실적으로 설정
 - 중기 추천 비중 축소 (3개→2개), 손절 기준을 더 타이트하게 설정
@@ -269,7 +269,7 @@ ${params.bounceContext ? `\n${params.bounceContext}\n` : ''}${params.kospiMA20Wa
 → 위 규칙에 해당하는 패턴명을 key_catalyst에 반드시 포함
    예: "반등형 단타", "눌림목 단타", "지지선 반등 스윙", "저평가 우량주 중기"
 
-## 투자 유형별 추천 (총 9종목)
+## 투자 유형별 추천 (총 5종목: 단타 1, 스윙 2, 중기 2)
 - 단타 (1일 목표): 추세↑ 필수 + MA5>MA20 정배열 필수 + RSI 35~55 (상한 강화) + MACD↑ 필수 + (BB하단근접 OR 거래량급증1.5x↑ OR hammer·doji 패턴) 중 1개 이상, 매수가 = 당일 시가 예상
   * 볼린저밴드 하단 근접(buy) 종목 최우선 / 외국인+기관 동반 순매도 종목 단타 금지
   * 오늘 뉴스에 직접 언급된 종목 단타 금지 (이미 선반영) — 뉴스 미언급 기술적 신호 종목 발굴
@@ -280,12 +280,12 @@ ${params.bounceContext ? `\n${params.bounceContext}\n` : ''}${params.kospiMA20Wa
 - 중기 (2~4주 목표): 추세↑ 필수 + ROE 10%↑ (기준 상향) + PBR 2 이하 (기준 강화) + RSI 60 미만 (기준 강화), 매수가 = 전일 종가
   * 추세↓ 종목 중기 금지 / PER 낮고 PBR 1 이하면 가산점 / 외국인 순매수(foreignNet > 0) 종목 우선
 
-각 유형별 3종목씩, probability 높은 순. 동일 종목 중복 금지.
+단타 1종목, 스윙 2종목, 중기 2종목, 각 유형 내 probability 높은 순. 동일 종목 중복 금지.
 probability 최대값은 95로 제한. 100은 절대 사용 금지.
 후보 종목 데이터에 없는 종목을 추천할 경우 reasoning에 이유를 명시.
 
 반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
-- recommendations 배열 9개: 인덱스 0~2 단타, 3~5 스윙, 6~8 중기
+- recommendations 배열 5개: 인덱스 0 단타, 1~2 스윙, 3~4 중기
 - stop_loss: 단타는 매수가×0.95(-5%), 스윙은 매수가×0.96(-4%), 중기는 매수가×0.94(-6%)
 {
   "recommendations": [
