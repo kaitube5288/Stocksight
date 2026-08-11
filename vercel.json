@@ -1,13 +1,3 @@
 {
-  "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/cron/daily",
-      "schedule": "45 22 * * 0-4"
-    },
-    {
-      "path": "/api/cron/market-close",
-      "schedule": "0 7 * * 1-5"
-    }
-  ]
+  "framework": "nextjs"
 }
