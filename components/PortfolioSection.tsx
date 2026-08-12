@@ -325,12 +325,12 @@ export default function PortfolioSection() {
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
       if (buyCost && buyCost > 0 && accountId) {
-        const acc = accounts.find(a => a.id === accountId)
+        const acc = accounts.find(a => String(a.id) === String(accountId))
         if (acc) {
           await fetch('/api/portfolio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'account', id: acc.id, cash: acc.cash - buyCost }),
+            body: JSON.stringify({ type: 'account', id: accountId, cash: Math.round(acc.cash - buyCost) }),
           })
         }
       }
