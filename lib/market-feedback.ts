@@ -197,7 +197,7 @@ ${gainingLines}
     }
   }
   const analysisMap = new Map<string, Record<string, unknown>>(
-    (parsed.analyses ?? []).map((a: Record<string, unknown>) => [a.ticker as string, a])
+    ((parsed.analyses as Record<string, unknown>[]) ?? []).map((a) => [a.ticker as string, a])
   )
 
   const analyses: GainerAnalysis[] = gainers.map(g => {
