@@ -590,9 +590,9 @@ export default function PortfolioSection() {
               const ROW_BG      = ['rgba(0,229,170,0.08)', 'rgba(255,201,77,0.08)', 'rgba(167,139,250,0.08)']
               const ROW_BORDER  = ['rgba(0,229,170,0.25)', 'rgba(255,201,77,0.25)', 'rgba(167,139,250,0.25)']
               return (
-                <div className="rounded-2xl overflow-hidden flex flex-col h-full" style={{ minHeight: '280px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+                <div className="rounded-2xl overflow-hidden h-full" style={{ minHeight: '280px', display: 'grid', gridTemplateRows: 'auto 1fr 1fr 1fr', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
                   {/* 증권사 헤더 행 */}
-                  <div className="flex shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div className="flex" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                     {accounts.map((acc, i) => {
                       const t = getAccountTheme(acc.name)
                       return (
@@ -603,9 +603,9 @@ export default function PortfolioSection() {
                     })}
                   </div>
 
-                  {/* 거래유형 행 × 증권사 열 */}
+                  {/* 거래유형 행 × 증권사 열 — gridTemplateRows: 1fr 1fr 1fr 로 3등분 보장 */}
                   {TX_TABS.map((txType, rowIdx) => (
-                    <div key={txType} className="flex flex-1" style={{ borderBottom: rowIdx < TX_TABS.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none' }}>
+                    <div key={txType} className="flex" style={{ borderBottom: rowIdx < TX_TABS.length - 1 ? '1px solid rgba(255,255,255,0.07)' : 'none', minHeight: 0 }}>
                       {accounts.map((acc, colIdx) => {
                         const accTheme = getAccountTheme(acc.name)
                         const pageKey = `${acc.id}_${txType}`
