@@ -579,41 +579,51 @@ export default function PortfolioSection() {
                     </div>
                   </div>
 
-                  {/* 거래 이력 (계좌별 독립 탭) */}
-                  {acc.id && (() => {
-                    const tab = txTabByAccount[acc.id] ?? 0
-                    const accTxs = transactions.filter(t => t.account_id === acc.id && t.type === TX_TABS[tab])
+                </div>
+              )
+            })}
+
+            {/* 통합 거래 이력 카드 — 그리드 빈 셀 채움 */}
+            {accounts.length > 0 && (
+              <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 20px rgba(0,0,0,0.2)' }}>
+                <div className="text-[11px] font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>거래 이력</div>
+                <div className="flex flex-col gap-3">
+                  {accounts.map(acc => {
+                    const accTheme = getAccountTheme(acc.name)
+                    const tab = txTabByAccount[acc.id ?? ''] ?? 0
+                    const TAB_COLORS = ['var(--accent-green)', 'var(--accent-gold)', '#a78bfa']
+                    const accTxs = transactions.filter(t => String(t.account_id) === String(acc.id) && t.type === TX_TABS[tab])
                     return (
-                      <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px solid ${theme.divider}` }}>
+                      <div key={acc.id} className="rounded-xl p-3" style={{ background: accTheme.bg, border: `1px solid ${accTheme.border}` }}>
                         <div className="flex items-center justify-between mb-2">
-                          <button
-                            onClick={() => setTxTabByAccount(prev => ({ ...prev, [acc.id!]: Math.max(0, (prev[acc.id!] ?? 0) - 1) }))}
-                            disabled={tab === 0}
-                            className="text-[10px] px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
-                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
-                          >◀</button>
-                          <span className="text-[10px] font-medium" style={{ color: tab === 0 ? 'var(--accent-green)' : tab === 1 ? 'var(--accent-gold)' : '#a78bfa' }}>
-                            {TX_TABS[tab]} 이력
-                          </span>
-                          <button
-                            onClick={() => setTxTabByAccount(prev => ({ ...prev, [acc.id!]: Math.min(TX_TABS.length - 1, (prev[acc.id!] ?? 0) + 1) }))}
-                            disabled={tab === TX_TABS.length - 1}
-                            className="text-[10px] px-1.5 py-0.5 rounded-lg disabled:opacity-20 transition-all"
-                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'var(--text-secondary)' }}
-                          >▶</button>
+                          <span className="text-[10px] font-semibold" style={{ color: accTheme.accent }}>{acc.name}</span>
+                          <div className="flex items-center gap-1">
+                            {TX_TABS.map((tabName, idx) => (
+                              <button
+                                key={tabName}
+                                onClick={() => setTxTabByAccount(prev => ({ ...prev, [acc.id!]: idx }))}
+                                className="text-[9px] px-1.5 py-0.5 rounded-md transition-all"
+                                style={{
+                                  background: tab === idx ? `${TAB_COLORS[idx]}22` : 'rgba(255,255,255,0.05)',
+                                  border: `1px solid ${tab === idx ? `${TAB_COLORS[idx]}66` : 'rgba(255,255,255,0.1)'}`,
+                                  color: tab === idx ? TAB_COLORS[idx] : 'var(--text-muted)',
+                                }}
+                              >{tabName}</button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="overflow-y-auto" style={{ maxHeight: '120px' }}>
+                        <div className="overflow-y-auto" style={{ maxHeight: '90px' }}>
                           {accTxs.length === 0 ? (
                             <div className="text-center py-2">
                               <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.18)' }}>내역 없음</div>
                             </div>
                           ) : (
                             <div className="flex flex-col gap-1">
-                              {accTxs.slice(0, 10).map(tx => (
+                              {accTxs.slice(0, 15).map(tx => (
                                 <div key={tx.id} className="flex items-center justify-between px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     <span className="text-[9px] mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>{tx.date.slice(5)}</span>
-                                    {tx.name && <span className="text-[9px] truncate" style={{ color: theme.accent }}>{tx.name}</span>}
+                                    {tx.name && <span className="text-[9px] truncate" style={{ color: accTheme.accent }}>{tx.name}</span>}
                                     {tx.quantity != null && <span className="text-[9px] mono shrink-0" style={{ color: 'var(--text-muted)' }}>{tx.quantity}주</span>}
                                   </div>
                                   <span className="text-[9px] mono font-semibold shrink-0 ml-1" style={{ color: 'var(--text-secondary)' }}>
@@ -626,10 +636,10 @@ export default function PortfolioSection() {
                         </div>
                       </div>
                     )
-                  })()}
+                  })}
                 </div>
-              )
-            })}
+              </div>
+            )}
           </div>
         )}
       </div>
