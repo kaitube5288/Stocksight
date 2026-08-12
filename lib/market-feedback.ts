@@ -183,7 +183,19 @@ ${gainingLines}
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Gemini 응답 파싱 실패')
 
-  const parsed = JSON.parse(jsonMatch[0])
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(jsonMatch[0])
+  } catch {
+    // JSON이 중간에 잘린 경우 analyses 배열만 부분 복구 시도
+    const partial = jsonMatch[0].replace(/,?\s*\{[^{}]*$/, '').replace(/,?\s*\[$/, '')
+    const fixAttempt = partial.endsWith(']') ? partial + '}}' : partial + ']}}'
+    try {
+      parsed = JSON.parse(fixAttempt)
+    } catch {
+      throw new Error(`Gemini JSON 파싱 실패 (position 오류): ${jsonMatch[0].slice(0, 200)}`)
+    }
+  }
   const analysisMap = new Map<string, Record<string, unknown>>(
     (parsed.analyses ?? []).map((a: Record<string, unknown>) => [a.ticker as string, a])
   )
