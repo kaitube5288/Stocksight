@@ -661,6 +661,14 @@ export default function PortfolioSection() {
                     </div>
                   </div>
 
+                  {/* 계좌 총 자산 = 계좌평가 + 보유현금 */}
+                  <div className="mt-auto pt-2.5">
+                    <div className="rounded-xl px-3 py-2 flex items-center justify-between" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)' }}>
+                      <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>계좌 총 자산</span>
+                      <span className="mono text-sm font-bold" style={{ color: '#a78bfa' }}>{Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원</span>
+                    </div>
+                  </div>
+
                 </div>
               )
             })}
