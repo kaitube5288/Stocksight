@@ -497,29 +497,37 @@ export default function PortfolioSection() {
           <div className="flex gap-3 items-stretch">
             {/* 왼쪽: 지표 (2줄 레이아웃 — 상: 총수익률/총손익금/현금합계, 하: 총평가금액/총자산) */}
             <div className="flex-1 min-w-0 flex flex-col">
-              <div className="grid grid-cols-3 gap-2 mb-2">
-                {[
-                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
-                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
-                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="text-center">
-                    <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                {[
-                  { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
-                  { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="text-center">
-                    <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
-                  </div>
-                ))}
-              </div>
+              {(() => {
+                const profitBg     = totalCost > 0 ? (totalProfitPct > 0 ? 'rgba(255,92,92,0.09)' : totalProfitPct < 0 ? 'rgba(77,166,255,0.09)' : 'rgba(255,255,255,0.04)') : 'rgba(255,255,255,0.04)'
+                const profitBorder = totalCost > 0 ? (totalProfitPct > 0 ? 'rgba(255,92,92,0.22)' : totalProfitPct < 0 ? 'rgba(77,166,255,0.22)' : 'rgba(255,255,255,0.08)') : 'rgba(255,255,255,0.08)'
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      {[
+                        { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct), bg: profitBg, border: profitBorder },
+                        { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct), bg: profitBg, border: profitBorder },
+                        { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)', bg: 'rgba(255,201,77,0.1)', border: 'rgba(255,201,77,0.27)' },
+                      ].map(({ label, value, color, bg, border }) => (
+                        <div key={label} className="rounded-xl p-2 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                          <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                          <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      {[
+                        { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: '#ff5c5c', bg: 'rgba(255,92,92,0.09)', border: 'rgba(255,92,92,0.22)' },
+                        { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.3)' },
+                      ].map(({ label, value, color, bg, border }) => (
+                        <div key={label} className="rounded-xl p-2 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
+                          <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                          <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
+              })()}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1.5 mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                 <div>
                   <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
@@ -663,9 +671,9 @@ export default function PortfolioSection() {
 
                   {/* 계좌 총 자산 = 계좌평가 + 보유현금 */}
                   <div className="mt-auto pt-2.5">
-                    <div className="rounded-xl px-3 py-2 flex items-center justify-between" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)' }}>
-                      <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>계좌 총 자산</span>
-                      <span className="mono text-sm font-bold" style={{ color: '#a78bfa' }}>{Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원</span>
+                    <div className="rounded-xl p-2 text-center" style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)' }}>
+                      <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>계좌 총 자산</div>
+                      <div className="mono text-[11px] font-semibold" style={{ color: '#a78bfa' }}>{Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원</div>
                     </div>
                   </div>
 
