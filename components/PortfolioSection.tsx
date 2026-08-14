@@ -853,7 +853,7 @@ export default function PortfolioSection() {
               onClick={() => runAdvice()}
               disabled={runningAdvice['all']}
               className="text-xs px-3 py-1.5 rounded-xl font-medium transition-all disabled:opacity-50"
-              style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa' }}
+              style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
             >
               {runningAdvice['all'] ? '⏳ 실행 중…' : '전체조언실행'}
             </button>

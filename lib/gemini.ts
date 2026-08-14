@@ -461,6 +461,7 @@ export type PortfolioAdviceInput = {
   account_name?: string
   ticker: string
   name: string
+  sector?: string
   avg_price: number
   shares: number
   current_price: number
@@ -471,8 +472,17 @@ export type PortfolioAdviceInput = {
     trend: string | null
     volumeSurge: number | null
     bollingerSignal: string | null
+    bollingerWidth: number | null
     prevDayChangePct: number | null
+    supportLevel: number | null
+    resistanceLevel: number | null
+    isNearHighBreakout: boolean
+    candlePattern: string | null
+    foreignNet: number | null
+    institutionNet: number | null
   }
+  recentPrices?: number[]           // 최근 5일 종가 (오래된 → 최신)
+  newsHeadlines?: string[]          // 최근 종목 관련 뉴스 헤드라인 3~5개
   history: Array<{ date: string; advice_type: string; advice_detail: string }>
 }
 
@@ -499,11 +509,53 @@ export async function generatePortfolioAdvice(params: {
       ? item.history.slice(-14).reverse().map(h => `  ${h.date}: [${h.advice_type}] ${h.advice_detail.slice(0, 80)}`).join('\n')
       : '  (이력 없음)'
     const acctLabel = item.account_name ? ` — ${item.account_name}` : ''
-    return `### [${item.item_key}] ${item.name} (${item.ticker})${acctLabel}
+    const sectorLabel = item.sector ? ` / 섹터: ${item.sector}` : ''
+
+    // 지지선/저항선 상대 위치 (현재가가 지지선~저항선 사이 어디 있는지)
+    const supText = item.tech.supportLevel != null
+      ? `${item.tech.supportLevel.toLocaleString('ko-KR')}원 (현재가 대비 ${(((item.current_price - item.tech.supportLevel) / item.current_price) * 100).toFixed(1)}% 위)`
+      : 'N/A'
+    const resText = item.tech.resistanceLevel != null
+      ? `${item.tech.resistanceLevel.toLocaleString('ko-KR')}원 (현재가 대비 ${(((item.tech.resistanceLevel - item.current_price) / item.current_price) * 100).toFixed(1)}% 남음)`
+      : 'N/A'
+
+    // 최근 5일 종가 흐름 (오래된 → 최신)
+    const priceFlow = item.recentPrices && item.recentPrices.length >= 2
+      ? item.recentPrices.map(p => p.toLocaleString('ko-KR')).join(' → ')
+      : 'N/A'
+    const priceFlowPct = item.recentPrices && item.recentPrices.length >= 2
+      ? ` (${((item.recentPrices[item.recentPrices.length - 1] - item.recentPrices[0]) / item.recentPrices[0] * 100).toFixed(1)}%)`
+      : ''
+
+    // 외국인/기관 수급
+    const foreignText  = item.tech.foreignNet != null ? `${item.tech.foreignNet >= 0 ? '+' : ''}${item.tech.foreignNet.toLocaleString('ko-KR')}주` : 'N/A'
+    const instText     = item.tech.institutionNet != null ? `${item.tech.institutionNet >= 0 ? '+' : ''}${item.tech.institutionNet.toLocaleString('ko-KR')}주` : 'N/A'
+    const netFlowNote  = (item.tech.foreignNet != null && item.tech.institutionNet != null)
+      ? (item.tech.foreignNet > 0 && item.tech.institutionNet > 0 ? ' [🟢 쌍매수]'
+        : item.tech.foreignNet < 0 && item.tech.institutionNet < 0 ? ' [🔴 쌍매도]'
+        : '')
+      : ''
+
+    const newsText = item.newsHeadlines && item.newsHeadlines.length > 0
+      ? item.newsHeadlines.slice(0, 5).map(n => `  • ${n}`).join('\n')
+      : '  (관련 뉴스 없음)'
+
+    const bbWidthText = item.tech.bollingerWidth != null ? `${item.tech.bollingerWidth.toFixed(1)}%` : 'N/A'
+    const candleText  = item.tech.candlePattern ?? 'N/A'
+    const breakoutText = item.tech.isNearHighBreakout ? ' ⚠️ 신고가 근접' : ''
+
+    return `### [${item.item_key}] ${item.name} (${item.ticker})${acctLabel}${sectorLabel}
 - 평균단가: ${item.avg_price.toLocaleString('ko-KR')}원 / 현재가: ${item.current_price.toLocaleString('ko-KR')}원 / 수익률: ${pl}
 - 보유수량: ${item.shares.toLocaleString()}주 / 평가금액: ${evalAmt}원
-- RSI14: ${item.tech.rsi14?.toFixed(0) ?? 'N/A'} | MACD: ${item.tech.macdSignal ?? 'N/A'} | 추세: ${item.tech.trend ?? 'N/A'}
-- 볼린저: ${item.tech.bollingerSignal ?? 'N/A'} | 거래량배율: ${item.tech.volumeSurge?.toFixed(1) ?? 'N/A'}x | 전일등락: ${item.tech.prevDayChangePct != null ? `${item.tech.prevDayChangePct.toFixed(1)}%` : 'N/A'}
+- 최근 5일 종가: ${priceFlow}${priceFlowPct}
+- RSI14: ${item.tech.rsi14?.toFixed(0) ?? 'N/A'} | MACD: ${item.tech.macdSignal ?? 'N/A'} | 추세: ${item.tech.trend ?? 'N/A'}${breakoutText}
+- 볼린저 신호: ${item.tech.bollingerSignal ?? 'N/A'} / 밴드폭: ${bbWidthText} | 캔들패턴: ${candleText}
+- 거래량배율: ${item.tech.volumeSurge?.toFixed(1) ?? 'N/A'}x | 전일등락: ${item.tech.prevDayChangePct != null ? `${item.tech.prevDayChangePct.toFixed(1)}%` : 'N/A'}
+- 지지선: ${supText}
+- 저항선: ${resText}
+- 수급: 외국인 ${foreignText} / 기관 ${instText}${netFlowNote}
+- 종목 관련 최근 뉴스:
+${newsText}
 - 과거 조언 이력 (최근 14일, 최신순):
 ${histText}`
   }).join('\n\n')
@@ -522,19 +574,32 @@ ${params.cash.toLocaleString('ko-KR')}원
 ## 보유 종목 현황
 ${itemsText}
 
-## 조언 기준
-- 수익률 -15% 이상 하락 + 하락추세 지속: 손절고려 (과거 이력에 물타기 권유 반복 시 특히 강조)
-- 수익률 -5%~-15% + RSI ≤ 40 + 지지선 근접: 물타기 (현금 보유량 고려)
-- RSI ≤ 35 + 거래량 증가 + 손실 미미: 추매 검토
-- RSI ≥ 65 + 볼린저 상단 근접: 분할매도 권고
-- 수익률 +20% 이상: 분할매도 검토 (절반 이상 실현 권고)
-- 과거 이력 패턴 반드시 반영: 예) "3일 연속 물타기 권유 후 계속 하락 → 이번엔 손절 또는 보유만 유지"
-- 매수 금액은 반드시 보유 현금 기준 비율로 제시 (예: "현금의 30% 추매")
-- 매도는 보유 주수 기준 비율로 제시 (예: "보유 주수의 50% 분할매도")
-- advice_detail은 2~3문장, 구체적 행동(가격·비율·이유) 포함
-- 손절고려 시: 반드시 "XX,XXX원 하회 시 손절 검토" 형식으로 구체적 손절 가격 제시
-- 분할매도 시: "XX,XXX원 이상에서 N주(보유의 N%) 매도" 형식으로 목표가 명시
-- 물타기/추매 시: "XX,XXX원 이하 도달 시 현금의 N% 추가매수" 형식으로 매수 기준가 명시
+## 판단 우선순위 (반드시 순서대로 종합 검토)
+1. **시장 흐름 반영**: 오늘 시장 전망(위 marketOutlook)이 강세면 매도 신중, 약세면 손절 기준 강화
+2. **종목 뉴스 임팩트**: 관련 뉴스에 실적 서프라이즈/악재/규제/수주 등 명시적 이벤트가 있으면 우선 반영
+3. **수급 흐름**: 외국인+기관 쌍매수(🟢) = 강한 매수 시그널 / 쌍매도(🔴) = 단기 하락 압력 → 보유유지/매도 판단에 반영
+4. **지지선/저항선 위치**: 현재가가 지지선 5% 이내면 반등 가능성(추매·물타기 근거), 저항선 5% 이내면 조정 대비(분할매도 근거)
+5. **최근 5일 가격 흐름**: 3일 이상 연속 하락 후 반등 캔들(hammer, bullish_engulfing) → 추매 근거 / 3일 이상 상승 후 상단 캔들(shooting_star, doji) → 분할매도 근거
+6. **과거 조언 이력 학습**: 3일 연속 같은 조언 후에도 개선 없으면 반대 조언 고려 (예: 물타기 3회 반복 후 -20% 지속 → 손절고려)
+
+## 조언 기준 (기술적 조합)
+- 손절고려: 수익률 -15% 이하 + (하락추세 + MACD sell + 지지선 하향 이탈) — 지지선 있으면 "지지선 XX원 하회 시 손절" 명시
+- 물타기: 수익률 -5%~-15% + RSI 30~45 + 지지선 5% 이내 + 현금 여유 (쌍매도면 보류)
+- 추매: 수익률 -3% 이상 + RSI 30~50 + 거래량 1.5배 이상 + (뉴스 호재 OR 쌍매수)
+- 분할매도: RSI ≥ 65 + 볼린저 상단 근접 + (저항선 3% 이내 OR shooting_star/bearish_engulfing)
+- 수익률 +20% 이상: 신고가 근접 아니면 절반 실현, 신고가 돌파 시 1/3만 실현 후 잔량 트레일링
+- 보유유지: 위 조건 어디에도 명확히 해당 안 되거나, 쌍매수 + 뉴스 호재 지속
+
+## 필수 출력 형식 (advice_detail)
+- **2~4문장**, 다음 요소 모두 포함:
+  a) 판단 근거 1문장 (시장·뉴스·수급·기술 중 핵심 2가지 언급)
+  b) 구체적 행동 1문장 (가격·주수·비율)
+  c) 리스크/대안 1문장 ("만약 XX원 하회 시 …")
+- 손절고려: "지지선 XX,XXX원 하회 시 전량 손절 검토" 필수
+- 분할매도: "저항선 XX,XXX원 근접 시 보유 주수의 N% (N주) 매도" 필수
+- 물타기/추매: "지지선 XX,XXX원 이하 도달 시 현금의 N% (약 M원) 매수" 필수
+- 보유유지: "쌍매수 지속·뉴스 호재 유효 시까지 보유, XX원 하회 시 재검토"
+- 매수 금액은 보유 현금 기준 비율 / 매도는 보유 주수 기준 비율로 제시
 
 ## 응답 형식 (JSON만, 다른 텍스트 없음)
 \`\`\`json

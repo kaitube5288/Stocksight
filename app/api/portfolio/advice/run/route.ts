@@ -3,6 +3,8 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate } from '@/lib/date'
 import { generatePortfolioAdvice } from '@/lib/gemini'
 import { fetchTechnicalIndicators, fetchNaverData } from '@/lib/stock-data'
+import { fetchStockNewsHeadlines } from '@/lib/market-feedback'
+import { STOCK_MAP } from '@/lib/major-stocks'
 
 export async function POST(request: Request) {
   const supabaseAdmin = getSupabaseAdmin()
@@ -36,8 +38,8 @@ export async function POST(request: Request) {
 
     const allTickers = [...new Set(portfolioItems.map(p => (p as { ticker: string }).ticker))]
 
-    // 3. 기술적 지표 + 현재가 + 이력 병렬 조회
-    const [techResults, priceResults, historyData] = await Promise.all([
+    // 3. 기술적 지표 + 현재가 + 이력 + 종목별 뉴스 병렬 조회
+    const [techResults, priceResults, historyData, newsResults] = await Promise.all([
       Promise.all(portfolioItems.map(p => fetchTechnicalIndicators((p as { ticker: string }).ticker).catch(() => null))),
       Promise.all(portfolioItems.map(p => fetchNaverData((p as { ticker: string }).ticker).catch(() => ({ price: null })))),
       supabaseAdmin
@@ -46,6 +48,10 @@ export async function POST(request: Request) {
         .in('ticker', allTickers)
         .order('date', { ascending: false })
         .limit(14 * portfolioItems.length),
+      Promise.all(portfolioItems.map(p => {
+        const item = p as { ticker: string; name: string }
+        return fetchStockNewsHeadlines(item.ticker, item.name).catch(() => [])
+      })),
     ])
 
     const historyMap: Record<string, { date: string; advice_type: string; advice_detail: string }[]> = {}
@@ -61,11 +67,13 @@ export async function POST(request: Request) {
       const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
       const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
       const tech = techResults[i]
+      const sector = STOCK_MAP[item.ticker]?.sector
       return {
         item_key: String(i),
         account_name: item.account_id ? accountMap[item.account_id] : undefined,
         ticker: item.ticker,
         name: item.name,
+        sector,
         avg_price: item.avg_price,
         shares: item.shares,
         current_price: currentPrice,
@@ -76,8 +84,16 @@ export async function POST(request: Request) {
           trend: tech?.trend ?? null,
           volumeSurge: tech?.volumeSurge ?? null,
           bollingerSignal: tech?.bollingerSignal ?? null,
+          bollingerWidth: tech?.bollingerWidth ?? null,
           prevDayChangePct: tech?.prevDayChangePct ?? null,
+          supportLevel: tech?.supportLevel ?? null,
+          resistanceLevel: tech?.resistanceLevel ?? null,
+          isNearHighBreakout: tech?.isNearHighBreakout ?? false,
+          candlePattern: tech?.candlePattern ?? null,
+          foreignNet: tech?.foreignNet ?? null,
+          institutionNet: tech?.institutionNet ?? null,
         },
+        newsHeadlines: newsResults[i] ?? [],
         history: (historyMap[item.id] ?? historyMap[item.ticker] ?? []).slice(0, 14),
       }
     })
