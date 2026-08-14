@@ -626,9 +626,9 @@ export default function PortfolioSection() {
 
               return (
                 <div key={acc.id} className="rounded-2xl p-4 h-full" style={{ minHeight: '280px', display: 'grid', gridTemplateRows: 'auto 1fr 1fr 1fr', gap: '10px', background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: `0 0 28px ${theme.shadow}` }}>
-                  {/* 헤더 (auto) */}
-                  <div className="flex items-center justify-between">
-                    <div>
+                  {/* 헤더 (auto) — 계좌명 가운데 정렬, 편집/삭제는 우측 절대위치 */}
+                  <div className="relative flex items-center justify-center">
+                    <div className="text-center">
                       <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
                       {acc.brokerage && acc.brokerage !== 'etc' && (
                         <div className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
@@ -636,7 +636,7 @@ export default function PortfolioSection() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                       <button onClick={() => startEditAccount(acc)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-muted)' }}>편집</button>
                       <button onClick={() => acc.id && deleteAccount(acc.id)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,92,92,0.1)', border: '1px solid rgba(255,92,92,0.3)', color: 'var(--accent-red)' }}>삭제</button>
                     </div>
