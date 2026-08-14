@@ -495,14 +495,23 @@ export default function PortfolioSection() {
       {(items.length > 0 || accounts.length > 0) && (
         <div className="rounded-2xl p-3 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
           <div className="flex gap-3 items-stretch">
-            {/* 왼쪽: 지표 */}
+            {/* 왼쪽: 지표 (2줄 레이아웃 — 상: 총수익률/총손익금/현금합계, 하: 총평가금액/총자산) */}
             <div className="flex-1 min-w-0 flex flex-col">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {[
+                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
+                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
+                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="text-center">
+                    <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
                 {[
                   { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
-                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
-                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
-                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
                   { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="text-center">
@@ -531,17 +540,17 @@ export default function PortfolioSection() {
               </div>
             </div>
             {/* 오른쪽: 일별 평가금액 그래프 (더 넓게) */}
-            <div className="w-64 sm:w-80 shrink-0">
+            <div className="w-96 sm:w-[28rem] shrink-0">
               <div className="text-[10px] mb-1 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
               {graphData.length >= 2 ? (
                 <ResponsiveContainer width="100%" height={110}>
                   <LineChart data={graphData} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="date" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                     <YAxis
-                      tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }}
+                      tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }}
                       axisLine={false}
                       tickLine={false}
-                      width={38}
+                      width={42}
                       domain={['auto', 'auto']}
                       tickFormatter={(v: number) => `${Math.round(v / 1000).toLocaleString()}k`}
                     />
