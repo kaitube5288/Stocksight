@@ -491,7 +491,87 @@ export default function PortfolioSection() {
         </div>
       </div>
 
-      {/* ===== 1. 계좌 관리 섹션 ===== */}
+      {/* ===== 1. 총 자산 요약 (맨 위) ===== */}
+      {(items.length > 0 || accounts.length > 0) && (
+        <div className="rounded-2xl p-3 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
+          <div className="flex gap-3 items-stretch">
+            {/* 왼쪽: 지표 */}
+            <div className="flex-1 min-w-0 flex flex-col">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">
+                {[
+                  { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
+                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
+                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
+                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
+                  { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="text-center">
+                    <div className="text-[10px] mb-0.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1.5 mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
+                  <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(totalCost).toLocaleString('ko-KR')}원</span>
+                </div>
+                {totalCurrentInv > 0 && (
+                  <div>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원금 합계&nbsp;&nbsp;</span>
+                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
+                  </div>
+                )}
+                {totalAdditionalInv > 0 && (
+                  <div>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>추가투자금 합계&nbsp;&nbsp;</span>
+                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => runAdvice()}
+                  disabled={runningAdvice['all']}
+                  className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
+                  style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
+                >
+                  {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
+                </button>
+              </div>
+            </div>
+            {/* 오른쪽: 일별 평가금액 그래프 (더 넓게) */}
+            <div className="w-64 sm:w-80 shrink-0">
+              <div className="text-[10px] mb-1 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
+              {graphData.length >= 2 ? (
+                <ResponsiveContainer width="100%" height={110}>
+                  <LineChart data={graphData} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                    <YAxis
+                      tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={38}
+                      domain={['auto', 'auto']}
+                      tickFormatter={(v: number) => `${Math.round(v / 1000).toLocaleString()}k`}
+                    />
+                    <Tooltip
+                      contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}
+                      formatter={(v: unknown) => [`₩${Number(v).toLocaleString()}`, '평가금액']}
+                    />
+                    <Line type="monotone" dataKey="value" stroke="#a78bfa" dot={false} strokeWidth={1.5} activeDot={{ r: 3, fill: '#a78bfa' }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center" style={{ height: '110px' }}>
+                  <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>데이터 수집 중</div>
+                  <div className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.15)' }}>방문마다 기록됩니다</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 2. 계좌 관리 섹션 ===== */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>계좌 관리</span>
@@ -662,80 +742,8 @@ export default function PortfolioSection() {
         )}
       </div>
 
-      {/* ===== 2. 총 자산 요약 ===== */}
-      {(items.length > 0 || accounts.length > 0) && (
-        <div className="rounded-2xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
-          <div className="flex gap-4 items-start">
-            {/* 왼쪽: 지표 */}
-            <div className="flex-1 min-w-0">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-                {[
-                  { label: '총 평가금액', value: `${Math.round(totalEval).toLocaleString('ko-KR')}원`, color: 'var(--text-primary)' },
-                  { label: '총 손익금', value: `${totalEval - totalCost >= 0 ? '+' : ''}${Math.round(totalEval - totalCost).toLocaleString('ko-KR')}원`, color: profitColor(totalProfitPct) },
-                  { label: '총 수익률', value: `${totalProfitPct >= 0 ? '+' : ''}${totalProfitPct.toFixed(2)}%`, color: profitColor(totalProfitPct) },
-                  { label: '현금 합계', value: `${Math.round(totalCash).toLocaleString('ko-KR')}원`, color: 'var(--accent-gold)' },
-                  { label: '총 자산', value: `${Math.round(totalAsset).toLocaleString('ko-KR')}원`, color: '#a78bfa' },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="text-center">
-                    <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>{label}</div>
-                    <div className="mono text-sm font-semibold" style={{ color }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 pt-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <div>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>총 매입금액&nbsp;&nbsp;</span>
-                  <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(totalCost).toLocaleString('ko-KR')}원</span>
-                </div>
-                {totalCurrentInv > 0 && (
-                  <div>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>원금 합계&nbsp;&nbsp;</span>
-                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{totalCurrentInv.toLocaleString('ko-KR')}원</span>
-                  </div>
-                )}
-                {totalAdditionalInv > 0 && (
-                  <div>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>추가투자금 합계&nbsp;&nbsp;</span>
-                    <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => runAdvice()}
-                  disabled={runningAdvice['all']}
-                  className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
-                  style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
-                >
-                  {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
-                </button>
-              </div>
-            </div>
-            {/* 오른쪽 1/3: 일별 평가금액 그래프 */}
-            <div className="w-36 sm:w-48 shrink-0">
-              <div className="text-[10px] mb-1.5 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
-              {graphData.length >= 2 ? (
-                <ResponsiveContainer width="100%" height={110}>
-                  <LineChart data={graphData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="date" tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.3)' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis hide domain={['auto', 'auto']} />
-                    <Tooltip
-                      contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}
-                      formatter={(v: unknown) => [`₩${Number(v).toLocaleString()}`, '평가금액']}
-                    />
-                    <Line type="monotone" dataKey="value" stroke="#a78bfa" dot={false} strokeWidth={1.5} activeDot={{ r: 3, fill: '#a78bfa' }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex flex-col items-center justify-center" style={{ height: '110px' }}>
-                  <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>데이터 수집 중</div>
-                  <div className="text-[9px] mt-1" style={{ color: 'rgba(255,255,255,0.15)' }}>방문마다 기록됩니다</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ===== 3. 종목 추가/수정 폼 ===== */}
+
       {showForm && (
         <div ref={formRef} className="glass rounded-2xl p-4 mb-4" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
           <div className="text-xs font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
