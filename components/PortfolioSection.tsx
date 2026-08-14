@@ -528,14 +528,6 @@ export default function PortfolioSection() {
                     <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent-green)' }}>{totalAdditionalInv.toLocaleString('ko-KR')}원</span>
                   </div>
                 )}
-                <button
-                  onClick={() => runAdvice()}
-                  disabled={runningAdvice['all']}
-                  className="ml-auto text-[10px] px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
-                  style={{ background: 'rgba(0,229,170,0.1)', border: '1px solid rgba(0,229,170,0.3)', color: 'var(--accent-green)' }}
-                >
-                  {runningAdvice['all'] ? '⏳ 실행 중…' : '▶ 전체 AI 조언 실행'}
-                </button>
               </div>
             </div>
             {/* 오른쪽: 일별 평가금액 그래프 (더 넓게) */}
@@ -849,13 +841,23 @@ export default function PortfolioSection() {
             <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>보유 종목</span>
             {items.length > 0 && <span className="mono text-[10px]" style={{ color: 'var(--text-muted)' }}>총 {items.length}개</span>}
           </div>
-          <button
-            onClick={openAdd}
-            className="text-xs px-3 py-1.5 rounded-xl font-medium transition-all"
-            style={{ background: 'rgba(0,229,170,0.12)', border: '1px solid rgba(0,229,170,0.35)', color: 'var(--accent-green)' }}
-          >
-            + 종목 추가
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openAdd}
+              className="text-xs px-3 py-1.5 rounded-xl font-medium transition-all"
+              style={{ background: 'rgba(0,229,170,0.12)', border: '1px solid rgba(0,229,170,0.35)', color: 'var(--accent-green)' }}
+            >
+              + 종목 추가
+            </button>
+            <button
+              onClick={() => runAdvice()}
+              disabled={runningAdvice['all']}
+              className="text-xs px-3 py-1.5 rounded-xl font-medium transition-all disabled:opacity-50"
+              style={{ background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa' }}
+            >
+              {runningAdvice['all'] ? '⏳ 실행 중…' : '전체조언실행'}
+            </button>
+          </div>
         </div>
 
         {items.length === 0 ? (
