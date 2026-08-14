@@ -604,7 +604,7 @@ export default function PortfolioSection() {
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>등록된 계좌가 없습니다. 계좌 추가를 눌러 등록하세요.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch" style={{ gridAutoRows: '1fr' }}>
             {accounts.map(acc => {
               const isEditing = editingAccountId === acc.id
               const accItems = itemsByAccount[acc.id ?? ''] ?? []
