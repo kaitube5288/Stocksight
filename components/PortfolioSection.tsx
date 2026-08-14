@@ -494,7 +494,7 @@ export default function PortfolioSection() {
       {/* ===== 1. 총 자산 요약 (맨 위) ===== */}
       {(items.length > 0 || accounts.length > 0) && (
         <div className="rounded-2xl p-3 mb-5" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 2px 20px rgba(0,0,0,0.25)' }}>
-          <div className="flex gap-3 items-stretch">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-stretch">
             {/* 왼쪽: 지표 (2줄 레이아웃 — 상: 총수익률/총손익금/현금합계, 하: 총평가금액/총자산) */}
             <div className="flex-1 min-w-0 flex flex-col">
               {(() => {
@@ -547,8 +547,8 @@ export default function PortfolioSection() {
                 )}
               </div>
             </div>
-            {/* 오른쪽: 일별 평가금액 그래프 (더 넓게) */}
-            <div className="w-96 sm:w-[28rem] shrink-0">
+            {/* 오른쪽: 일별 평가금액 그래프 (모바일은 전체폭, sm 이상은 고정폭) */}
+            <div className="w-full sm:w-80 md:w-96 lg:w-[28rem] shrink-0">
               <div className="text-[10px] mb-1 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
               {graphData.length >= 2 ? (
                 <ResponsiveContainer width="100%" height={110}>
