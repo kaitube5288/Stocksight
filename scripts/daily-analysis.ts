@@ -10,6 +10,13 @@ import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFro
 import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 
+// 주말 체크 — route.ts GET 핸들러에는 있으나 독립 스크립트에 누락되어 추가
+const _kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+if (_kstNow.getDay() === 0 || _kstNow.getDay() === 6) {
+  console.log('[스킵] 주말 휴장 — 분석 생략')
+  process.exit(0)
+}
+
 async function runDailyAnalysis() {
   const supabaseAdmin = getSupabaseAdmin()
   const todayDate = getKSTDate()  // try 밖에 선언 — catch 블록에서도 참조 가능
@@ -327,7 +334,7 @@ async function runDailyAnalysis() {
     })
 
     // 4-1. trade_type 강제 할당
-    const SLOT_TYPES: ('단타' | '스윙' | '중기')[] = ['단타', '스윙', '스윙', '중기', '중기']
+    const SLOT_TYPES: ('단타' | '스윙' | '중기')[] = ['단타', '단타', '단타', '스윙', '스윙', '스윙', '중기', '중기', '중기']
     const HOLD_PERIODS: Record<string, string> = { '단타': '1일 목표', '스윙': '3~5일 목표', '중기': '2~4주 목표' }
     result.recommendations = result.recommendations.map((r, i) => {
       const trade_type = SLOT_TYPES[i] ?? '중기'
@@ -529,6 +536,33 @@ async function runDailyAnalysis() {
       }
       return r
     })
+
+    // Method D: probability 기반 최종 선택 — 코드가 결정적으로 각 유형별 top N 선택
+    {
+      const finalRecs: typeof result.recommendations = []
+      for (const [type, quota] of [['단타', 1], ['스윙', 2], ['중기', 2]] as [string, number][]) {
+        const tradeType = type as '단타' | '스윙' | '중기'
+        const typeRecs = result.recommendations
+          .filter(r => r.trade_type === tradeType)
+          .sort((a, b) => {
+            if (a.ticker === '000000' && b.ticker !== '000000') return 1
+            if (b.ticker === '000000' && a.ticker !== '000000') return -1
+            return (b.probability ?? 0) - (a.probability ?? 0)
+          })
+          .slice(0, quota)
+        finalRecs.push(...typeRecs)
+        for (let i = typeRecs.length; i < quota; i++) {
+          finalRecs.push({
+            name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
+            expected_return: 0, probability: 0, trade_type: tradeType,
+            hold_period: tradeType === '단타' ? '1일 목표' : tradeType === '스윙' ? '3~5일 목표' : '2~4주 목표',
+            reasoning: '유효한 후보 없음 — 현금 보유 권고',
+            key_catalyst: '조건 미달', per: null, pbr: null, roe: null,
+          })
+        }
+      }
+      result.recommendations = finalRecs
+    }
 
     if (isTrueBullMarket && !result.market_outlook.startsWith('[불장 감지]')) {
       result.market_outlook = `[불장 감지] ${result.market_outlook}`

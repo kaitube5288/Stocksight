@@ -394,7 +394,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0=단타, 1~2=스윙, 3~4=중기)
-    const SLOT_TYPES: ('단타' | '스윙' | '중기')[] = ['단타', '스윙', '스윙', '중기', '중기']
+    const SLOT_TYPES: ('단타' | '스윙' | '중기')[] = ['단타', '단타', '단타', '스윙', '스윙', '스윙', '중기', '중기', '중기']
     const HOLD_PERIODS: Record<string, string> = { '단타': '1일 목표', '스윙': '3~5일 목표', '중기': '2~4주 목표' }
     result.recommendations = result.recommendations.map((r, i) => {
       const trade_type = SLOT_TYPES[i] ?? '중기'
@@ -616,6 +616,33 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       }
       return r
     })
+
+    // Method D: probability 기반 최종 선택 — 코드가 결정적으로 각 유형별 top N 선택
+    {
+      const finalRecs: typeof result.recommendations = []
+      for (const [type, quota] of [['단타', 1], ['스윙', 2], ['중기', 2]] as [string, number][]) {
+        const tradeType = type as '단타' | '스윙' | '중기'
+        const typeRecs = result.recommendations
+          .filter(r => r.trade_type === tradeType)
+          .sort((a, b) => {
+            if (a.ticker === '000000' && b.ticker !== '000000') return 1
+            if (b.ticker === '000000' && a.ticker !== '000000') return -1
+            return (b.probability ?? 0) - (a.probability ?? 0)
+          })
+          .slice(0, quota)
+        finalRecs.push(...typeRecs)
+        for (let i = typeRecs.length; i < quota; i++) {
+          finalRecs.push({
+            name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
+            expected_return: 0, probability: 0, trade_type: tradeType,
+            hold_period: tradeType === '단타' ? '1일 목표' : tradeType === '스윙' ? '3~5일 목표' : '2~4주 목표',
+            reasoning: '유효한 후보 없음 — 현금 보유 권고',
+            key_catalyst: '조건 미달', per: null, pbr: null, roe: null,
+          })
+        }
+      }
+      result.recommendations = finalRecs
+    }
 
     // 시장 구조 태그 삽입 (Gemini 표현에 의존하지 않고 확정적으로 붙임)
     if (isTrueBullMarket && !result.market_outlook.startsWith('[불장 감지]')) {
