@@ -1402,19 +1402,25 @@ function StockCard({
           </div>
           <p className="text-xs leading-relaxed mb-2" style={{ color: 'var(--text-secondary)' }}>{currentAdvice.advice_detail}</p>
 
-          {/* 강화 필드: 목표가/손절가 (2열 그리드) */}
-          {(currentAdvice.target_price != null || currentAdvice.stop_loss_price != null) && (
-            <div className="grid grid-cols-2 gap-2 mb-2">
+          {/* 강화 필드: 목표가 / 손절가 / 심리코칭 (한 줄 flex 레이아웃) */}
+          {(currentAdvice.target_price != null || currentAdvice.stop_loss_price != null || currentAdvice.psychology_note) && (
+            <div className="flex gap-2 mb-2 items-stretch">
               {currentAdvice.target_price != null && (
-                <div className="rounded-lg p-1.5" style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.3)' }}>
+                <div className="flex-1 min-w-0 rounded-lg p-1.5" style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.3)' }}>
                   <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🎯 목표가</div>
                   <div className="mono text-sm font-bold" style={{ color: '#00e5aa' }}>{currentAdvice.target_price.toLocaleString('ko-KR')}원</div>
                 </div>
               )}
               {currentAdvice.stop_loss_price != null && (
-                <div className="rounded-lg p-1.5" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.3)' }}>
+                <div className="flex-1 min-w-0 rounded-lg p-1.5" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.3)' }}>
                   <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🛑 손절가</div>
                   <div className="mono text-sm font-bold" style={{ color: '#ff5c5c' }}>{currentAdvice.stop_loss_price.toLocaleString('ko-KR')}원</div>
+                </div>
+              )}
+              {currentAdvice.psychology_note && (
+                <div className="flex-[2] min-w-0 rounded-lg p-1.5" style={{ background: 'rgba(255,201,77,0.1)', border: '1px solid rgba(255,201,77,0.35)' }}>
+                  <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>⚠️ 심리 코칭</div>
+                  <div className="text-[10px] font-semibold leading-tight" style={{ color: '#ffc94d' }}>{currentAdvice.psychology_note}</div>
                 </div>
               )}
             </div>
@@ -1427,12 +1433,6 @@ function StockCard({
             </div>
           )}
 
-          {/* 강화 필드: 심리 코칭 (경고) */}
-          {currentAdvice.psychology_note && (
-            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(255,201,77,0.1)', border: '1px solid rgba(255,201,77,0.35)' }}>
-              <span className="text-[10px] font-semibold" style={{ color: '#ffc94d' }}>⚠️ {currentAdvice.psychology_note}</span>
-            </div>
-          )}
 
           {/* 강화 필드: 대안 종목 */}
           {currentAdvice.alternatives && currentAdvice.alternatives.length > 0 && (
