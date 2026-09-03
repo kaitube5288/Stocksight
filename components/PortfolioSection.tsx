@@ -1384,10 +1384,16 @@ function StockCard({
                 {currentAdvice.source === 'manual' ? '수동' : '자동'}
               </span>
               {currentAdvice.confidence_score != null && (
-                <span className="text-[10px] font-semibold" style={{
+                <span className="text-sm font-bold ml-4 px-2 py-0.5 rounded-md" style={{
                   color: currentAdvice.confidence_score >= 80 ? '#00e5aa'
                     : currentAdvice.confidence_score >= 60 ? '#ffc94d'
-                    : '#ff8888'
+                    : '#ff8888',
+                  background: currentAdvice.confidence_score >= 80 ? 'rgba(0,229,170,0.1)'
+                    : currentAdvice.confidence_score >= 60 ? 'rgba(255,201,77,0.1)'
+                    : 'rgba(255,136,136,0.1)',
+                  border: `1px solid ${currentAdvice.confidence_score >= 80 ? 'rgba(0,229,170,0.35)'
+                    : currentAdvice.confidence_score >= 60 ? 'rgba(255,201,77,0.35)'
+                    : 'rgba(255,136,136,0.35)'}`,
                 }}>
                   확신도 {currentAdvice.confidence_score}%
                 </span>
