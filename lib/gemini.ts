@@ -632,6 +632,111 @@ ${itemsText}
   }
 }
 
+// ===== 계좌별 종합 조언 (섹터 집중도·현금 비중·리스크 분산 관점) =====
+
+export type AccountAdviceInput = {
+  account_id: string
+  account_name: string
+  cash: number
+  total_asset: number
+  profit_pct: number
+  items: Array<{
+    ticker: string
+    name: string
+    sector: string | null
+    eval_amount: number
+    profit_pct: number
+  }>
+}
+
+export type AccountAdviceResult = {
+  account_id: string
+  advice_summary: string
+  risk_level: '낮음' | '중간' | '높음'
+  sector_concentration: Record<string, number>
+}
+
+export async function generateAccountAdvice(params: {
+  accounts: AccountAdviceInput[]
+  marketOutlook: string
+  date: string
+}): Promise<AccountAdviceResult[]> {
+  if (params.accounts.length === 0) return []
+
+  const accountsText = params.accounts.map(acc => {
+    const cashPct = acc.total_asset > 0 ? (acc.cash / acc.total_asset * 100).toFixed(1) : '0'
+    const sectorMap: Record<string, number> = {}
+    for (const item of acc.items) {
+      const sec = item.sector ?? '기타'
+      sectorMap[sec] = (sectorMap[sec] ?? 0) + item.eval_amount
+    }
+    const totalEval = acc.items.reduce((s, i) => s + i.eval_amount, 0)
+    const sectorPct = Object.entries(sectorMap)
+      .map(([sec, amt]) => `${sec} ${totalEval > 0 ? (amt / totalEval * 100).toFixed(0) : 0}%`)
+      .join(' / ')
+    const itemsList = acc.items
+      .map(i => `  - ${i.name}(${i.ticker}) [${i.sector ?? '기타'}] 평가 ${i.eval_amount.toLocaleString('ko-KR')}원 (${i.profit_pct >= 0 ? '+' : ''}${i.profit_pct.toFixed(1)}%)`)
+      .join('\n')
+
+    return `### [${acc.account_id}] ${acc.account_name}
+- 총 자산: ${acc.total_asset.toLocaleString('ko-KR')}원 / 현금: ${acc.cash.toLocaleString('ko-KR')}원 (${cashPct}%)
+- 전체 수익률: ${acc.profit_pct >= 0 ? '+' : ''}${acc.profit_pct.toFixed(2)}%
+- 섹터 비중: ${sectorPct || '(보유 종목 없음)'}
+- 보유 종목:
+${itemsList || '  (없음)'}`
+  }).join('\n\n')
+
+  const prompt = `당신은 한국 주식 포트폴리오 리스크 관리 전문가입니다.
+각 계좌(증권사)의 종합 현황을 분석하여, 계좌별 오늘의 위험 관리 조언을 2~3문장으로 제시하세요.
+
+## 오늘 날짜: ${params.date}
+
+## 오늘 시장 전망
+${params.marketOutlook}
+
+## 계좌별 현황
+${accountsText}
+
+## 판단 기준
+1. **섹터 집중도**: 단일 섹터 50%↑ = 과집중 위험 → 방어주/다른 섹터 편입 권장
+2. **현금 비중**: 하락장 예상 시 10%↑ 확보 권장, 강세장이면 3~5%도 OK
+3. **수익 편중**: 특정 종목이 계좌의 40%↑ 차지 → 분산 권장
+4. **손실 종목 다수**: 3개 이상 -10% 이하 → 리밸런싱 검토
+
+## 리스크 레벨 판정
+- **낮음**: 섹터 3개 이상 분산 + 현금 5%↑ + 손실 종목 2개 이하
+- **중간**: 특정 섹터 40~60% + 현금 3~5% + 손실 종목 3~4개
+- **높음**: 단일 섹터 60%↑ OR 현금 3% 미만 OR 손실 종목 5개↑
+
+## 응답 형식 (JSON만, 다른 텍스트 없음)
+\`\`\`json
+{
+  "accounts": [
+    {
+      "account_id": "헤더의 [UUID] 그대로",
+      "advice_summary": "2~3문장 조언 (섹터·현금·리밸런싱 관점 구체적으로)",
+      "risk_level": "낮음|중간|높음",
+      "sector_concentration": {"반도체": 65, "IT": 20, "방어주": 15}
+    }
+  ]
+}
+\`\`\``
+
+  const text = await callGemini(prompt)
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
+  const raw = jsonMatch[1] ?? jsonMatch[0]
+  if (!raw) {
+    console.error('[Gemini account advice] JSON 파싱 실패 — 응답 앞 200자:', text.slice(0, 200))
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    return (parsed.accounts ?? []) as AccountAdviceResult[]
+  } catch {
+    return []
+  }
+}
+
 // ===== 동적 키워드 자동 학습 =====
 
 export type KeywordSuggestion = {

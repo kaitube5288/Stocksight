@@ -68,6 +68,8 @@ export default function PortfolioSection() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
+  const [accountAdvice, setAccountAdvice] = useState<Record<string, { summary: string; risk_level: string | null; created_at: string; date: string }>>({})
+  const [runningAccountAdvice, setRunningAccountAdvice] = useState(false)
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
   const snapshotSavedRef = useRef(false)
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
@@ -108,14 +110,16 @@ export default function PortfolioSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [portRes, advRes, txRes] = await Promise.all([
+      const [portRes, advRes, txRes, accAdvRes] = await Promise.all([
         fetch('/api/portfolio'),
         fetch('/api/portfolio/advice'),
         fetch('/api/portfolio/transactions'),
+        fetch('/api/portfolio/account-advice'),
       ])
       const portData = await portRes.json()
       const advData = await advRes.json()
       const txData = await txRes.json()
+      const accAdvData = await accAdvRes.json()
       setItems(portData.items ?? [])
       setAccounts(portData.accounts ?? [])
       setTransactions(txData.transactions ?? [])
@@ -129,6 +133,15 @@ export default function PortfolioSection() {
       }
       setAdviceByItemId(byItemId)
       setHasToday(advData.hasToday ?? false)
+
+      // 계좌별 조언 → 계좌별 최신 1개
+      const accAdvMap: Record<string, { summary: string; risk_level: string | null; created_at: string; date: string }> = {}
+      for (const a of (accAdvData.advice ?? []) as { account_id: string; advice_summary: string; risk_level: string | null; created_at: string; date: string }[]) {
+        if (!accAdvMap[a.account_id]) {
+          accAdvMap[a.account_id] = { summary: a.advice_summary, risk_level: a.risk_level, created_at: a.created_at, date: a.date }
+        }
+      }
+      setAccountAdvice(accAdvMap)
 
       if (portData.items?.length) {
         fetchLive(portData.items.map((i: PortfolioItem) => i.ticker))
@@ -413,6 +426,30 @@ export default function PortfolioSection() {
     }
   }
 
+  const runAccountAdvice = async () => {
+    setRunningAccountAdvice(true)
+    try {
+      await fetch('/api/portfolio/account-advice/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'manual' }),
+      })
+      const res = await fetch('/api/portfolio/account-advice')
+      const data = await res.json()
+      const map: Record<string, { summary: string; risk_level: string | null; created_at: string; date: string }> = {}
+      for (const a of (data.advice ?? []) as { account_id: string; advice_summary: string; risk_level: string | null; created_at: string; date: string }[]) {
+        if (!map[a.account_id]) {
+          map[a.account_id] = { summary: a.advice_summary, risk_level: a.risk_level, created_at: a.created_at, date: a.date }
+        }
+      }
+      setAccountAdvice(map)
+    } catch {
+      setError('계좌 AI 조언 생성 실패')
+    } finally {
+      setRunningAccountAdvice(false)
+    }
+  }
+
   // ----- Advice navigation -----
   const navigateAdvice = (itemId: string, delta: number, listLength: number) => {
     setAdviceIdx(prev => {
@@ -624,12 +661,25 @@ export default function PortfolioSection() {
                 ? accProfitPct > 0 ? 'rgba(255,92,92,0.22)' : accProfitPct < 0 ? 'rgba(77,166,255,0.22)' : 'rgba(255,255,255,0.08)'
                 : 'rgba(255,255,255,0.08)'
 
+              const accAdv = acc.id ? accountAdvice[acc.id] : undefined
+              const riskColor = accAdv?.risk_level === '높음' ? '#ff5c5c' : accAdv?.risk_level === '중간' ? '#ffc94d' : '#00e5aa'
+              const riskBg    = accAdv?.risk_level === '높음' ? 'rgba(255,92,92,0.1)' : accAdv?.risk_level === '중간' ? 'rgba(255,201,77,0.1)' : 'rgba(0,229,170,0.1)'
+              const riskBorder = accAdv?.risk_level === '높음' ? 'rgba(255,92,92,0.3)' : accAdv?.risk_level === '중간' ? 'rgba(255,201,77,0.3)' : 'rgba(0,229,170,0.3)'
+              const adviceDateText = accAdv?.created_at
+                ? new Date(accAdv.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : null
+
               return (
                 <div key={acc.id} className="rounded-2xl p-4 h-full" style={{ minHeight: '280px', display: 'grid', gridTemplateRows: 'auto 1fr 1fr 1fr', gap: '10px', background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: `0 0 28px ${theme.shadow}` }}>
-                  {/* 헤더 (auto) — 계좌명 가운데 정렬, 편집/삭제는 우측 절대위치 */}
+                  {/* 헤더 (auto) — 계좌명 + 총 자산 가운데 정렬, 편집/삭제는 우측 절대위치 */}
                   <div className="relative flex items-center justify-center">
                     <div className="text-center">
-                      <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
+                      <div className="flex items-center gap-2 justify-center">
+                        <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
+                        <span className="mono text-[11px] font-semibold px-2 py-0.5 rounded-lg" style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)' }}>
+                          총 자산 {Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원
+                        </span>
+                      </div>
                       {acc.brokerage && acc.brokerage !== 'etc' && (
                         <div className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
                           {acc.brokerage} · 수수료 {acc.commission_rate ?? 0.015}%
@@ -670,10 +720,34 @@ export default function PortfolioSection() {
                     ))}
                   </div>
 
-                  {/* 행 3: 계좌 총 자산 (1fr) */}
-                  <div className="rounded-xl p-2 flex flex-col items-center justify-center" style={{ minHeight: 0, background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)' }}>
-                    <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>계좌 총 자산</div>
-                    <div className="mono text-[11px] font-semibold" style={{ color: '#a78bfa' }}>{Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원</div>
+                  {/* 행 3: AI 계좌 조언 (1fr) */}
+                  <div className="rounded-xl p-2 flex flex-col" style={{ minHeight: 0, background: riskBg, border: `1px solid ${riskBorder}` }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>💡 AI 계좌 조언</span>
+                        {accAdv?.risk_level && (
+                          <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded" style={{ color: riskColor, background: 'rgba(0,0,0,0.2)' }}>
+                            리스크 {accAdv.risk_level}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {adviceDateText && (
+                          <span className="text-[8px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{adviceDateText}</span>
+                        )}
+                        <button
+                          onClick={runAccountAdvice}
+                          disabled={runningAccountAdvice}
+                          className="text-[8px] px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: 'var(--text-muted)', opacity: runningAccountAdvice ? 0.5 : 1 }}
+                        >
+                          {runningAccountAdvice ? '생성중...' : '↻ 갱신'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-[10px] leading-snug flex-1" style={{ color: accAdv ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      {accAdv?.summary ?? 'AI 분석 대기 중 (매주 화/목 07:45 자동 생성 또는 갱신 버튼 클릭)'}
+                    </div>
                   </div>
 
                 </div>

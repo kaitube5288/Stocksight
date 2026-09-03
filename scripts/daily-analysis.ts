@@ -1,10 +1,10 @@
-import { generateRecommendations, analyzeEventBeneficiaries, generatePortfolioAdvice, suggestKeywordsFromNews } from '@/lib/gemini'
+import { generateRecommendations, analyzeEventBeneficiaries, generatePortfolioAdvice, suggestKeywordsFromNews, generateAccountAdvice, AccountAdviceInput } from '@/lib/gemini'
 import { getTodayDisclosures, formatDisclosuresForPrompt } from '@/lib/dart'
 import { getMarketIndex, getUSDKRW, getGoldPrice, getSimilarHistoricalPatterns, formatMarketContext, getRealPrices, getFundamentalsMap, fetchTechnicalIndicators, fetchSectorTechnicals, fetchVolumeTopStocks, fetchInterestRates, formatInterestRatesForPrompt, fetchKospiMA20, fetchNaverData, fetchOverseasMarketSignals, StockFundamentals, TechnicalIndicators } from '@/lib/stock-data'
 import { sendTelegramAlert, sendTelegramSimple } from '@/lib/telegram'
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { getKSTDate, getKSTDateLocale } from '@/lib/date'
-import { MAJOR_STOCKS } from '@/lib/major-stocks'
+import { MAJOR_STOCKS, STOCK_MAP } from '@/lib/major-stocks'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
 import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
@@ -687,6 +687,71 @@ async function runDailyAnalysis() {
       console.log(`[포트폴리오] ${advice.length}개 종목 조언 생성 완료`)
     }
 
+    // 6-c. 계좌별 종합 조언 (매주 화/목만 실행)
+    const runAccountAdvice = async () => {
+      const kstDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })).getDay()
+      if (kstDay !== 2 && kstDay !== 4) {
+        console.log(`[계좌조언] 화/목만 실행 (오늘 요일: ${kstDay})`)
+        return
+      }
+      const [{ data: accounts }, { data: portfolio }] = await Promise.all([
+        supabaseAdmin.from('portfolio_accounts').select('*'),
+        supabaseAdmin.from('portfolio').select('*'),
+      ])
+      if (!accounts || accounts.length === 0) return
+
+      const inputs: AccountAdviceInput[] = accounts.map(acc => {
+        const a = acc as { id: string; name: string; cash: number; current_investment: number; additional_investment: number }
+        const items = (portfolio ?? [])
+          .filter(p => (p as { account_id: string | null }).account_id === a.id)
+          .map(p => {
+            const item = p as { ticker: string; name: string; avg_price: number; shares: number }
+            const currentPrice = realPrices[item.ticker]?.price ?? item.avg_price
+            const evalAmount = currentPrice * item.shares
+            const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
+            return {
+              ticker: item.ticker,
+              name: item.name,
+              sector: STOCK_MAP[item.ticker]?.sector ?? null,
+              eval_amount: evalAmount,
+              profit_pct: profitPct,
+            }
+          })
+        const evalTotal = items.reduce((s, i) => s + i.eval_amount, 0)
+        const totalCost = (a.current_investment ?? 0) + (a.additional_investment ?? 0)
+        return {
+          account_id: a.id,
+          account_name: a.name,
+          cash: a.cash ?? 0,
+          total_asset: evalTotal + (a.cash ?? 0),
+          profit_pct: totalCost > 0 ? ((evalTotal - totalCost) / totalCost) * 100 : 0,
+          items,
+        }
+      })
+
+      const accAdvice = await generateAccountAdvice({
+        accounts: inputs,
+        marketOutlook: result.market_outlook,
+        date: todayDate,
+      })
+
+      for (const a of accAdvice) {
+        await supabaseAdmin.from('portfolio_account_advice')
+          .delete()
+          .eq('date', todayDate)
+          .eq('account_id', a.account_id)
+        await supabaseAdmin.from('portfolio_account_advice').insert({
+          date: todayDate,
+          account_id: a.account_id,
+          advice_summary: a.advice_summary,
+          risk_level: a.risk_level,
+          sector_concentration: a.sector_concentration,
+          source: 'auto',
+        })
+      }
+      console.log(`[계좌조언] ${accAdvice.length}개 계좌 조언 생성 완료`)
+    }
+
     const tasks: Promise<unknown>[] = [
       sendTelegramAlert({
         stocks: result.recommendations,
@@ -696,10 +761,12 @@ async function runDailyAnalysis() {
         goldPrice,
       }),
       runPortfolioAdvice(),
+      runAccountAdvice(),
     ]
     const settled = await Promise.allSettled(tasks)
     if (settled[0].status === 'rejected') console.error('[텔레그램] 전송 실패:', (settled[0] as PromiseRejectedResult).reason)
     if (settled[1].status === 'rejected') console.error('[포트폴리오] 조언 생성 실패:', (settled[1] as PromiseRejectedResult).reason)
+    if (settled[2].status === 'rejected') console.error('[계좌조언] 생성 실패:', (settled[2] as PromiseRejectedResult).reason)
 
     // 6-b. 키워드 자동 학습
     try {
