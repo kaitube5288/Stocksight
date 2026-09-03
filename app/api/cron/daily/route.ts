@@ -761,6 +761,12 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
           current_price: item.current_price ?? null,
           avg_price: item.avg_price ?? null,
           profit_pct: item.profit_pct ?? null,
+          target_price: a.target_price ?? null,
+          stop_loss_price: a.stop_loss_price ?? null,
+          confidence_score: a.confidence_score ?? null,
+          checkpoint_note: a.checkpoint_note ?? null,
+          psychology_note: a.psychology_note ?? null,
+          alternatives: a.alternatives ?? null,
           source: 'auto',
         })
       }

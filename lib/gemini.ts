@@ -493,6 +493,12 @@ export type PortfolioAdviceResult = {
   name: string
   advice_type: '보유유지' | '물타기' | '추매' | '분할매수' | '분할매도' | '손절고려'
   advice_detail: string
+  target_price: number | null       // 🎯 목표가 (매도 목표)
+  stop_loss_price: number | null    // 🛑 손절가
+  confidence_score: number | null   // 확신도 0~100
+  checkpoint_note: string | null    // ⏰ 재검토 시점 (예: "3일 후 또는 25,000원 도달 시")
+  psychology_note: string | null    // ⚠️ 심리 코칭 (예: "물타기 3회 반복 중 — 손절 후 대체 고려")
+  alternatives: Array<{ ticker: string; name: string; reason: string }> | null  // 🔄 대안 종목 (0~3개)
 }
 
 export async function generatePortfolioAdvice(params: {
@@ -602,6 +608,29 @@ ${itemsText}
 - 보유유지: "쌍매수 지속·뉴스 호재 유효 시까지 보유, XX원 하회 시 재검토"
 - 매수 금액은 보유 현금 기준 비율 / 매도는 보유 주수 기준 비율로 제시
 
+## 추가 필수 필드 (강화 조언 — advice_detail 외 별도 구조화)
+1. **target_price** (숫자): 매도 목표가. 기준:
+   - 보유유지/분할매도: 저항선 or 현재가 대비 +5~10% 상단
+   - 물타기/추매: 매수 후 회복 목표가 (평단가 근처)
+   - 손절고려: null (매도 상황이므로 목표가 무의미)
+2. **stop_loss_price** (숫자): 손절가. 지지선 또는 매입가 -6~10% 기준
+3. **confidence_score** (0~100): 이 조언에 대한 확신도
+   - 80+ : 다중 지표 일치 + 뉴스 명확 + 수급 명확
+   - 60~79: 지표 대체로 일치하나 일부 상충
+   - 60 미만: 지표 상충, 애매한 판단
+4. **checkpoint_note** (문자열): 다음 재검토 시점 명시. 예:
+   - "3일 후 또는 25,000원 도달 시 재검토"
+   - "다음 주 실적발표 (11/5) 전 재점검"
+   - "RSI 65 돌파 시 즉시 매도 검토"
+5. **psychology_note** (문자열 또는 null): 심리 코칭. 다음 조건 시에만 작성 (없으면 null):
+   - 과거 조언 이력에 "물타기" 3회 이상 반복 → "물타기 N회 반복 중 — 손절 후 대체 종목 검토가 통계적으로 유리"
+   - 수익률 +20% 이상 + 이력에 "보유유지" 지속 → "이익 실현 심리 주의 — 저항선 도달 시 일부 실현 권장"
+   - 수익률 -20% 이하 + "손절고려" 이력 없음 → "손실 회피 편향 주의 — 지지선 이탈 시 손절 원칙 준수"
+   - 위 조건 아니면 null 유지
+6. **alternatives** (배열 또는 null): 같은 섹터 대체 종목 2~3개 제안. 손절고려·분할매도 시 필수, 나머지는 null 가능
+   - 형식: [{"ticker": "6자리", "name": "종목명", "reason": "간단 근거"}]
+   - 예시: [{"ticker": "000660", "name": "SK하이닉스", "reason": "동일 반도체 섹터, RSI 45 매수 구간, MACD↑"}]
+
 ## 응답 형식 (JSON만, 다른 텍스트 없음)
 \`\`\`json
 {
@@ -611,7 +640,13 @@ ${itemsText}
       "ticker": "종목코드",
       "name": "종목명",
       "advice_type": "보유유지|물타기|추매|분할매수|분할매도|손절고려",
-      "advice_detail": "구체적 대처 방안 (2~3문장, 가격/비율/이유 포함)"
+      "advice_detail": "구체적 대처 방안 (2~3문장, 가격/비율/이유 포함)",
+      "target_price": 목표가(숫자) or null,
+      "stop_loss_price": 손절가(숫자) or null,
+      "confidence_score": 확신도(0~100 숫자),
+      "checkpoint_note": "재검토 시점 문자열",
+      "psychology_note": "심리코칭 문자열 or null",
+      "alternatives": [{"ticker":"","name":"","reason":""}] or null
     }
   ]
 }

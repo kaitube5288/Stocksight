@@ -137,4 +137,10 @@ export type PortfolioAdvice = {
   portfolio_item_id?: string | null
   source?: 'auto' | 'manual'
   created_at?: string
+  target_price?: number | null
+  stop_loss_price?: number | null
+  confidence_score?: number | null
+  checkpoint_note?: string | null
+  psychology_note?: string | null
+  alternatives?: Array<{ ticker: string; name: string; reason: string }> | null
 }

@@ -1392,6 +1392,71 @@ function StockCard({
             >▶</button>
           </div>
           <p className="text-xs leading-relaxed mb-2" style={{ color: 'var(--text-secondary)' }}>{currentAdvice.advice_detail}</p>
+
+          {/* 강화 필드: 목표가/손절가 (2열 그리드) */}
+          {(currentAdvice.target_price != null || currentAdvice.stop_loss_price != null) && (
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              {currentAdvice.target_price != null && (
+                <div className="rounded-lg p-1.5" style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.3)' }}>
+                  <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🎯 목표가</div>
+                  <div className="mono text-sm font-bold" style={{ color: '#00e5aa' }}>{currentAdvice.target_price.toLocaleString('ko-KR')}원</div>
+                </div>
+              )}
+              {currentAdvice.stop_loss_price != null && (
+                <div className="rounded-lg p-1.5" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.3)' }}>
+                  <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🛑 손절가</div>
+                  <div className="mono text-sm font-bold" style={{ color: '#ff5c5c' }}>{currentAdvice.stop_loss_price.toLocaleString('ko-KR')}원</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 강화 필드: 확신도 */}
+          {currentAdvice.confidence_score != null && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>확신도</span>
+                <span className="text-[10px] font-semibold" style={{ color: currentAdvice.confidence_score >= 80 ? '#00e5aa' : currentAdvice.confidence_score >= 60 ? '#ffc94d' : '#ff8888' }}>
+                  {currentAdvice.confidence_score}%
+                  {currentAdvice.confidence_score >= 80 ? ' 🎯 강한 확신' : currentAdvice.confidence_score < 50 ? ' ⚠️ 신중 판단' : ''}
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <div className="h-full rounded-full" style={{ width: `${currentAdvice.confidence_score}%`, background: currentAdvice.confidence_score >= 80 ? '#00e5aa' : currentAdvice.confidence_score >= 60 ? '#ffc94d' : '#ff8888' }} />
+              </div>
+            </div>
+          )}
+
+          {/* 강화 필드: 체크포인트 */}
+          {currentAdvice.checkpoint_note && (
+            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(77,166,255,0.08)', border: '1px solid rgba(77,166,255,0.25)' }}>
+              <span className="text-[10px]" style={{ color: '#4da6ff' }}>⏰ {currentAdvice.checkpoint_note}</span>
+            </div>
+          )}
+
+          {/* 강화 필드: 심리 코칭 (경고) */}
+          {currentAdvice.psychology_note && (
+            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(255,201,77,0.1)', border: '1px solid rgba(255,201,77,0.35)' }}>
+              <span className="text-[10px] font-semibold" style={{ color: '#ffc94d' }}>⚠️ {currentAdvice.psychology_note}</span>
+            </div>
+          )}
+
+          {/* 강화 필드: 대안 종목 */}
+          {currentAdvice.alternatives && currentAdvice.alternatives.length > 0 && (
+            <div className="mb-2 rounded-lg p-2" style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.25)' }}>
+              <div className="text-[9px] mb-1" style={{ color: 'var(--text-muted)' }}>🔄 대안 종목</div>
+              <div className="space-y-1">
+                {currentAdvice.alternatives.map((alt, i) => (
+                  <div key={i} className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="font-semibold" style={{ color: '#a78bfa' }}>{alt.name}</span>
+                    <span className="mono text-[9px] ml-1" style={{ color: 'var(--text-muted)' }}>({alt.ticker})</span>
+                    <span className="ml-1">— {alt.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end">
             <button
               onClick={() => item.id && onRunAdvice(item.id)}
