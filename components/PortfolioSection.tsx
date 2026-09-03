@@ -1383,6 +1383,15 @@ function StockCard({
               }>
                 {currentAdvice.source === 'manual' ? '수동' : '자동'}
               </span>
+              {currentAdvice.confidence_score != null && (
+                <span className="text-[10px] font-semibold" style={{
+                  color: currentAdvice.confidence_score >= 80 ? '#00e5aa'
+                    : currentAdvice.confidence_score >= 60 ? '#ffc94d'
+                    : '#ff8888'
+                }}>
+                  확신도 {currentAdvice.confidence_score}%
+                </span>
+              )}
             </div>
             <button
               onClick={() => onAdviceNav(-1)}
@@ -1408,22 +1417,6 @@ function StockCard({
                   <div className="mono text-sm font-bold" style={{ color: '#ff5c5c' }}>{currentAdvice.stop_loss_price.toLocaleString('ko-KR')}원</div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* 강화 필드: 확신도 */}
-          {currentAdvice.confidence_score != null && (
-            <div className="mb-2">
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>확신도</span>
-                <span className="text-[10px] font-semibold" style={{ color: currentAdvice.confidence_score >= 80 ? '#00e5aa' : currentAdvice.confidence_score >= 60 ? '#ffc94d' : '#ff8888' }}>
-                  {currentAdvice.confidence_score}%
-                  {currentAdvice.confidence_score >= 80 ? ' 🎯 강한 확신' : currentAdvice.confidence_score < 50 ? ' ⚠️ 신중 판단' : ''}
-                </span>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                <div className="h-full rounded-full" style={{ width: `${currentAdvice.confidence_score}%`, background: currentAdvice.confidence_score >= 80 ? '#00e5aa' : currentAdvice.confidence_score >= 60 ? '#ffc94d' : '#ff8888' }} />
-              </div>
             </div>
           )}
 
