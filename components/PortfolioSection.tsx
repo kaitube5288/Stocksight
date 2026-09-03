@@ -1412,13 +1412,13 @@ function StockCard({
           {(currentAdvice.target_price != null || currentAdvice.stop_loss_price != null || currentAdvice.psychology_note) && (
             <div className="flex gap-2 mb-2 items-stretch">
               {currentAdvice.target_price != null && (
-                <div className="flex-1 min-w-0 rounded-lg p-1.5" style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.3)' }}>
+                <div className="flex-1 min-w-0 rounded-lg p-1.5 flex flex-col items-center justify-center text-center" style={{ background: 'rgba(0,229,170,0.08)', border: '1px solid rgba(0,229,170,0.3)' }}>
                   <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🎯 목표가</div>
                   <div className="mono text-sm font-bold" style={{ color: '#00e5aa' }}>{currentAdvice.target_price.toLocaleString('ko-KR')}원</div>
                 </div>
               )}
               {currentAdvice.stop_loss_price != null && (
-                <div className="flex-1 min-w-0 rounded-lg p-1.5" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.3)' }}>
+                <div className="flex-1 min-w-0 rounded-lg p-1.5 flex flex-col items-center justify-center text-center" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.3)' }}>
                   <div className="text-[9px]" style={{ color: 'var(--text-muted)' }}>🛑 손절가</div>
                   <div className="mono text-sm font-bold" style={{ color: '#ff5c5c' }}>{currentAdvice.stop_loss_price.toLocaleString('ko-KR')}원</div>
                 </div>
