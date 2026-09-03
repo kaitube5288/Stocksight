@@ -1,9 +1,7 @@
 name: Daily Stock Analysis
 
 on:
-  schedule:
-    - cron: '45 22 * * 1-5'  # UTC 22:45 = KST 07:45 화~토 (월~금 한국시간)
-  workflow_dispatch:  # 수동 실행 가능
+  workflow_dispatch:
 
 jobs:
   analyze:
@@ -35,3 +33,5 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
           NODE_ENV: production
+
+         
