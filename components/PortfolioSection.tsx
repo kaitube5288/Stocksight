@@ -69,7 +69,7 @@ export default function PortfolioSection() {
   const [error, setError] = useState('')
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
   const [accountAdvice, setAccountAdvice] = useState<Record<string, { summary: string; risk_level: string | null; created_at: string; date: string }>>({})
-  const [runningAccountAdvice, setRunningAccountAdvice] = useState(false)
+  const [runningAccAdvById, setRunningAccAdvById] = useState<Record<string, boolean>>({})
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
   const snapshotSavedRef = useRef(false)
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>([])
@@ -426,13 +426,13 @@ export default function PortfolioSection() {
     }
   }
 
-  const runAccountAdvice = async () => {
-    setRunningAccountAdvice(true)
+  const runAccountAdvice = async (accountId: string) => {
+    setRunningAccAdvById(prev => ({ ...prev, [accountId]: true }))
     try {
       await fetch('/api/portfolio/account-advice/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'manual' }),
+        body: JSON.stringify({ source: 'manual', account_id: accountId }),
       })
       const res = await fetch('/api/portfolio/account-advice')
       const data = await res.json()
@@ -446,7 +446,7 @@ export default function PortfolioSection() {
     } catch {
       setError('계좌 AI 조언 생성 실패')
     } finally {
-      setRunningAccountAdvice(false)
+      setRunningAccAdvById(prev => ({ ...prev, [accountId]: false }))
     }
   }
 
@@ -671,22 +671,25 @@ export default function PortfolioSection() {
 
               return (
                 <div key={acc.id} className="rounded-2xl p-4 h-full" style={{ minHeight: '280px', display: 'grid', gridTemplateRows: 'auto 1fr 1fr 1fr', gap: '10px', background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: `0 0 28px ${theme.shadow}` }}>
-                  {/* 헤더 (auto) — 계좌명 + 총 자산 가운데 정렬, 편집/삭제는 우측 절대위치 */}
-                  <div className="relative flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="flex items-center gap-2 justify-center">
-                        <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
-                        <span className="mono text-[11px] font-semibold px-2 py-0.5 rounded-lg" style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)' }}>
-                          총 자산 {Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원
-                        </span>
-                      </div>
+                  {/* 헤더 (auto) — 계좌명 좌측 / 총자산 중앙 / 편집·삭제 우측 (절대위치) */}
+                  <div className="relative flex items-center" style={{ minHeight: '32px' }}>
+                    {/* 좌측: 계좌명 */}
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-semibold" style={{ color: theme.accent }}>{acc.name}</span>
                       {acc.brokerage && acc.brokerage !== 'etc' && (
-                        <div className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        <span className="text-[9px] mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
                           {acc.brokerage} · 수수료 {acc.commission_rate ?? 0.015}%
-                        </div>
+                        </span>
                       )}
                     </div>
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    {/* 중앙: 총 자산 (절대위치) */}
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                      <span className="mono text-[11px] font-semibold px-2 py-0.5 rounded-lg whitespace-nowrap" style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)' }}>
+                        총 자산 {Math.round(evalTotal + acc.cash).toLocaleString('ko-KR')}원
+                      </span>
+                    </div>
+                    {/* 우측: 편집/삭제 */}
+                    <div className="ml-auto flex items-center gap-1.5">
                       <button onClick={() => startEditAccount(acc)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', color: 'var(--text-muted)' }}>편집</button>
                       <button onClick={() => acc.id && deleteAccount(acc.id)} className="text-[10px] px-2 py-1 rounded-lg" style={{ background: 'rgba(255,92,92,0.1)', border: '1px solid rgba(255,92,92,0.3)', color: 'var(--accent-red)' }}>삭제</button>
                     </div>
@@ -731,17 +734,17 @@ export default function PortfolioSection() {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         {adviceDateText && (
-                          <span className="text-[8px]" style={{ color: 'rgba(255,255,255,0.4)' }}>{adviceDateText}</span>
+                          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.55)' }}>{adviceDateText}</span>
                         )}
                         <button
-                          onClick={runAccountAdvice}
-                          disabled={runningAccountAdvice}
-                          className="text-[8px] px-1.5 py-0.5 rounded"
-                          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: 'var(--text-muted)', opacity: runningAccountAdvice ? 0.5 : 1 }}
+                          onClick={() => acc.id && runAccountAdvice(acc.id)}
+                          disabled={acc.id ? !!runningAccAdvById[acc.id] : false}
+                          className="text-[9px] px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', color: 'var(--text-muted)', opacity: (acc.id && runningAccAdvById[acc.id]) ? 0.5 : 1 }}
                         >
-                          {runningAccountAdvice ? '생성중...' : '↻ 갱신'}
+                          {(acc.id && runningAccAdvById[acc.id]) ? '생성중...' : '↻ 갱신'}
                         </button>
                       </div>
                     </div>

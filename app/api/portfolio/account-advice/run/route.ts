@@ -12,10 +12,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const source: 'auto' | 'manual' = body.source === 'auto' ? 'auto' : 'manual'
+    const targetAccountId: string | undefined = body.account_id
 
-    // 1. 계좌·종목·현금 조회
+    // 1. 계좌·종목·현금 조회 (특정 account_id면 해당 계좌만)
+    let acctQuery = supabaseAdmin.from('portfolio_accounts').select('*')
+    if (targetAccountId) acctQuery = acctQuery.eq('id', targetAccountId)
     const [{ data: accounts }, { data: portfolio }, { data: latestRec }] = await Promise.all([
-      supabaseAdmin.from('portfolio_accounts').select('*'),
+      acctQuery,
       supabaseAdmin.from('portfolio').select('*'),
       supabaseAdmin.from('recommendations').select('market_outlook').order('date', { ascending: false }).limit(1).maybeSingle(),
     ])
