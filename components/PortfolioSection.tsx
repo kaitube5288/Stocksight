@@ -1384,7 +1384,7 @@ function StockCard({
                 {currentAdvice.source === 'manual' ? '수동' : '자동'}
               </span>
               {currentAdvice.confidence_score != null && (
-                <span className="text-sm font-bold ml-4 px-2 py-0.5 rounded-md" style={{
+                <span className="text-sm font-bold ml-[136px] px-2 py-0.5 rounded-md" style={{
                   color: currentAdvice.confidence_score >= 80 ? '#00e5aa'
                     : currentAdvice.confidence_score >= 60 ? '#ffc94d'
                     : '#ff8888',
