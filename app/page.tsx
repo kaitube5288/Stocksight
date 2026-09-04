@@ -187,10 +187,11 @@ export default function Home() {
     setAnalyzing(true)
     setError('')
     try {
-      const res = await fetch('/api/cron/daily', { method: 'POST' })
+      // Vercel 60초 제한 우회: GitHub Actions workflow_dispatch로 트리거
+      const res = await fetch('/api/trigger-daily', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        await loadRecommendations(true)
+        setError('✅ 실행 시작됨. 4~5분 후 텔레그램 알림 도착 예정 (완료 시 페이지 새로고침으로 결과 확인)')
       } else {
         setError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error) || '분석 실패')
       }

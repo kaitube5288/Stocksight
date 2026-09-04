@@ -64,17 +64,17 @@ export default function AdminPage() {
 
   const runDailyAnalysis = async () => {
     setAnalyzing(true)
-    setAnalyzeLog([`[${now()}] 일일 분석 실행 중... (2~4분 소요, 완료 전까지 기다려 주세요)`])
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5분 타임아웃
+    setAnalyzeLog([`[${now()}] GitHub Actions에 분석 실행 요청 중...`])
     try {
-      const res = await fetch('/api/cron/daily', { method: 'POST', signal: controller.signal })
-      clearTimeout(timer)
+      // Vercel 60초 제한 우회: GitHub Actions workflow_dispatch로 트리거
+      const res = await fetch('/api/trigger-daily', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         setAnalyzeLog(prev => [
           ...prev,
-          `[${now()}] ✅ 완료 — 뉴스 ${data.newsCount}건 분석`,
+          `[${now()}] ✅ 실행 시작됨 — GitHub Actions에서 4~5분간 실행됩니다`,
+          `[${now()}] 📱 완료 시 텔레그램 알림 도착 예정`,
+          `[${now()}] 🔗 진행 상황: https://github.com/kaitube5288/Stocksight/actions`,
         ])
       } else {
         setAnalyzeLog(prev => [
@@ -84,7 +84,6 @@ export default function AdminPage() {
         ])
       }
     } catch (e) {
-      clearTimeout(timer)
       const msg = e instanceof Error && e.name === 'AbortError'
         ? '5분 초과로 타임아웃 — 서버에서는 계속 실행 중일 수 있습니다'
         : e instanceof Error ? e.message : String(e)
