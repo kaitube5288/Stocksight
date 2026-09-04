@@ -14,14 +14,18 @@ if (API_KEYS.length === 0 && process.env.GEMINI_API_KEY) {
 }
 
 // 503/429 시 같은 모델 backoff 재시도 (최대 3회)
-async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string): Promise<string> {
+async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: string, jsonMode: boolean = false): Promise<string> {
   // 503 서버 과부하만 내부 재시도 (429는 같은 키로 재시도해도 의미 없으므로 즉시 throw)
   const delays = [4000, 10000]
   let lastErr: Error = new Error('unknown')
   for (let i = 0; i <= delays.length; i++) {
     try {
+      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 }
+      // JSON 모드: Gemini가 응답을 반드시 JSON으로 반환하도록 강제
+      // (마크다운/코드펜스/설명문 없이 순수 JSON만) — 파싱 안정성 극대화
+      if (jsonMode) generationConfig.responseMimeType = 'application/json'
       const model = genAI.getGenerativeModel(
-        { model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 16384 } },
+        { model: modelName, generationConfig },
         { apiVersion: 'v1beta' }
       )
       const result = await model.generateContent(prompt)
@@ -49,8 +53,10 @@ const FALLBACK_MODELS = [
   'gemini-1.5-pro',
 ]
 
-export async function callGemini(prompt: string): Promise<string> {
+export async function callGemini(prompt: string, options?: { jsonMode?: boolean }): Promise<string> {
   if (API_KEYS.length === 0) throw new Error('Gemini API 키가 설정되지 않았습니다 (.env.local 확인)')
+
+  const jsonMode = options?.jsonMode ?? false
 
   for (let ki = 0; ki < API_KEYS.length; ki++) {
     const genAI = new GoogleGenerativeAI(API_KEYS[ki])
@@ -59,7 +65,7 @@ export async function callGemini(prompt: string): Promise<string> {
     for (const modelName of FALLBACK_MODELS) {
       if (keyRateLimited) break
       try {
-        return await callModel(genAI, modelName, prompt)
+        return await callModel(genAI, modelName, prompt, jsonMode)
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e)
         // 전체 에러 메시지 로그 (잘리면 503 등이 숨어 디버깅 불가)
@@ -201,6 +207,13 @@ ${params.marketContext.includes('[🚀 불장 감지]') ? `
 ${params.overseasSignalContext ? `
 ## 전일 해외 시장 시그널 (미국/일본 마감 → 한국 섹터 연동 반등 예측)
 ${params.overseasSignalContext}
+
+⚠️ 오후 반등 예측 규칙 (중요 — 새벽 실행 시 필수 반영):
+- 새벽 시점(07:45)의 국내 시장 데이터는 아직 개장 전이거나 초반 변동성. 미리 결론 내지 말 것.
+- 조건 A (해외 강세 반등 예측): SOX/NASDAQ 전일 +1% 이상 상승 + 전일 국내 조정(-1% 이상) → 오후 갭업 반등 가능성 高. 반도체·IT·2차전지 섹터 우량주는 "오후 반등 대비 단타" 후보 우선 검토
+- 조건 B (해외 약세 지속 예상): SOX/NASDAQ 전일 -1% 이상 하락 → 국내 오후에도 약세 지속 가능성. 방어주 중심.
+- 조건 C (해외 혼조 + 국내 약세): SOX/NASDAQ 보합/약세 + KOSPI/KOSDAQ 전일 -1.5% 이상 → 하락장 판단 유지 (현금보유 슬롯 정당함)
+- ✅ 아침 실행 시점의 국내 지수 변동률만 보고 "하락장 확정" 판단 금지. 반드시 해외 시그널·뉴스·수급을 종합.
 ` : ''}${params.interestRates ? `
 ## 금리 현황 (장단기 역전 = 하락장 [1. 거시 경제 지표] 직접 반영)
 ${params.interestRates}
@@ -306,10 +319,19 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
   "risk_factors": "주요 하방 위험 요소 (2-3문장)"
 }`
 
-  const text = await callGemini(prompt)
-  const parsed = parseRecommendationsJSON(text)
+  let text = await callGemini(prompt, { jsonMode: true })
+  let parsed = parseRecommendationsJSON(text)
+
+  // 1차 파싱 실패 시 재시도: 더 강한 JSON 요구 프롬프트 + jsonMode 유지
   if (!parsed) {
-    console.error('[Gemini] JSON 파싱 실패 — 응답 마지막 300자:', text.slice(-300))
+    console.warn('[Gemini] 1차 파싱 실패 → 재시도 (JSON 재강조)')
+    const retryPrompt = prompt + `\n\n⚠️⚠️⚠️ 절대 규칙: 응답은 오직 JSON 객체 하나만 반환. 마크다운(## 헤더 등) 절대 사용 금지. 첫 문자는 { 이어야 하고 마지막 문자는 } 이어야 함. 설명·주석·코드펜스(\`\`\`) 모두 금지.`
+    text = await callGemini(retryPrompt, { jsonMode: true })
+    parsed = parseRecommendationsJSON(text)
+  }
+
+  if (!parsed) {
+    console.error('[Gemini] JSON 파싱 최종 실패 — 응답 마지막 300자:', text.slice(-300))
     return {
       recommendations: [],
       market_outlook: '[분석 실패] Gemini 응답 JSON 파싱 오류 — 오늘 추천 생략',
@@ -403,7 +425,7 @@ ${highImpactNewsText}
 - 모르는 종목코드는 추측 금지`
 
   try {
-    const text = await callGemini(prompt)
+    const text = await callGemini(prompt, { jsonMode: true })
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return empty
 
@@ -475,7 +497,7 @@ JSON 형식으로만 응답:
   "analysis": "상세 분석 내용"
 }`
 
-  const text = await callGemini(prompt)
+  const text = await callGemini(prompt, { jsonMode: true })
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('JSON 파싱 실패')
   return JSON.parse(jsonMatch[0])
@@ -678,7 +700,7 @@ ${itemsText}
 }
 \`\`\``
 
-  const text = await callGemini(prompt)
+  const text = await callGemini(prompt, { jsonMode: true })
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
   const raw = jsonMatch[1] ?? jsonMatch[0]
   if (!raw) {
@@ -783,7 +805,7 @@ ${accountsText}
 }
 \`\`\``
 
-  const text = await callGemini(prompt)
+  const text = await callGemini(prompt, { jsonMode: true })
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
   const raw = jsonMatch[1] ?? jsonMatch[0]
   if (!raw) {
@@ -845,7 +867,7 @@ ${params.newsTitles.slice(0, 60).map((t, i) => `${i + 1}. ${t}`).join('\n')}
 \`\`\`
 최대 10개 제안. 이미 감시 중인 키워드와 동일하거나 너무 일반적인 단어는 제외하세요.`
 
-  const text = await callGemini(prompt)
+  const text = await callGemini(prompt, { jsonMode: true })
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ?? [null, text.match(/\{[\s\S]*\}/)?.[0]]
   const raw = jsonMatch[1] ?? jsonMatch[0]
   if (!raw) return []
