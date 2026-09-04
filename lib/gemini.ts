@@ -20,7 +20,7 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
   let lastErr: Error = new Error('unknown')
   for (let i = 0; i <= delays.length; i++) {
     try {
-      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 }
+      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 32768 }
       // JSON 모드: Gemini가 응답을 반드시 JSON으로 반환하도록 강제
       // (마크다운/코드펜스/설명문 없이 순수 JSON만) — 파싱 안정성 극대화
       if (jsonMode) generationConfig.responseMimeType = 'application/json'
@@ -132,7 +132,11 @@ export async function generateRecommendations(params: {
   kospiMA20Warning?: string    // KOSPI 20일선 하회 경고
   overseasSignalContext?: string // 전일 해외 시장 (SOX/NASDAQ) 시그널
 }): Promise<GeminiAnalysisResult> {
-  const prompt = `당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
+  const prompt = `🔴🔴🔴 절대 규칙 (최우선): 응답은 반드시 JSON 객체 하나만 반환하세요. 마크다운 표(| ... |), 코드 펜스(\`\`\`), 헤더(##), 목록, 설명문 모두 절대 금지. 첫 문자는 반드시 { 이고 마지막 문자는 반드시 } 여야 합니다. 이 규칙 위반 시 시스템 파싱 실패로 사용자 서비스 완전 중단됩니다. 🔴🔴🔴
+
+당신은 한국 주식 전문 애널리스트입니다. 아래 수집된 데이터를 4가지 분석 기준으로 종합 평가하여, 오늘 주식시장이 열렸을 때 상승 가능성이 가장 높은 코스피/코스닥 종목을 추천하세요.
+
+⚠️ reasoning 필드는 짧게 (1~2문장, 150자 이내). 응답이 잘리지 않도록 간결하게 작성.
 
 ⚠️ 핵심 필터 규칙 (반드시 준수 — 위반 시 추천 불가):
 1. RSI > 60 종목은 단타 추천 금지 / RSI > 75 종목은 스윙·중기 추천 금지 (강세장 불장에서는 단타 RSI 65, 스윙 RSI 80까지 예외 허용)
@@ -320,12 +324,20 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
 }`
 
   let text = await callGemini(prompt, { jsonMode: true })
-  let parsed = parseRecommendationsJSON(text)
 
-  // 1차 파싱 실패 시 재시도: 더 강한 JSON 요구 프롬프트 + jsonMode 유지
-  if (!parsed) {
-    console.warn('[Gemini] 1차 파싱 실패 → 재시도 (JSON 재강조)')
-    const retryPrompt = prompt + `\n\n⚠️⚠️⚠️ 절대 규칙: 응답은 오직 JSON 객체 하나만 반환. 마크다운(## 헤더 등) 절대 사용 금지. 첫 문자는 { 이어야 하고 마지막 문자는 } 이어야 함. 설명·주석·코드펜스(\`\`\`) 모두 금지.`
+  // 마크다운 테이블 감지: 응답에 "| ... |" 패턴이 3줄 이상이면 마크다운 응답으로 판단
+  const looksLikeMarkdownTable = (t: string): boolean => {
+    const pipeLines = t.split('\n').filter(l => (l.match(/\|/g) ?? []).length >= 3)
+    return pipeLines.length >= 3
+  }
+
+  let parsed = parseRecommendationsJSON(text)
+  const isMarkdownFail = !parsed && looksLikeMarkdownTable(text)
+
+  // 파싱 실패 or 마크다운 테이블 감지 시 재시도
+  if (!parsed || isMarkdownFail) {
+    console.warn(`[Gemini] 1차 파싱 실패 → 재시도 (${isMarkdownFail ? '마크다운 테이블 감지' : 'JSON 파싱 실패'})`)
+    const retryPrompt = `🔴🔴🔴 CRITICAL: JSON 객체 하나만 반환. 마크다운 테이블(| ... |) 절대 금지. 첫 문자 { 마지막 문자 } 여야 함. 이전 시도가 실패했으니 이번엔 반드시 JSON만! 🔴🔴🔴\n\n` + prompt
     text = await callGemini(retryPrompt, { jsonMode: true })
     parsed = parseRecommendationsJSON(text)
   }
