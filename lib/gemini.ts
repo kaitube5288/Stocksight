@@ -21,7 +21,7 @@ async function callModel(genAI: GoogleGenerativeAI, modelName: string, prompt: s
   for (let i = 0; i <= delays.length; i++) {
     try {
       const model = genAI.getGenerativeModel(
-        { model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } },
+        { model: modelName, generationConfig: { temperature: 0.1, maxOutputTokens: 16384 } },
         { apiVersion: 'v1beta' }
       )
       const result = await model.generateContent(prompt)
@@ -307,21 +307,9 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
 }`
 
   const text = await callGemini(prompt)
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    console.error('[Gemini] JSON 파싱 실패 — 응답 앞 200자:', text.slice(0, 200))
-    // throw 대신 빈 결과 반환 → 텔레그램 에러 알림으로 이어짐
-    return {
-      recommendations: [],
-      market_outlook: '[분석 실패] Gemini 응답 JSON 파싱 오류 — 오늘 추천 생략',
-      risk_factors: 'Gemini 응답 형식 오류로 분석 불가',
-    }
-  }
-  let parsed: GeminiAnalysisResult
-  try {
-    parsed = JSON.parse(jsonMatch[0]) as GeminiAnalysisResult
-  } catch (e) {
-    console.error('[Gemini] JSON.parse 실패:', e instanceof Error ? e.message : e)
+  const parsed = parseRecommendationsJSON(text)
+  if (!parsed) {
+    console.error('[Gemini] JSON 파싱 실패 — 응답 마지막 300자:', text.slice(-300))
     return {
       recommendations: [],
       market_outlook: '[분석 실패] Gemini 응답 JSON 파싱 오류 — 오늘 추천 생략',
@@ -333,6 +321,44 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
   if (!parsed.market_outlook) parsed.market_outlook = '시장 전망 데이터 없음'
   if (!parsed.risk_factors)   parsed.risk_factors   = '위험 요소 데이터 없음'
   return parsed
+}
+
+// 잘린 JSON도 최대한 복구 시도: 마지막 완결된 recommendation까지 잘라내고 파싱
+function parseRecommendationsJSON(text: string): GeminiAnalysisResult | null {
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (jsonMatch) {
+    try { return JSON.parse(jsonMatch[0]) as GeminiAnalysisResult } catch { /* fall through */ }
+  }
+  // 1차 시도: 응답이 잘렸을 경우 recommendations 배열의 마지막 완결된 } 까지 자르고 재시도
+  const startIdx = text.indexOf('{')
+  if (startIdx === -1) return null
+  const partial = text.slice(startIdx)
+  // "recommendations": [ ... 마지막 완결된 객체 } , 이후는 잘린 상태
+  const recStart = partial.indexOf('"recommendations"')
+  if (recStart === -1) return null
+  const arrStart = partial.indexOf('[', recStart)
+  if (arrStart === -1) return null
+  // arrStart 이후로 균형 잡힌 객체들만 남기고 나머지 잘라냄
+  let depth = 0
+  let lastCompleteObjEnd = -1
+  let i = arrStart + 1
+  while (i < partial.length) {
+    const ch = partial[i]
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) lastCompleteObjEnd = i
+    }
+    i++
+  }
+  if (lastCompleteObjEnd === -1) return null
+  // recommendations 배열 닫고, market_outlook·risk_factors 기본값으로 완성
+  const rebuilt = partial.slice(0, lastCompleteObjEnd + 1) + '],"market_outlook":"[부분 복구] Gemini 응답 잘림 — 일부 추천만 반영","risk_factors":"응답 잘림으로 위험 요소 불완전"}'
+  try {
+    const p = JSON.parse(rebuilt) as GeminiAnalysisResult
+    console.warn(`[Gemini] JSON 복구 성공 — ${p.recommendations?.length ?? 0}개 recommendation 복구`)
+    return p
+  } catch { return null }
 }
 
 export type EventBeneficiaryResult = {
