@@ -322,3 +322,127 @@ export async function buildStrategyImprovementContext(): Promise<string> {
     return ''
   }
 }
+
+// ===== 옵션 15: 실패 패턴 자동 학습 강화 =====
+// 최근 30일 손실 종목(추천 후 -5% 이하)의 공통 특성을 자동 분석하여
+// 다음 분석 프롬프트에 회피 규칙으로 반영
+
+type LossRecord = {
+  ticker: string
+  name: string
+  loss_pct: number
+  sector: string | null
+  rsi14: number | null
+  macd_signal: string | null
+  trend: string | null
+  source_tag: string | null
+  trade_type: string | null
+}
+
+export async function analyzeLossPatterns(): Promise<string> {
+  try {
+    const supabase = getSupabaseAdmin()
+    const kst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    const from = new Date(kst); from.setDate(from.getDate() - 30)
+    const fromDate = from.toISOString().slice(0, 10)
+
+    // 최근 30일 추천 조회
+    const { data: recs } = await supabase
+      .from('recommendations')
+      .select('date, stocks')
+      .gte('date', fromDate)
+      .order('date', { ascending: false })
+
+    if (!recs || recs.length === 0) return ''
+
+    const losses: LossRecord[] = []
+
+    for (const rec of recs) {
+      const r = rec as { date: string; stocks?: unknown[] }
+      const stocks = (r.stocks ?? []) as Array<{
+        ticker: string; name: string; buy_price?: number; expected_return?: number; probability?: number
+        sector?: string; rsi14?: number; macd_signal?: string; trend?: string;
+        trade_type?: string; source_tag?: string
+      }>
+
+      for (const s of stocks) {
+        if (!s.ticker || s.ticker === '000000') continue
+        if (!s.buy_price || s.buy_price === 0) continue
+
+        // 추천일로부터 5거래일 후 가격 조회 (스윙 기준)
+        const recDate = new Date(`${r.date}T00:00:00+09:00`)
+        const targetDate = addTradingDays(recDate, 5)
+        const finalPrice = await getPriceNearDate(s.ticker, targetDate)
+        if (finalPrice == null) continue
+
+        const returnPct = ((finalPrice - s.buy_price) / s.buy_price) * 100
+        if (returnPct <= -5) {
+          losses.push({
+            ticker: s.ticker,
+            name: s.name,
+            loss_pct: returnPct,
+            sector: s.sector ?? null,
+            rsi14: s.rsi14 ?? null,
+            macd_signal: s.macd_signal ?? null,
+            trend: s.trend ?? null,
+            source_tag: s.source_tag ?? null,
+            trade_type: s.trade_type ?? null,
+          })
+        }
+      }
+    }
+
+    if (losses.length < 5) return ''  // 표본 부족 시 스킵
+
+    // 패턴 집계
+    const sectorCounts: Record<string, number> = {}
+    const rsiRanges: Record<string, number> = { '<30': 0, '30-45': 0, '45-55': 0, '55-65': 0, '>65': 0 }
+    const macdCounts: Record<string, number> = {}
+    const trendCounts: Record<string, number> = {}
+    const sourceCounts: Record<string, number> = {}
+    const tradeTypeCounts: Record<string, number> = {}
+
+    for (const l of losses) {
+      if (l.sector) sectorCounts[l.sector] = (sectorCounts[l.sector] ?? 0) + 1
+      if (l.rsi14 != null) {
+        const key = l.rsi14 < 30 ? '<30' : l.rsi14 < 45 ? '30-45' : l.rsi14 < 55 ? '45-55' : l.rsi14 < 65 ? '55-65' : '>65'
+        rsiRanges[key]++
+      }
+      if (l.macd_signal) macdCounts[l.macd_signal] = (macdCounts[l.macd_signal] ?? 0) + 1
+      if (l.trend) trendCounts[l.trend] = (trendCounts[l.trend] ?? 0) + 1
+      if (l.source_tag) sourceCounts[l.source_tag] = (sourceCounts[l.source_tag] ?? 0) + 1
+      if (l.trade_type) tradeTypeCounts[l.trade_type] = (tradeTypeCounts[l.trade_type] ?? 0) + 1
+    }
+
+    const total = losses.length
+    const avgLoss = losses.reduce((s, l) => s + l.loss_pct, 0) / total
+
+    // 30% 이상 반복되는 패턴만 위험 신호로 표시
+    const dangerousSectors = Object.entries(sectorCounts).filter(([, c]) => c / total >= 0.3).map(([s]) => s)
+    const dangerousRsi = Object.entries(rsiRanges).filter(([, c]) => c / total >= 0.3).map(([r]) => r)
+    const dangerousMacd = Object.entries(macdCounts).filter(([, c]) => c / total >= 0.4).map(([m]) => m)
+    const dangerousTrend = Object.entries(trendCounts).filter(([, c]) => c / total >= 0.4).map(([t]) => t)
+    const dangerousSource = Object.entries(sourceCounts).filter(([, c]) => c / total >= 0.3).map(([s]) => s)
+    const dangerousType = Object.entries(tradeTypeCounts).filter(([, c]) => c / total >= 0.4).map(([t]) => t)
+
+    const warnings: string[] = []
+    if (dangerousSectors.length > 0) warnings.push(`섹터: ${dangerousSectors.join(', ')} (손실 종목 30%↑ 차지)`)
+    if (dangerousRsi.length > 0) warnings.push(`RSI 구간: ${dangerousRsi.join(', ')} (손실 종목 30%↑)`)
+    if (dangerousMacd.length > 0) warnings.push(`MACD 상태: ${dangerousMacd.join(', ')} (손실 종목 40%↑)`)
+    if (dangerousTrend.length > 0) warnings.push(`추세: ${dangerousTrend.join(', ')} (손실 종목 40%↑)`)
+    if (dangerousSource.length > 0) warnings.push(`진입 경로: ${dangerousSource.join(', ')} (손실 종목 30%↑)`)
+    if (dangerousType.length > 0) warnings.push(`거래 유형: ${dangerousType.join(', ')} (손실 종목 40%↑)`)
+
+    if (warnings.length === 0) return ''
+
+    return `## 🔴 최근 30일 실패 패턴 자동 분석 (표본 ${total}건, 평균 손실 ${avgLoss.toFixed(1)}%)
+
+아래 패턴을 가진 종목은 손실 확률이 높으니 추천 시 반드시 신중 판단:
+${warnings.map(w => `- ${w}`).join('\n')}
+
+→ 위 패턴 다수 해당 종목은 확신도 -10 감점 or 제외 검토 필수`
+  } catch (e) {
+    console.error('[실패패턴] 분석 실패:', e instanceof Error ? e.message : e)
+    return ''
+  }
+}

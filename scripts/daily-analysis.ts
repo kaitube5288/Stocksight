@@ -8,8 +8,9 @@ import { MAJOR_STOCKS, STOCK_MAP } from '@/lib/major-stocks'
 import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
 import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
-import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
+import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext, analyzeLossPatterns } from '@/lib/strategy-improvement'
 import { getUpcomingEvents, formatEventWarnings } from '@/lib/event-calendar'
+import { detectSectorRotation } from '@/lib/sector-rotation'
 
 // 주말 체크 — FORCE_RUN=true 시 우회 (수동 트리거 대비)
 const _kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
@@ -323,6 +324,19 @@ async function runDailyAnalysis() {
       console.log(`[이벤트경고] ${upcomingEvents.length}개 이벤트 임박:`, upcomingEvents.map(e => e.description).join(' / '))
     }
 
+    // 섹터 로테이션 감지 (옵션 8)
+    const sectorRotation = await detectSectorRotation(5)
+    if (sectorRotation.hot_sectors.length > 0 || sectorRotation.emerging_sectors.length > 0) {
+      console.log(`[섹터로테이션] hot:${sectorRotation.hot_sectors.length}개 / emerging:${sectorRotation.emerging_sectors.length}개 / cooling:${sectorRotation.cooling_sectors.length}개`)
+    }
+
+    // 옵션 15: 최근 30일 실패 패턴 자동 분석
+    const lossPatternText = await Promise.race([
+      analyzeLossPatterns(),
+      new Promise<string>(resolve => setTimeout(() => { console.warn('[실패패턴] 30초 타임아웃 스킵'); resolve('') }, 30000)),
+    ])
+    if (lossPatternText) console.log('[실패패턴] 분석 완료')
+
     // 4. Gemini 분석
     const result = await generateRecommendations({
       todayNews: newsText,
@@ -342,6 +356,8 @@ async function runDailyAnalysis() {
       kospiMA20Warning: kospiMA20Warning || undefined,
       overseasSignalContext: overseasNote || undefined,
       eventWarnings: eventWarningText || undefined,
+      sectorRotationContext: sectorRotation.summary || undefined,
+      lossPatternContext: lossPatternText || undefined,
     })
 
     // 4-1. trade_type 강제 할당
@@ -433,6 +449,13 @@ async function runDailyAnalysis() {
       if (r.trade_type === '단타' && tech.foreignNet !== null && tech.institutionNet !== null &&
           tech.foreignNet < 0 && tech.institutionNet < 0) {
         console.log(`[필터-수급동반매도] ${r.name}(${r.ticker}) 외국인+기관 동반매도 단타 제거`)
+        return false
+      }
+      // 옵션 5: 개인 매수 상위 회피 (세력 이탈 신호)
+      if ((r.trade_type === '스윙' || r.trade_type === '중기') &&
+          tech.foreignNet !== null && tech.institutionNet !== null &&
+          tech.foreignNet < -10000 && tech.institutionNet < -10000) {
+        console.log(`[필터-개인매수] ${r.name}(${r.ticker}) 외인/기관 대량 매도(외인 ${tech.foreignNet}, 기관 ${tech.institutionNet}) — 개인 흡수 매수 위험, ${r.trade_type} 제거`)
         return false
       }
       return true

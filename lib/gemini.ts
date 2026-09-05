@@ -132,6 +132,8 @@ export async function generateRecommendations(params: {
   kospiMA20Warning?: string    // KOSPI 20일선 하회 경고
   overseasSignalContext?: string // 전일 해외 시장 (SOX/NASDAQ) 시그널
   eventWarnings?: string         // 임박 이벤트 경고 (FOMC/옵션만기/금통위 등, D-1)
+  sectorRotationContext?: string // 섹터 로테이션 감지 (옵션 8)
+  lossPatternContext?: string    // 최근 30일 실패 패턴 자동 분석 (옵션 15)
 }): Promise<GeminiAnalysisResult> {
   const prompt = `🔴🔴🔴 절대 규칙 (최우선): 응답은 반드시 JSON 객체 하나만 반환하세요. 마크다운 표(| ... |), 코드 펜스(\`\`\`), 헤더(##), 목록, 설명문 모두 절대 금지. 첫 문자는 반드시 { 이고 마지막 문자는 반드시 } 여야 합니다. 이 규칙 위반 시 시스템 파싱 실패로 사용자 서비스 완전 중단됩니다. 🔴🔴🔴
 
@@ -209,7 +211,18 @@ ${params.marketContext.includes('[🚀 불장 감지]') ? `
 - AI/IT 플랫폼 뉴스 기반 수혜주(NAVER·LG전자·통신사 등)는 RSI 무관하게 단타 우선 검토
 - expected_return 목표를 +3~5%로 상향 가능 (강세장 모멘텀은 더 크게 움직임)
 ` : ''}
-${params.eventWarnings ? `
+${params.lossPatternContext ? `
+${params.lossPatternContext}
+` : ''}${params.sectorRotationContext ? `
+## 🔄 섹터 로테이션 감지 (최근 5일 부상 섹터 분석)
+${params.sectorRotationContext}
+
+로테이션 반영 규칙:
+- 지속 상승 섹터(3일+): 이미 상승 지속 → 단타는 신중, 스윙/중기 유효
+- 신규 부상 섹터(1~2일): 초입 진입 기회 → 단타 우선 검토
+- 조정 임박 섹터: 신규 진입 자제, 보유자는 부분 실현 검토
+- 4일+ 연속 부상 섹터는 단기 조정 위험 → 단타 제외
+` : ''}${params.eventWarnings ? `
 ## ⚠️ 임박 이벤트 경고 (신규 진입 자제 판단 필수)
 ${params.eventWarnings}
 
