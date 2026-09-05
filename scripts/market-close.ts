@@ -7,6 +7,7 @@ import {
   analyzeTopGainersWithGemini,
   storeMarketFeedback,
 } from '@/lib/market-feedback'
+import { checkMDDAndAlert } from '@/lib/mdd-monitor'
 
 async function runMarketCloseAnalysis(): Promise<void> {
   // 주말 체크
@@ -62,6 +63,9 @@ async function runMarketCloseAnalysis(): Promise<void> {
     }, { onConflict: 'trade_date' })
   } catch { /* ignore */ }
 
+  // 6. 옵션 13: MDD (최대낙폭) 모니터링 — 계좌 낙폭 5% 초과 시 텔레그램 알림
+  const mddResult = await checkMDDAndAlert()
+
   console.log(JSON.stringify({
     success: true,
     date: todayKST,
@@ -70,6 +74,11 @@ async function runMarketCloseAnalysis(): Promise<void> {
     missed_themes,
     tomorrow_hints,
     top5: gainers.slice(0, 5).map(g => `${g.name} +${g.change_pct.toFixed(1)}%`),
+    mdd: mddResult.checked ? {
+      drawdown_pct: mddResult.drawdown_pct.toFixed(2),
+      alerted: mddResult.alerted,
+      level: mddResult.level,
+    } : null,
   }))
 }
 
