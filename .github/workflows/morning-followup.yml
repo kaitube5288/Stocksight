@@ -1,0 +1,35 @@
+name: Morning Pullback Followup
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '주말/공휴일 강제 실행'
+        required: false
+        default: 'false'
+        type: string
+
+jobs:
+  followup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run morning followup
+        run: npx ts-node -r tsconfig-paths/register --project tsconfig.scripts.json scripts/morning-followup.ts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FORCE_RUN: ${{ inputs.force_run }}
+          NODE_ENV: production
