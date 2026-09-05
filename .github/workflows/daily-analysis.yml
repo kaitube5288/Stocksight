@@ -2,6 +2,12 @@ name: Daily Stock Analysis
 
 on:
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: '주말/공휴일 강제 실행 (수동 트리거용)'
+        required: false
+        default: 'false'
+        type: string
 
 jobs:
   analyze:
@@ -32,6 +38,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          FORCE_RUN: ${{ inputs.force_run }}
           NODE_ENV: production
 
          
