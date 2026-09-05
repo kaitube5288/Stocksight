@@ -11,12 +11,14 @@ import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
 import { getUpcomingEvents, formatEventWarnings } from '@/lib/event-calendar'
 
-// 주말 체크 — route.ts GET 핸들러에는 있으나 독립 스크립트에 누락되어 추가
+// 주말 체크 — FORCE_RUN=true 시 우회 (수동 트리거 대비)
 const _kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
-if (_kstNow.getDay() === 0 || _kstNow.getDay() === 6) {
-  console.log('[스킵] 주말 휴장 — 분석 생략')
+const _forceRun = process.env.FORCE_RUN === 'true'
+if (!_forceRun && (_kstNow.getDay() === 0 || _kstNow.getDay() === 6)) {
+  console.log('[스킵] 주말 휴장 — 분석 생략 (수동 강제 실행하려면 FORCE_RUN=true)')
   process.exit(0)
 }
+if (_forceRun) console.log('[FORCE_RUN] 주말/공휴일 체크 우회 — 강제 실행')
 
 async function runDailyAnalysis() {
   const supabaseAdmin = getSupabaseAdmin()
