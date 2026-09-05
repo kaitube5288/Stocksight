@@ -92,6 +92,7 @@ export async function POST(request: Request) {
         advice_summary: a.advice_summary,
         risk_level: a.risk_level,
         sector_concentration: a.sector_concentration,
+        position_sizing: a.position_sizing ?? null,
         source,
       })
     }

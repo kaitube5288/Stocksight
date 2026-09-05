@@ -1439,6 +1439,26 @@ function StockCard({
             </div>
           )}
 
+          {/* 강화 필드: 트레일링 스탑 (옵션 6) */}
+          {currentAdvice.trailing_stop_note && (
+            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(0,229,170,0.06)', border: '1px solid rgba(0,229,170,0.25)' }}>
+              <span className="text-[10px]" style={{ color: '#00e5aa' }}>📈 트레일링 스탑: {currentAdvice.trailing_stop_note}</span>
+            </div>
+          )}
+
+          {/* 강화 필드: 분할 실현 (옵션 7) */}
+          {currentAdvice.partial_exit_note && (
+            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.25)' }}>
+              <span className="text-[10px]" style={{ color: '#a78bfa' }}>🎯 분할 실현: {currentAdvice.partial_exit_note}</span>
+            </div>
+          )}
+
+          {/* 강화 필드: 시간 손절 알림 (옵션 2) */}
+          {currentAdvice.time_stop_note && (
+            <div className="mb-2 rounded-lg px-2 py-1" style={{ background: 'rgba(255,92,92,0.08)', border: '1px solid rgba(255,92,92,0.35)' }}>
+              <span className="text-[10px] font-semibold" style={{ color: '#ff5c5c' }}>⏱ 시간 손절: {currentAdvice.time_stop_note}</span>
+            </div>
+          )}
 
           {/* 강화 필드: 대안 종목 */}
           {currentAdvice.alternatives && currentAdvice.alternatives.length > 0 && (

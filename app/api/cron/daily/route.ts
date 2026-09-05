@@ -11,6 +11,7 @@ import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
 import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
+import { getUpcomingEvents, formatEventWarnings } from '@/lib/event-calendar'
 
 export const maxDuration = 300
 
@@ -374,6 +375,13 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       .join('\n')
 
     // 4. Gemini 분석 (뉴스 임팩트 티어 + 패턴 + 기술지표 + 후보종목 + 과거성과 피드백 + 이벤트수혜주 + 금리 컨텍스트)
+    // 이벤트 캘린더 D-1 경고 (옵션 10): FOMC/옵션만기/금통위 등 임박 시
+    const upcomingEvents = getUpcomingEvents(1)
+    const eventWarningText = formatEventWarnings(upcomingEvents)
+    if (upcomingEvents.length > 0) {
+      console.log(`[이벤트경고] ${upcomingEvents.length}개 이벤트 임박:`, upcomingEvents.map(e => e.description).join(' / '))
+    }
+
     const result = await generateRecommendations({
       todayNews: newsText,
       dartDisclosures: dartText,
@@ -391,6 +399,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       bounceContext: bounceContext || undefined,
       kospiMA20Warning: kospiMA20Warning || undefined,
       overseasSignalContext: overseasNote || undefined,
+      eventWarnings: eventWarningText || undefined,
     })
 
     // 4-1. trade_type 강제 할당 (순서 기반: 0=단타, 1~2=스윙, 3~4=중기)
@@ -601,7 +610,12 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     })
 
     // F: probability 기반 확신도 필터 — 낮은 종목 현금보유 대체
-    const probMin = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    // VIX 기반 임계값 강화 (옵션 4): VIX 20~25 → +5, 25~30 → +15
+    const vixLevel = overseasSignals.vix?.price ?? 0
+    const vixBoost = vixLevel >= 25 && vixLevel < 30 ? 15 : (vixLevel >= 20 && vixLevel < 25 ? 5 : 0)
+    const probMinBase = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    const probMin = probMinBase + vixBoost
+    if (vixBoost > 0) console.log(`[VIX-임계강화] VIX ${vixLevel.toFixed(1)} → 확신도 임계값 ${probMinBase} → ${probMin}`)
     result.recommendations = result.recommendations.map(r => {
       if (r.ticker === '000000') return r
       if ((r.probability ?? 0) < probMin) {
@@ -703,10 +717,13 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       }
 
       const items = portfolioItems.map((p, i) => {
-        const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null }
+        const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null; created_at?: string; trade_type?: string }
         const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
         const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
         const tech = techResults[i]
+        const daysHeld = item.created_at
+          ? Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24))
+          : undefined
         return {
           item_key: String(i),
           account_name: item.account_id ? accountMap[item.account_id] : undefined,
@@ -732,6 +749,8 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
             institutionNet: tech?.institutionNet ?? null,
           },
           history: (historyMap[item.id] ?? historyMap[item.ticker] ?? []).slice(0, 14),
+          days_held: daysHeld,
+          trade_type: item.trade_type as '단타' | '스윙' | '중기' | undefined,
         }
       })
 
@@ -767,6 +786,9 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
           checkpoint_note: a.checkpoint_note ?? null,
           psychology_note: a.psychology_note ?? null,
           alternatives: a.alternatives ?? null,
+          trailing_stop_note: a.trailing_stop_note ?? null,
+          partial_exit_note: a.partial_exit_note ?? null,
+          time_stop_note: a.time_stop_note ?? null,
           source: 'auto',
         })
       }
@@ -833,6 +855,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
           advice_summary: a.advice_summary,
           risk_level: a.risk_level,
           sector_concentration: a.sector_concentration,
+          position_sizing: a.position_sizing ?? null,
           source: 'auto',
         })
       }

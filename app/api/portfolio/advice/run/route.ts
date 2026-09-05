@@ -63,11 +63,16 @@ export async function POST(request: Request) {
     }
 
     const items = portfolioItems.map((p, i) => {
-      const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null }
+      const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null; created_at?: string; trade_type?: string }
       const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
       const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
       const tech = techResults[i]
       const sector = STOCK_MAP[item.ticker]?.sector
+      // 보유일수 계산 (시간 손절 판단용, 옵션 2)
+      const daysHeld = item.created_at
+        ? Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24))
+        : undefined
+      const tradeType = item.trade_type as '단타' | '스윙' | '중기' | undefined
       return {
         item_key: String(i),
         account_name: item.account_id ? accountMap[item.account_id] : undefined,
@@ -95,6 +100,8 @@ export async function POST(request: Request) {
         },
         newsHeadlines: newsResults[i] ?? [],
         history: (historyMap[item.id] ?? historyMap[item.ticker] ?? []).slice(0, 14),
+        days_held: daysHeld,
+        trade_type: tradeType,
       }
     })
 
@@ -127,6 +134,9 @@ export async function POST(request: Request) {
         checkpoint_note: a.checkpoint_note ?? null,
         psychology_note: a.psychology_note ?? null,
         alternatives: a.alternatives ?? null,
+        trailing_stop_note: a.trailing_stop_note ?? null,
+        partial_exit_note: a.partial_exit_note ?? null,
+        time_stop_note: a.time_stop_note ?? null,
         source: 'manual',
       })
     }

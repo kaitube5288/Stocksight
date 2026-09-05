@@ -143,4 +143,7 @@ export type PortfolioAdvice = {
   checkpoint_note?: string | null
   psychology_note?: string | null
   alternatives?: Array<{ ticker: string; name: string; reason: string }> | null
+  trailing_stop_note?: string | null
+  partial_exit_note?: string | null
+  time_stop_note?: string | null
 }

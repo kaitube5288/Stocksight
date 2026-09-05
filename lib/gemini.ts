@@ -131,6 +131,7 @@ export async function generateRecommendations(params: {
   bounceContext?: string       // 전일 급락 + 과매도 반등 후보 (단타 최우선 검토)
   kospiMA20Warning?: string    // KOSPI 20일선 하회 경고
   overseasSignalContext?: string // 전일 해외 시장 (SOX/NASDAQ) 시그널
+  eventWarnings?: string         // 임박 이벤트 경고 (FOMC/옵션만기/금통위 등, D-1)
 }): Promise<GeminiAnalysisResult> {
   const prompt = `🔴🔴🔴 절대 규칙 (최우선): 응답은 반드시 JSON 객체 하나만 반환하세요. 마크다운 표(| ... |), 코드 펜스(\`\`\`), 헤더(##), 목록, 설명문 모두 절대 금지. 첫 문자는 반드시 { 이고 마지막 문자는 반드시 } 여야 합니다. 이 규칙 위반 시 시스템 파싱 실패로 사용자 서비스 완전 중단됩니다. 🔴🔴🔴
 
@@ -208,7 +209,15 @@ ${params.marketContext.includes('[🚀 불장 감지]') ? `
 - AI/IT 플랫폼 뉴스 기반 수혜주(NAVER·LG전자·통신사 등)는 RSI 무관하게 단타 우선 검토
 - expected_return 목표를 +3~5%로 상향 가능 (강세장 모멘텀은 더 크게 움직임)
 ` : ''}
-${params.overseasSignalContext ? `
+${params.eventWarnings ? `
+## ⚠️ 임박 이벤트 경고 (신규 진입 자제 판단 필수)
+${params.eventWarnings}
+
+이벤트 반영 규칙:
+- 이벤트 당일/D-1: 단타 확신도 임계값 +10 상향, 신규 단타 추천 최대 1개로 제한
+- 하이임팩트 이벤트(FOMC/금통위)는 스윙도 신중 판단 (RSI 상한 -5)
+- 방어주(통신·금융·필수소비재) 우선 검토
+` : ''}${params.overseasSignalContext ? `
 ## 전일 해외 시장 시그널 (미국/일본 마감 → 한국 섹터 연동 반등 예측)
 ${params.overseasSignalContext}
 
@@ -545,6 +554,8 @@ export type PortfolioAdviceInput = {
   recentPrices?: number[]           // 최근 5일 종가 (오래된 → 최신)
   newsHeadlines?: string[]          // 최근 종목 관련 뉴스 헤드라인 3~5개
   history: Array<{ date: string; advice_type: string; advice_detail: string }>
+  days_held?: number                 // 매수 후 경과 일수 (시간 손절 판단용)
+  trade_type?: '단타' | '스윙' | '중기'  // 거래 유형 (시간 손절 기준 판단용)
 }
 
 export type PortfolioAdviceResult = {
@@ -559,6 +570,9 @@ export type PortfolioAdviceResult = {
   checkpoint_note: string | null    // ⏰ 재검토 시점 (예: "3일 후 또는 25,000원 도달 시")
   psychology_note: string | null    // ⚠️ 심리 코칭 (예: "물타기 3회 반복 중 — 손절 후 대체 고려")
   alternatives: Array<{ ticker: string; name: string; reason: string }> | null  // 🔄 대안 종목 (0~3개)
+  trailing_stop_note: string | null // 📈 트레일링 스탑 규칙 (수익 상태별 손절가 상향 룰)
+  partial_exit_note: string | null  // 🎯 분할 실현 규칙 (부분 매도 룰)
+  time_stop_note: string | null     // ⏱ 시간 손절 알림 (스윙 5일↑ / 중기 4주↑ 미달 시)
 }
 
 export async function generatePortfolioAdvice(params: {
@@ -611,7 +625,11 @@ export async function generatePortfolioAdvice(params: {
     const candleText  = item.tech.candlePattern ?? 'N/A'
     const breakoutText = item.tech.isNearHighBreakout ? ' ⚠️ 신고가 근접' : ''
 
-    return `### [${item.item_key}] ${item.name} (${item.ticker})${acctLabel}${sectorLabel}
+    const holdLabel = item.days_held != null
+      ? ` | 보유일수: ${item.days_held}일${item.trade_type ? ` (${item.trade_type})` : ''}`
+      : ''
+
+    return `### [${item.item_key}] ${item.name} (${item.ticker})${acctLabel}${sectorLabel}${holdLabel}
 - 평균단가: ${item.avg_price.toLocaleString('ko-KR')}원 / 현재가: ${item.current_price.toLocaleString('ko-KR')}원 / 수익률: ${pl}
 - 보유수량: ${item.shares.toLocaleString()}주 / 평가금액: ${evalAmt}원
 - 최근 5일 종가: ${priceFlow}${priceFlowPct}
@@ -690,6 +708,19 @@ ${itemsText}
 6. **alternatives** (배열 또는 null): 같은 섹터 대체 종목 2~3개 제안. 손절고려·분할매도 시 필수, 나머지는 null 가능
    - 형식: [{"ticker": "6자리", "name": "종목명", "reason": "간단 근거"}]
    - 예시: [{"ticker": "000660", "name": "SK하이닉스", "reason": "동일 반도체 섹터, RSI 45 매수 구간, MACD↑"}]
+7. **trailing_stop_note** (문자열 또는 null): 트레일링 스탑 규칙 — 수익 시 손절가를 상향해 이익을 지키는 룰. 보유유지·분할매도 시 필수
+   - 예: "수익 +5% 도달 시 손절가를 매수가로 상향, +10% 도달 시 손절가를 +7%로 재상향"
+   - 예: "현재 +7% 상태 — 손절가를 매수가(XX,XXX원)로 상향 권고, +12% 도달 시 +7% (XX,XXX원)로 재상향"
+   - 손절고려·물타기 시에는 null
+8. **partial_exit_note** (문자열 또는 null): 분할 실현 규칙 — 목표가 도달 전 일부 이익 확정. 보유유지·분할매도 시 필수
+   - 예: "목표가(28,000원)의 절반 지점(+2.5%, 26,600원) 도달 시 보유 주수의 50% 매도, 잔량은 목표가까지 트레일링"
+   - 예: "+5% 도달 시 30% 매도 (약 N주), +10% 도달 시 추가 30% 매도, 잔량 40%는 신고가 이탈 시 매도"
+   - 손절고려·물타기 시에는 null
+9. **time_stop_note** (문자열 또는 null): 시간 손절 — 매수 후 일정 기간 지나도 목표 미달 시 청산 알림
+   - 매수일자 확인 후 판단 (아래 각 종목 헤더의 "보유일수" 참조)
+   - 스윙: 5일 초과 + 수익 <+3% → "5일차 목표 미달 — 자금 회수 검토 (기회비용 발생)"
+   - 중기: 28일(4주) 초과 + 수익 <+5% → "4주차 목표 미달 — 자금 회수 검토"
+   - 위 조건 만족 안하면 null
 
 ## 응답 형식 (JSON만, 다른 텍스트 없음)
 \`\`\`json
@@ -706,7 +737,10 @@ ${itemsText}
       "confidence_score": 확신도(0~100 숫자),
       "checkpoint_note": "재검토 시점 문자열",
       "psychology_note": "심리코칭 문자열 or null",
-      "alternatives": [{"ticker":"","name":"","reason":""}] or null
+      "alternatives": [{"ticker":"","name":"","reason":""}] or null,
+      "trailing_stop_note": "트레일링 스탑 규칙 문자열 or null",
+      "partial_exit_note": "분할 실현 규칙 문자열 or null",
+      "time_stop_note": "시간 손절 알림 문자열 or null"
     }
   ]
 }
@@ -749,6 +783,7 @@ export type AccountAdviceResult = {
   advice_summary: string
   risk_level: '낮음' | '중간' | '높음'
   sector_concentration: Record<string, number>
+  position_sizing?: Array<{ ticker: string; name: string; current_pct: number; recommended_pct: number; reason: string }> | null  // 종목별 권장 비중 (옵션 11)
 }
 
 export async function generateAccountAdvice(params: {
@@ -803,6 +838,15 @@ ${accountsText}
 - **중간**: 특정 섹터 40~60% + 현금 3~5% + 손실 종목 3~4개
 - **높음**: 단일 섹터 60%↑ OR 현금 3% 미만 OR 손실 종목 5개↑
 
+## 포지션 사이징 규칙 (옵션 11 — 확신도·수익률·리스크 기반 권장 비중)
+각 종목의 계좌 내 권장 비중을 다음 원칙에 따라 산정 (position_sizing 배열):
+- **수익률 +10% 이상 우량 종목**: 계좌의 15~20% 권장
+- **수익률 -5% ~ +10% 안정 종목**: 계좌의 10~15% 권장
+- **수익률 -15% ~ -5% 회복 대기 종목**: 계좌의 5~10% 권장 (추가 매수 시 신중)
+- **수익률 -15% 이하 손실 종목**: 계좌의 5% 이하 권장 (손절 후 대체 검토)
+- **섹터 편중 시**: 같은 섹터 종목은 합산 30% 이하 권장
+- **현재 비중이 권장 비중과 5%p 이상 차이나면 reason에 조정 방향 명시**
+
 ## 응답 형식 (JSON만, 다른 텍스트 없음)
 \`\`\`json
 {
@@ -811,7 +855,10 @@ ${accountsText}
       "account_id": "헤더의 [UUID] 그대로",
       "advice_summary": "2~3문장 조언 (섹터·현금·리밸런싱 관점 구체적으로)",
       "risk_level": "낮음|중간|높음",
-      "sector_concentration": {"반도체": 65, "IT": 20, "방어주": 15}
+      "sector_concentration": {"반도체": 65, "IT": 20, "방어주": 15},
+      "position_sizing": [
+        {"ticker": "종목코드", "name": "종목명", "current_pct": 현재비중숫자, "recommended_pct": 권장비중숫자, "reason": "판단 근거 1문장"}
+      ]
     }
   ]
 }

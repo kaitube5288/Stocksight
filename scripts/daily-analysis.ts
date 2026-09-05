@@ -9,6 +9,7 @@ import { buildPerformanceInsights } from '@/lib/performance-analysis'
 import { getNewsFromCacheOrFetch, formatAnalyzedNewsForPrompt, extractSectorsFromNews, setDynamicKeywords } from '@/lib/news'
 import { buildMarketFeedbackInsights, getSectorMomentumCandidates } from '@/lib/market-feedback'
 import { runStrategyImprovementIfNeeded, buildStrategyImprovementContext } from '@/lib/strategy-improvement'
+import { getUpcomingEvents, formatEventWarnings } from '@/lib/event-calendar'
 
 // 주말 체크 — route.ts GET 핸들러에는 있으나 독립 스크립트에 누락되어 추가
 const _kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
@@ -313,6 +314,13 @@ async function runDailyAnalysis() {
       .map(n => `• [${n.source}] ${n.title}`)
       .join('\n')
 
+    // 이벤트 캘린더 D-1 경고 (옵션 10)
+    const upcomingEvents = getUpcomingEvents(1)
+    const eventWarningText = formatEventWarnings(upcomingEvents)
+    if (upcomingEvents.length > 0) {
+      console.log(`[이벤트경고] ${upcomingEvents.length}개 이벤트 임박:`, upcomingEvents.map(e => e.description).join(' / '))
+    }
+
     // 4. Gemini 분석
     const result = await generateRecommendations({
       todayNews: newsText,
@@ -331,6 +339,7 @@ async function runDailyAnalysis() {
       bounceContext: bounceContext || undefined,
       kospiMA20Warning: kospiMA20Warning || undefined,
       overseasSignalContext: overseasNote || undefined,
+      eventWarnings: eventWarningText || undefined,
     })
 
     // 4-1. trade_type 강제 할당
@@ -521,7 +530,12 @@ async function runDailyAnalysis() {
     })
 
     // F: probability 기반 확신도 필터
-    const probMin = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    // VIX 기반 임계값 강화 (옵션 4): VIX 20~25 → +5, 25~30 → +15
+    const vixLevel = overseasSignals.vix?.price ?? 0
+    const vixBoost = vixLevel >= 25 && vixLevel < 30 ? 15 : (vixLevel >= 20 && vixLevel < 25 ? 5 : 0)
+    const probMinBase = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    const probMin = probMinBase + vixBoost
+    if (vixBoost > 0) console.log(`[VIX-임계강화] VIX ${vixLevel.toFixed(1)} → 확신도 임계값 ${probMinBase} → ${probMin}`)
     result.recommendations = result.recommendations.map(r => {
       if (r.ticker === '000000') return r
       if ((r.probability ?? 0) < probMin) {
@@ -622,10 +636,13 @@ async function runDailyAnalysis() {
       }
 
       const items = portfolioItems.map((p, i) => {
-        const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null }
+        const item = p as { id: string; ticker: string; name: string; avg_price: number; shares: number; account_id: string | null; created_at?: string; trade_type?: string }
         const currentPrice = (priceResults[i] as { price: number | null })?.price ?? item.avg_price
         const profitPct = item.avg_price > 0 ? ((currentPrice - item.avg_price) / item.avg_price) * 100 : 0
         const tech = techResults[i]
+        const daysHeld = item.created_at
+          ? Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24))
+          : undefined
         return {
           item_key: String(i),
           account_name: item.account_id ? accountMap[item.account_id] : undefined,
@@ -635,6 +652,8 @@ async function runDailyAnalysis() {
           shares: item.shares,
           current_price: currentPrice,
           profit_pct: profitPct,
+          days_held: daysHeld,
+          trade_type: item.trade_type as '단타' | '스윙' | '중기' | undefined,
           tech: {
             rsi14: tech?.rsi14 ?? null,
             macdSignal: tech?.macdSignal ?? null,
@@ -686,6 +705,9 @@ async function runDailyAnalysis() {
           checkpoint_note: a.checkpoint_note ?? null,
           psychology_note: a.psychology_note ?? null,
           alternatives: a.alternatives ?? null,
+          trailing_stop_note: a.trailing_stop_note ?? null,
+          partial_exit_note: a.partial_exit_note ?? null,
+          time_stop_note: a.time_stop_note ?? null,
           source: 'auto',
         })
       }
@@ -752,6 +774,7 @@ async function runDailyAnalysis() {
           advice_summary: a.advice_summary,
           risk_level: a.risk_level,
           sector_concentration: a.sector_concentration,
+          position_sizing: a.position_sizing ?? null,
           source: 'auto',
         })
       }
