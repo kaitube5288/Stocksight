@@ -327,6 +327,7 @@ probability 최대값은 95로 제한. 100은 절대 사용 금지.
 반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
 - recommendations 배열 9개: 인덱스 0~2 단타(probability 내림차순), 3~5 스윙(probability 내림차순), 6~8 중기(probability 내림차순)
 - stop_loss: 단타는 매수가×0.95(-5%), 스윙은 매수가×0.96(-4%), 중기는 매수가×0.94(-6%)
+- ⚠️ 손절가는 반드시 매수가보다 낮아야 함 (매수가 > stop_loss). 위 규칙에 따라 계산한 정수값을 반환
 {
   "recommendations": [
     {

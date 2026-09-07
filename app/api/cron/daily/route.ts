@@ -615,9 +615,16 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
       const sellPrice = real
         ? Math.round(buyPrice * (1 + r.expected_return / 100))
         : r.sell_price
-      const stopLoss = (r.stop_loss && r.stop_loss > 0)
-        ? r.stop_loss
-        : Math.round(buyPrice * (stopLossPct[r.trade_type] ?? 0.95))
+      // 손절가 유효성 검증: 반드시 매수가보다 낮아야 함
+      // Gemini가 매수가보다 높은 손절가를 주는 오류 방지
+      const calculatedStopLoss = Math.round(buyPrice * (stopLossPct[r.trade_type] ?? 0.95))
+      const geminiStopLoss = r.stop_loss ?? 0
+      const stopLoss = (geminiStopLoss > 0 && geminiStopLoss < buyPrice)
+        ? geminiStopLoss
+        : calculatedStopLoss
+      if (geminiStopLoss > 0 && geminiStopLoss >= buyPrice) {
+        console.warn(`[손절가보정] ${r.name}(${r.ticker}) Gemini 손절가 ${geminiStopLoss} >= 매수가 ${buyPrice} → 계산값 ${calculatedStopLoss}로 대체`)
+      }
       return {
         ...r,
         current_price: real?.price ?? buyPrice,
