@@ -68,6 +68,7 @@ export default function PortfolioSection() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [runningAdvice, setRunningAdvice] = useState<Record<string, boolean>>({})
+  const [graphPage, setGraphPage] = useState(0)  // 0 = 최신, 1 = 그 이전 30일 ...
   const [accountAdvice, setAccountAdvice] = useState<Record<string, { summary: string; risk_level: string | null; created_at: string; date: string }>>({})
   const [runningAccAdvById, setRunningAccAdvById] = useState<Record<string, boolean>>({})
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([])
@@ -480,15 +481,25 @@ export default function PortfolioSection() {
   const totalAdditionalInv = accounts.reduce((sum, a) => sum + a.additional_investment, 0)
   const totalAsset = totalEval + totalCash
 
-  // 일별 그래프 데이터 (스냅샷 + 오늘 현재값)
-  const graphData = snapshots.map(s => ({
+  // 일별 그래프 데이터 (스냅샷 + 오늘 현재값) — 총 자산 = 평가금액 + 현금
+  const allGraphData = snapshots.map(s => ({
     date: s.date.slice(5).replace('-', '/'),
-    value: s.total_eval,
+    value: (s.total_eval ?? 0) + (s.total_cash ?? 0),
   }))
   const todayStr = new Date().toISOString().slice(5, 10).replace('-', '/')
-  if (!loading && items.length > 0 && !graphData.some(d => d.date === todayStr)) {
-    graphData.push({ date: todayStr, value: Math.round(totalEval) })
+  if (!loading && items.length > 0 && !allGraphData.some(d => d.date === todayStr)) {
+    allGraphData.push({ date: todayStr, value: Math.round(totalAsset) })
   }
+
+  // 페이지네이션 (30일씩 슬라이딩)
+  const PAGE_SIZE = 30
+  const totalPages = Math.max(1, Math.ceil(allGraphData.length / PAGE_SIZE))
+  const currentPage = Math.min(graphPage, totalPages - 1)
+  const endIdx = allGraphData.length - currentPage * PAGE_SIZE
+  const startIdx = Math.max(0, endIdx - PAGE_SIZE)
+  const graphData = allGraphData.slice(startIdx, endIdx)
+  const canGoBack = startIdx > 0  // 더 과거 데이터 있음
+  const canGoForward = currentPage > 0  // 최신 방향
 
   // Group items by account (account_id가 현재 accounts에 없는 고아 종목도 미분류로 표시)
   const knownAccountIds = new Set(accounts.map(a => a.id).filter((id): id is string => id != null))
@@ -584,28 +595,53 @@ export default function PortfolioSection() {
                 )}
               </div>
             </div>
-            {/* 오른쪽: 일별 평가금액 그래프 (모바일은 전체폭, sm 이상은 고정폭) */}
+            {/* 오른쪽: 일별 총 자산 그래프 (모바일은 전체폭, sm 이상은 고정폭) */}
             <div className="w-full sm:w-80 md:w-96 lg:w-[28rem] shrink-0">
-              <div className="text-[10px] mb-1 font-medium" style={{ color: 'var(--text-muted)' }}>총 평가금액 추이</div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>총 자산 추이</div>
+                {totalPages > 1 && (
+                  <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    {currentPage + 1}/{totalPages} 페이지
+                  </div>
+                )}
+              </div>
               {graphData.length >= 2 ? (
-                <ResponsiveContainer width="100%" height={110}>
-                  <LineChart data={graphData} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis
-                      tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={42}
-                      domain={['auto', 'auto']}
-                      tickFormatter={(v: number) => `${Math.round(v / 1000).toLocaleString()}k`}
-                    />
-                    <Tooltip
-                      contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}
-                      formatter={(v: unknown) => [`₩${Number(v).toLocaleString()}`, '평가금액']}
-                    />
-                    <Line type="monotone" dataKey="value" stroke="#a78bfa" dot={false} strokeWidth={1.5} activeDot={{ r: 3, fill: '#a78bfa' }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setGraphPage(p => p + 1)}
+                    disabled={!canGoBack}
+                    className="text-xs px-1 py-3 rounded transition-all disabled:opacity-20"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+                    title="이전 30일"
+                  >◀</button>
+                  <div className="flex-1 min-w-0">
+                    <ResponsiveContainer width="100%" height={110}>
+                      <LineChart data={graphData} margin={{ top: 4, right: 6, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                        <YAxis
+                          tick={{ fontSize: 9, fill: '#ffffff', fontWeight: 700 }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={42}
+                          domain={['auto', 'auto']}
+                          tickFormatter={(v: number) => `${Math.round(v / 1000).toLocaleString()}k`}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}
+                          formatter={(v: unknown) => [`₩${Number(v).toLocaleString()}`, '총 자산']}
+                        />
+                        <Line type="monotone" dataKey="value" stroke="#a78bfa" dot={false} strokeWidth={1.5} activeDot={{ r: 3, fill: '#a78bfa' }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <button
+                    onClick={() => setGraphPage(p => Math.max(0, p - 1))}
+                    disabled={!canGoForward}
+                    className="text-xs px-1 py-3 rounded transition-all disabled:opacity-20"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)' }}
+                    title="다음 30일"
+                  >▶</button>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center" style={{ height: '110px' }}>
                   <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>데이터 수집 중</div>
