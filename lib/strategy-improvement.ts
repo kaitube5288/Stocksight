@@ -1,4 +1,4 @@
-import { getSupabase, getSupabaseAdmin } from './supabase'
+import { getSupabaseAdmin, getSupabaseAdmin as getSupabase } from './supabase'
 import { addTradingDays } from './trading-days'
 import { callGemini } from './gemini'
 import axios from 'axios'

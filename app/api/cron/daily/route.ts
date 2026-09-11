@@ -148,8 +148,11 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     const poolTickerSet = new Set(candidatePool.map(c => c.ticker))
     const volumeCandidates = volumeTopStocks
       .filter(s => !poolTickerSet.has(s.ticker))
-      .slice(0, 10)
+      .slice(0, 15)
       .map(s => ({ ...s, sector: '거래량상위' }))
+    if (volumeCandidates.length > 0) {
+      console.log(`[후보풀-거래량] ${volumeCandidates.length}개 추가: ${volumeCandidates.map(c => `${c.name}(${c.ticker})`).join(', ')}`)
+    }
     const mergedCandidatePool = [...candidatePool, ...volumeCandidates]
 
     // 해외 모멘텀 후보: SOX/NASDAQ 전일 강세 → 국내 반도체/IT 섹터 종목 강제 편입
@@ -988,13 +991,21 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
 
 // 후보 종목 풀 선정 — 뉴스 관련 섹터 + 방어주
 const KEYWORD_SECTOR_FOR_CANDIDATE: Record<string, string[]> = {
-  '반도체': ['반도체', '반도체소재'], 'AI': ['반도체', '로봇', 'IT', 'AI', '통신'], '2차전지': ['2차전지'],
+  '반도체': ['반도체', '반도체소재', '전자부품'],
+  'AI': ['반도체', '반도체소재', '로봇', 'IT', 'AI', '통신'],
+  'HBM': ['반도체', '반도체소재'],
+  '메모리': ['반도체', '반도체소재'],
+  'DRAM': ['반도체', '반도체소재'],
+  '낸드': ['반도체', '반도체소재'],
+  '파운드리': ['반도체'],
+  '엔비디아': ['반도체', '반도체소재', 'AI', '로봇'],
+  '2차전지': ['2차전지'],
   '바이오': ['바이오', '제약'], '자동차': ['자동차'], '철강': ['철강'],
   '화학': ['화학'], '금융': ['금융', '보험', '증권'], '부동산': ['건설'],
   '원자력': ['원자력'], '방산': ['방산'], '인터넷': ['IT', 'AI', '통신'], '게임': ['게임'],
   '조선': ['조선'], '로봇': ['로봇'],
   '전선': ['전선'], '전력기기': ['전력기기'], '레이저': ['레이저'], '수소': ['수소'],
-  '반도체소재': ['반도체소재'], '전자부품': ['전자부품'], '전장': ['전장'],
+  '반도체소재': ['반도체소재', '반도체'], '전자부품': ['전자부품'], '전장': ['전장'],
   '화장품': ['화장품'], 'K뷰티': ['화장품'], '뷰티': ['화장품'],
   '엔터': ['엔터'], '아이돌': ['엔터'], 'K팝': ['엔터'], '드라마': ['엔터'], '음악': ['엔터'],
   '음식료': ['음식료'], '식품': ['음식료'], '라면': ['음식료'], '주류': ['음식료'],
@@ -1015,7 +1026,9 @@ function buildCandidatePool(keywords: string[]): { ticker: string; name: string;
     ['금융', '보험', '통신', '제약', '유통'].includes(s.sector) &&
     !related.find(r => r.ticker === s.ticker)
   )
-  return [...related, ...defensive].slice(0, 25)
+  const pool = [...related, ...defensive].slice(0, 40)
+  console.log(`[후보풀-뉴스기반] ${pool.length}개 (섹터: ${[...relatedSectors].join(', ')})`)
+  return pool
 }
 
 function formatCandidatesContext(

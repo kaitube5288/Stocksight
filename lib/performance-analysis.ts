@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getSupabase } from './supabase'
+import { getSupabaseAdmin as getSupabase } from './supabase'
 import { addTradingDays } from './trading-days'
 import { MAJOR_STOCKS } from './major-stocks'
 
