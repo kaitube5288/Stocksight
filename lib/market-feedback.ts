@@ -33,16 +33,20 @@ export async function scrapeNaverTopGainers(limit = 15): Promise<TopGainer[]> {
         `https://finance.naver.com/sise/sise_rise.naver?sosok=${sosok}`,
         {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept-Language': 'ko-KR,ko;q=0.9',
-            Referer: 'https://finance.naver.com',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+            Referer: 'https://finance.naver.com/sise/',
           },
-          timeout: 12000,
+          timeout: 15000,
         }
       )
       const $ = cheerio.load(res.data)
 
+      let rowCount = 0
+      let matchCount = 0
       $('table.type_2 tr').each((_, row) => {
+        rowCount++
         const cells = $(row).find('td')
         if (cells.length < 5) return
 
@@ -57,9 +61,14 @@ export async function scrapeNaverTopGainers(limit = 15): Promise<TopGainer[]> {
 
         if (ticker && name && change_pct > 0) {
           gainers.push({ ticker, name, change_pct, price })
+          matchCount++
         }
       })
-    } catch { /* ignore */ }
+      console.log(`[네이버스크래핑] sosok=${sosok}: ${rowCount}행 순회, ${matchCount}개 종목 추가 (총 ${gainers.length}개)`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.warn(`[네이버스크래핑] sosok=${sosok} 실패: ${msg.slice(0, 200)}`)
+    }
   }
 
   return gainers

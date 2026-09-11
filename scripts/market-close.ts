@@ -27,10 +27,23 @@ async function runMarketCloseAnalysis(): Promise<void> {
 
   const supabaseAdmin = getSupabaseAdmin()
 
+  // ★ MDD 모니터링을 먼저 실행 (급등 종목 수집 실패해도 낙폭 알림은 반드시 수행)
+  const mddResult = await checkMDDAndAlert()
+
   // 1. 당일 상위 급등 종목 수집
   const gainers = await scrapeNaverTopGainers(15)
   if (gainers.length === 0) {
     console.log('[SKIP] 급등 종목 수집 실패 (장 마감 전이거나 네이버 응답 없음)')
+    console.log(JSON.stringify({
+      success: false,
+      date: todayKST,
+      reason: '급등 종목 수집 실패',
+      mdd: mddResult.checked ? {
+        drawdown_pct: mddResult.drawdown_pct.toFixed(2),
+        alerted: mddResult.alerted,
+        level: mddResult.level,
+      } : null,
+    }))
     return
   }
 
@@ -62,9 +75,6 @@ async function runMarketCloseAnalysis(): Promise<void> {
       news_summary: market_theme,
     }, { onConflict: 'trade_date' })
   } catch { /* ignore */ }
-
-  // 6. 옵션 13: MDD (최대낙폭) 모니터링 — 계좌 낙폭 5% 초과 시 텔레그램 알림
-  const mddResult = await checkMDDAndAlert()
 
   console.log(JSON.stringify({
     success: true,
