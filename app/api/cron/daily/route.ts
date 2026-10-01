@@ -246,7 +246,7 @@ async function runDailyAnalysis({ skipTelegram = false }: { skipTelegram?: boole
     // 이벤트 수혜주 추가 종목 — 기존 후보풀에 없는 것만 병렬 조회 후 합산
     const existingTickerSet = new Set(candidateTickers)
     const extraTickers = eventBeneficiary.additionalTickers
-      .filter(t => /^\d{6}$/.test(t.ticker) && !existingTickerSet.has(t.ticker))
+      .filter(t => /^[0-9A-Z]{6}$/i.test(t.ticker) && !existingTickerSet.has(t.ticker))
       .map(t => t.ticker)
 
     // 섹터연동 후보 — 기존 풀 + 이벤트수혜 중복 제거
@@ -1021,14 +1021,56 @@ function buildCandidatePool(keywords: string[]): { ticker: string; name: string;
   const relatedSectors = new Set<string>()
   keywords.forEach(kw => { ;(KEYWORD_SECTOR_FOR_CANDIDATE[kw] ?? []).forEach(s => relatedSectors.add(s)) })
 
-  const related = MAJOR_STOCKS.filter(s => relatedSectors.has(s.sector))
-  const defensive = MAJOR_STOCKS.filter(s =>
-    ['금융', '보험', '통신', '제약', '유통'].includes(s.sector) &&
-    !related.find(r => r.ticker === s.ticker)
-  )
-  const pool = [...related, ...defensive].slice(0, 40)
-  console.log(`[후보풀-뉴스기반] ${pool.length}개 (섹터: ${[...relatedSectors].join(', ')})`)
-  return pool
+  // 섹터별로 그룹화 — slice(0,40)이 섹터 1~2개를 독식하지 않도록 쿼터 보장
+  const bySector: Record<string, { ticker: string; name: string; sector: string }[]> = {}
+  for (const s of MAJOR_STOCKS) {
+    if (relatedSectors.has(s.sector)) (bySector[s.sector] ??= []).push(s)
+  }
+
+  const QUOTA_PER_SECTOR = 4
+  const TOTAL_LIMIT = 40
+  const picked = new Set<string>()
+  const result: { ticker: string; name: string; sector: string }[] = []
+
+  for (const stocks of Object.values(bySector)) {
+    for (const st of stocks.slice(0, QUOTA_PER_SECTOR)) {
+      if (!picked.has(st.ticker)) { picked.add(st.ticker); result.push(st) }
+      if (result.length >= TOTAL_LIMIT) break
+    }
+    if (result.length >= TOTAL_LIMIT) break
+  }
+
+  let round = QUOTA_PER_SECTOR
+  while (result.length < TOTAL_LIMIT) {
+    let added = false
+    for (const stocks of Object.values(bySector)) {
+      if (round < stocks.length) {
+        const st = stocks[round]
+        if (!picked.has(st.ticker)) {
+          picked.add(st.ticker); result.push(st); added = true
+          if (result.length >= TOTAL_LIMIT) break
+        }
+      }
+    }
+    if (!added) break
+    round++
+  }
+
+  if (result.length < TOTAL_LIMIT) {
+    const defensive = MAJOR_STOCKS.filter(s =>
+      ['금융', '보험', '통신', '제약', '유통'].includes(s.sector) && !picked.has(s.ticker)
+    )
+    for (const d of defensive) {
+      result.push(d); picked.add(d.ticker)
+      if (result.length >= TOTAL_LIMIT) break
+    }
+  }
+
+  const sectorDist = Object.keys(bySector)
+    .map(s => `${s}:${result.filter(r => r.sector === s).length}`)
+    .join(', ')
+  console.log(`[후보풀-뉴스기반] ${result.length}개 (섹터분배: ${sectorDist})`)
+  return result
 }
 
 function formatCandidatesContext(

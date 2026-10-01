@@ -95,9 +95,16 @@ export async function detectSectorRotation(daysBack: number = 5): Promise<Sector
       summaryParts.push(`[❄️ 조정 임박 섹터] ${cooling.slice(0, 4).join(' / ')} — 다음 로테이션 대상, 신규 진입 신중`)
     }
 
-    // 예측 규칙 추가
+    // 모멘텀 지속 vs 조정 임박 — 평균 상승률 강도로 분기 (일수만으로 조정 단정 금지)
     if (hot.length > 0 && hot[0].days >= 4) {
-      summaryParts.push(`⚠️ ${hot[0].sector} 섹터 ${hot[0].days}일 연속 부상 — 단기 조정 임박, 신규 단타 진입 신중 (스윙/중기는 유효)`)
+      const top = hot[0]
+      if (top.avg_gain_pct >= 5) {
+        summaryParts.push(`🚀 ${top.sector} 섹터 ${top.days}일 연속 부상 + 평균 ${top.avg_gain_pct.toFixed(1)}% — 모멘텀 지속 구간, 당일 급등 종목 추격 금지하되 눌림목·거래량 지속 종목은 단타/스윙 적극 검토`)
+      } else if (top.avg_gain_pct >= 2) {
+        summaryParts.push(`⚡ ${top.sector} 섹터 ${top.days}일 연속 부상 (평균 ${top.avg_gain_pct.toFixed(1)}%) — 모멘텀 유지 중, 거래량 증가 종목 우선, 거래량 감소 종목은 조정 가능성 염두`)
+      } else {
+        summaryParts.push(`⚠️ ${top.sector} 섹터 ${top.days}일 부상했으나 평균 ${top.avg_gain_pct.toFixed(1)}%로 둔화 — 단기 조정 임박, 신규 단타 신중 (스윙/중기는 유효)`)
+      }
     }
 
     return {

@@ -146,7 +146,7 @@ export async function generateRecommendations(params: {
 2. MACD↓(데드크로스) 종목은 원칙적으로 추천 금지. 단, 불장(KOSPI/KOSDAQ +0.5% 이상, 마켓 컨텍스트에 "[🚀 불장 감지]" 또는 "[⚡ 단기 반등]" 표시) 이고 RSI 28~48(과매도 회복 구간) + 거래량 1.5배 이상인 종목은 단타에 한해 예외 허용. 이 경우 reasoning에 "MACD 후행 지표 — 거래량 기반 순환 반등 포착, 단타 목표 +2~3%" 명시 필수
 3. 추세↓(하락추세) 종목은 스윙·중기 추천 금지. 단타는 불장(2번과 동일 조건)에서 RSI 28~48 + 거래량 1.5배 이상이면 예외 허용 — 순환 반등 첫날은 추세 지표가 아직 'down'을 유지하므로 거래량이 신뢰 근거
 4. PBR > 5 이상 고평가 종목은 중기 추천 금지
-5. 오늘 수집된 뉴스에서 처음 언급된 종목/섹터는 단타 추천 금지 — 뉴스 선반영으로 당일 이미 주가 반응 완료, 다음날 시가 매수 시 고점 진입 위험
+5. 뉴스 선반영 판단은 "뉴스 언급 여부"가 아니라 "실제 가격 반응 강도"로 한다 — 전일 종가 대비 +10% 이상 급등한 종목만 "선반영"으로 간주해 단타 추천 금지. 매일 반복적으로 뉴스에 등장하는 섹터(반도체·AI·2차전지 등)는 모멘텀 지속 섹터이므로 단순 뉴스 노출로 배제 금지. 전일 변동률이 중립(±5%)이면 뉴스 등장 여부와 무관하게 단타 추천 가능
 6. BB상단근접(볼린저밴드 상단 근접) 종목은 단타·스윙 추천 금지 — 과열 구간으로 조정 가능성 높음
 7. 외국인+기관 동반 순매도(foreignNet < 0 AND institutionNet < 0) 종목은 단타 추천 금지 — 수급 역풍으로 당일 하락 압력 강함
 8. 단타는 MA5 > MA20 정배열 미확인 종목 추천 금지 — 단기 상승 흐름 없으면 당일 반등 기대 불가
@@ -476,12 +476,12 @@ ${highImpactNewsText}
 
     if (!parsed.events || !Array.isArray(parsed.events)) return empty
 
-    // 6자리 숫자 종목코드만 유효
+    // 6자리 종목코드 (숫자 또는 숫자+알파벳 혼합 NXT 상장 포함)
     const allTickers: Array<{ ticker: string; name: string; reason: string }> = []
     const seen = new Set<string>()
     for (const ev of parsed.events) {
       for (const item of [...(ev.direct ?? []), ...(ev.indirect ?? [])]) {
-        if (/^\d{6}$/.test(item.ticker) && !seen.has(item.ticker)) {
+        if (/^[0-9A-Z]{6}$/i.test(item.ticker) && !seen.has(item.ticker)) {
           seen.add(item.ticker)
           allTickers.push({ ticker: item.ticker, name: item.name, reason: item.reason })
         }
