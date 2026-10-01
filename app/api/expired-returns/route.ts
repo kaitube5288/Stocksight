@@ -75,6 +75,7 @@ export async function GET() {
     for (const stock of (rec.stocks ?? []) as StockRecord[]) {
       const tt = stock.trade_type as TT
       if (!groups[tt]) continue
+      if (stock.ticker === '000000') continue  // 현금보유 슬롯은 수익률 집계 대상 아님
       const existing = groups[tt].get(stock.ticker)
       if (!existing) {
         groups[tt].set(stock.ticker, {

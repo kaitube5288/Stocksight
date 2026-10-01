@@ -43,6 +43,7 @@ function buildSection(
     const dateKey = new Date(recDate.getTime() + 9 * 3_600_000).toISOString().split('T')[0]
     for (const stock of rec.stocks ?? []) {
       if (stock.trade_type !== tt) continue
+      if (stock.ticker === '000000') continue  // 현금보유 슬롯은 추적 대상 아님
       const ex = map.get(stock.ticker)
       if (!ex) {
         map.set(stock.ticker, {
