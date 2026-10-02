@@ -303,7 +303,7 @@ async function runDailyAnalysis() {
 
     const kospiMA20Warning = isKospiBelowMA20
       ? isShortTermBounce
-        ? `⚠️ KOSPI 20일선 하회 중이나 당일 ${kospiChangePct.toFixed(1)}% 급반등 (단기 반등 국면)\n→ 과매도(RSI≤35) 종목 중 기술적 반등 가능성 있는 종목 단타 1개 이내 허용. 손절 -5% 엄수. 스윙·중기는 여전히 신중하게.`
+        ? `⚡ KOSPI 20일선 하회 중이나 당일 ${kospiChangePct.toFixed(1)}% 급반등 (단기 반등 국면)\n→ 단타·스윙·중기 모두 정상 추천 가능. 반도체·AI 등 전일 해외시장 강세 섹터 적극 검토. 각 종목 probability는 정상 평가(60~90%), probability를 일괄 하향 금지. 단, 손절가는 매수가 -4~5% 엄수.`
         : `⚠️ KOSPI 20일선 하회 중 (현재 ${kospiMA20!.price.toFixed(0)} / MA20 ${kospiMA20!.ma20.toFixed(0)})\n→ 시장 전체 하락 구조. 단타·스윙 추천 종목 수를 최소화하고, 방어주·현금보유 비중 확대. 확신도 90% 이상 종목만 추천.`
       : undefined
     if (isKospiBelowMA20) {
@@ -397,9 +397,35 @@ async function runDailyAnalysis() {
 
     result.recommendations = result.recommendations.filter(r => !!realPrices[r.ticker])
 
+    // 디버깅 로그: Gemini raw probability 분포 (필터 추적용)
+    const probByType: Record<string, number[]> = { '단타': [], '스윙': [], '중기': [] }
+    for (const r of result.recommendations) {
+      if (r.ticker === '000000') continue
+      ;(probByType[r.trade_type] ??= []).push(r.probability ?? 0)
+    }
+    const probSummary = Object.entries(probByType)
+      .map(([t, ps]) => {
+        if (ps.length === 0) return `${t}:∅`
+        const avg = ps.reduce((s, p) => s + p, 0) / ps.length
+        const max = Math.max(...ps)
+        const min = Math.min(...ps)
+        return `${t}:${ps.length}개 평균${avg.toFixed(0)} 범위${min}~${max}`
+      })
+      .join(' | ')
+    console.log(`[Gemini-raw-probability] ${probSummary}`)
+    for (const r of result.recommendations) {
+      if (r.ticker === '000000') continue
+      console.log(`  └ ${r.trade_type} ${r.name}(${r.ticker}) probability=${r.probability}%`)
+    }
+
     const isVixHigh = overseasSignals.vix?.price != null && overseasSignals.vix.price >= 30
-    const isBearMarket = (kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5) || isVixHigh
-    if (isVixHigh) console.log(`[VIX] 공포지수 ${overseasSignals.vix!.price!.toFixed(1)} ≥ 30 → 하락장 신호 추가 감지`)
+    // VIX 단독으로 bear 판정 금지 — 지수 양봉일 때 전원 현금 전멸 방지
+    // VIX 높고 KOSPI MA20 하회 둘 다일 때만 bear로 간주
+    const isBearMarket = (kospiChangePct <= -0.5 && kosdaqChangePct <= -0.5) || (isVixHigh && isKospiBelowMA20 && !isBullMarket)
+    if (isVixHigh) {
+      const bearNote = isBearMarket ? '하락장 확정' : '단독 트리거 아님 (지수/MA20 조건 미충족)'
+      console.log(`[VIX] 공포지수 ${overseasSignals.vix!.price!.toFixed(1)} ≥ 30 → ${bearNote}`)
+    }
     const rsiMaxByType: Record<string, number> = {
       '단타': isBullMarket ? 65 : 55,
       '스윙': isBullMarket ? 80 : 65,
@@ -565,12 +591,20 @@ async function runDailyAnalysis() {
     })
 
     // F: probability 기반 확신도 필터
-    // VIX 기반 임계값 강화 (옵션 4): VIX 20~25 → +5, 25~30 → +15
+    // VIX 기반 임계값 강화 (옵션 4): VIX 20~25 → +3, 25~30 → +8 (단기반등 때는 가산 상한 5)
     const vixLevel = overseasSignals.vix?.price ?? 0
-    const vixBoost = vixLevel >= 25 && vixLevel < 30 ? 15 : (vixLevel >= 20 && vixLevel < 25 ? 5 : 0)
-    const probMinBase = isBullMarket ? 60 : isBearMarket ? 80 : 70
+    const vixBoostRaw = vixLevel >= 25 && vixLevel < 30 ? 8 : (vixLevel >= 20 && vixLevel < 25 ? 3 : 0)
+    const vixBoost = isShortTermBounce ? Math.min(vixBoostRaw, 5) : vixBoostRaw
+    const probMinBase =
+      isTrueBullMarket  ? 55 :
+      isShortTermBounce ? 62 :
+      isBearMarket      ? 75 :
+      65
     const probMin = probMinBase + vixBoost
-    if (vixBoost > 0) console.log(`[VIX-임계강화] VIX ${vixLevel.toFixed(1)} → 확신도 임계값 ${probMinBase} → ${probMin}`)
+    if (vixBoost > 0) console.log(`[VIX-임계강화] VIX ${vixLevel.toFixed(1)} → 확신도 임계값 ${probMinBase} → ${probMin}${isShortTermBounce ? ' (단기반등 가산 캡 적용)' : ''}`)
+    console.log(`[확신도임계] probMin=${probMin} (base=${probMinBase}, vixBoost=${vixBoost}, 모드=${isTrueBullMarket ? '불장' : isShortTermBounce ? '단기반등' : isBearMarket ? '하락장' : '중립'})`)
+    // F 필터 백업 — 긴급복구용 (B/C/D/E 통과했으나 F에서 잘릴 수 있는 종목 보존)
+    const preProbFilterSnapshot = result.recommendations.map(r => ({ ...r }))
     result.recommendations = result.recommendations.map(r => {
       if (r.ticker === '000000') return r
       if ((r.probability ?? 0) < probMin) {
@@ -587,11 +621,14 @@ async function runDailyAnalysis() {
     })
 
     // Method D: probability 기반 최종 선택 — 코드가 결정적으로 각 유형별 top N 선택
-    {
-      const finalRecs: typeof result.recommendations = []
-      for (const [type, quota] of [['단타', 1], ['스윙', 2], ['중기', 2]] as [string, number][]) {
+    const SLOT_QUOTAS: [string, number][] = [['단타', 1], ['스윙', 2], ['중기', 2]]
+    const TOTAL_QUOTA = SLOT_QUOTAS.reduce((s, [, q]) => s + q, 0)
+
+    function buildFinalRecs(source: typeof result.recommendations, catalystLabel: string): typeof result.recommendations {
+      const out: typeof result.recommendations = []
+      for (const [type, quota] of SLOT_QUOTAS) {
         const tradeType = type as '단타' | '스윙' | '중기'
-        const typeRecs = result.recommendations
+        const typeRecs = source
           .filter(r => r.trade_type === tradeType)
           .sort((a, b) => {
             if (a.ticker === '000000' && b.ticker !== '000000') return 1
@@ -599,17 +636,47 @@ async function runDailyAnalysis() {
             return (b.probability ?? 0) - (a.probability ?? 0)
           })
           .slice(0, quota)
-        finalRecs.push(...typeRecs)
+        out.push(...typeRecs)
         for (let i = typeRecs.length; i < quota; i++) {
-          finalRecs.push({
+          out.push({
             name: '현금보유', ticker: '000000', buy_price: 0, sell_price: 0, stop_loss: 0,
             expected_return: 0, probability: 0, trade_type: tradeType,
             hold_period: tradeType === '단타' ? '1일 목표' : tradeType === '스윙' ? '3~5일 목표' : '2~4주 목표',
             reasoning: '유효한 후보 없음 — 현금 보유 권고',
-            key_catalyst: '조건 미달', per: null, pbr: null, roe: null,
+            key_catalyst: catalystLabel, per: null, pbr: null, roe: null,
           })
         }
       }
+      return out
+    }
+
+    {
+      let finalRecs = buildFinalRecs(result.recommendations, '조건 미달')
+      let cashCount = finalRecs.filter(r => r.ticker === '000000').length
+
+      // 긴급복구: 하락장이 아닌데 현금이 3개 이상 발생하면 F 필터 완화하고 재선정
+      // (B/C/D/E는 통과했으나 F에서 치환된 종목들을 preProbFilterSnapshot에서 복원)
+      if (cashCount >= 3 && !isBearMarket) {
+        const RESCUE_PROB_MIN = 50
+        const rescuable = preProbFilterSnapshot.filter(
+          r => r.ticker !== '000000' && (r.probability ?? 0) >= RESCUE_PROB_MIN
+        )
+        if (rescuable.length > 0) {
+          console.warn(`[긴급복구] 현금보유 ${cashCount}/${TOTAL_QUOTA}개 발생 (하락장 아님) → F 필터 완화 재선정 (probMin ${probMin} → ${RESCUE_PROB_MIN}), 복구가능 ${rescuable.length}개`)
+          const rescued = buildFinalRecs(rescuable, '확신도 미달 (긴급복구 후에도 자리 미달)')
+          const newCash = rescued.filter(r => r.ticker === '000000').length
+          if (newCash < cashCount) {
+            console.warn(`[긴급복구] 성공 — 현금 ${cashCount} → ${newCash}`)
+            finalRecs = rescued
+            cashCount = newCash
+          } else {
+            console.warn(`[긴급복구] 실패 — probMin ${RESCUE_PROB_MIN} 이상 종목도 쿼터 미달, 원본 유지`)
+          }
+        } else {
+          console.warn(`[긴급복구] 포기 — preProbFilterSnapshot에 복구 가능 종목 없음 (B/C/D/E 필터에서 모두 탈락)`)
+        }
+      }
+
       result.recommendations = finalRecs
     }
 
